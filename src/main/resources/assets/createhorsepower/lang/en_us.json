@@ -19,5 +19,18 @@
   "createhorsepower.ponder.tag.path_types": "Path Blocks",
   "createhorsepower.ponder.tag.path_types.description": "Blocks that are viable for Working Animals to walk on",
   "createhorsepower.ponder.tag.viable_workers": "Viable Workers",
-  "createhorsepower.ponder.tag.viable_workers.description": "Animals that can be used to pull the Horse Crank"
+  "createhorsepower.ponder.tag.viable_workers.description": "Animals that can be used to pull the Horse Crank",
+  "createhorsepower.configuration.creatureRPMRange": "Base Creature RPM",
+  "createhorsepower.configuration.smallCreatureStressRange": "Small Creature Stress Units",
+  "createhorsepower.configuration.mediumCreatureStressRange": "Medium Creature Stress Units",
+  "createhorsepower.configuration.largeCreatureStressRange": "Large Creature Stress Units",
+  "createhorsepower.configuration.poorMultiplier": "Poor Paths Multiplier",
+  "createhorsepower.configuration.normalMultiplier": "Normal Paths Multiplier",
+  "createhorsepower.configuration.greatMultiplier": "Great Paths Multiplier",
+  "createhorsepower.configuration.poorPathBlock": "Poor Path Blocks",
+  "createhorsepower.configuration.normalPathBlock": "Normal Path Blocks",
+  "createhorsepower.configuration.greatPathBlock": "Great Path Blocks",
+  "createhorsepower.configuration.smallCreatures": "Small Creatures",
+  "createhorsepower.configuration.mediumCreatures": "Medium Creatures",
+  "createhorsepower.configuration.largeCreatures": "Large Creatures"
 }

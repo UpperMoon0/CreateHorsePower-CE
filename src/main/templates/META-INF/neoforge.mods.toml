@@ -7,33 +7,30 @@ issueTrackerURL="https://github.com/SteamPunkNation/CreateHorsePower/issues"
 modId="${mod_id}"
 version="${mod_version}"
 displayName="${mod_name}"
-#[modproperties.modId]
-#    configuredBackground="minecraft:textures/block/hay_block_top.png"
-# A URL to query for updates for this mod. See the JSON update specification https://docs.minecraftforge.net/en/latest/misc/updatechecker/
-#updateJSONURL="https://change.me.example.invalid/updates.json"
-displayURL="https://createhorsepower.steampn.net" #optional
+displayURL="https://createhorsepower.steampn.net"
 logoFile="createhorsepower-mod-icon.png"
 credits="${mod_credits}"
 authors="${mod_authors}"
 description='''${mod_description}'''
 
 [[dependencies.${mod_id}]]
-    modId="forge"
-    mandatory=true
-    versionRange="${forge_version_range}"
+    modId="neoforge" 
+    type="required"
+    versionRange="[${neo_version},)"
     ordering="NONE"
     side="BOTH"
 
+# Here's another dependency
 [[dependencies.${mod_id}]]
     modId="minecraft"
-    mandatory=true
+    type="required"
     versionRange="${minecraft_version_range}"
     ordering="NONE"
     side="BOTH"
 
 [[dependencies.${mod_id}]]
     modId="create"
-    mandatory=true
-    versionRange="${create_version_range}"
+    type="required"
+    versionRange="[6.0.8,6.1.0)"
     ordering="NONE"
     side="BOTH"

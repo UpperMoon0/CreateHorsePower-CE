@@ -1,20 +1,12 @@
 package net.steampn.createhorsepower.blocks.horse_crank;
 
-import static net.steampn.createhorsepower.blocks.horse_crank.HorseCrankBlock.HAS_WORKER;
-import static net.steampn.createhorsepower.blocks.horse_crank.HorseCrankBlock.LARGE_WORKER_STATE;
-import static net.steampn.createhorsepower.blocks.horse_crank.HorseCrankBlock.MEDIUM_WORKER_STATE;
-import static net.steampn.createhorsepower.blocks.horse_crank.HorseCrankBlock.SMALL_WORKER_STATE;
-
 import com.mojang.logging.LogUtils;
 import com.simibubi.create.content.kinetics.base.GeneratingKineticBlockEntity;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.stream.Stream;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.WalkAnimationState;
@@ -25,8 +17,14 @@ import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.steampn.createhorsepower.config.Config;
-import net.steampn.createhorsepower.registry.BlockRegister;
+import net.steampn.createhorsepower.utils.CHPUtils;
 import org.slf4j.Logger;
+
+import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+import static net.steampn.createhorsepower.blocks.horse_crank.HorseCrankBlock.*;
 
 public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
 
@@ -42,7 +40,7 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
   private PathfinderMob cachedWorkerMob;
   private long lastBlockUpdateTick = -1, lastWorkerUpdateTick = -1;
   private float lastGeneratedSpeed = 0;
-  public float generatedSpeed = 4;
+  public float generatedSpeed;
   private float lastSpeed = 0;
 
   public HorseCrankTileEntity(BlockEntityType<?> type, BlockPos pos, BlockState state) {
@@ -64,6 +62,7 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
 
   @Override
   public float getGeneratedSpeed() {
+      generatedSpeed = (float) Config.BASE_CREATURE_RPM.getAsInt();
     return !this.getBlockState().getValue(HAS_WORKER) ? 0.0F : this.generatedSpeed * rpmModifier;
   }
 
@@ -74,9 +73,9 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
     if (getGeneratedSpeed() == 0 || !state.getValue(HAS_WORKER)) return 0;
 
     float capacity = 0;
-    if(state.getValue(SMALL_WORKER_STATE)) capacity = Config.small_creature_stress;
-    else if(state.getValue(MEDIUM_WORKER_STATE)) capacity = Config.medium_creature_stress;
-    else if(state.getValue(LARGE_WORKER_STATE)) capacity = Config.large_creature_stress;
+    if(state.getValue(SMALL_WORKER_STATE)) capacity = Config.SMALL_CREATURE_STRESS.getAsInt();
+    else if(state.getValue(MEDIUM_WORKER_STATE)) capacity = Config.MEDIUM_CREATURE_STRESS.getAsInt();
+    else if(state.getValue(LARGE_WORKER_STATE)) capacity = Config.LARGE_CREATURE_STRESS.getAsInt();
 
     capacity = Math.abs(capacity / Math.abs(getGeneratedSpeed()));
 
@@ -89,19 +88,20 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
     return new AABB(this.getBlockPos()).inflate(2);
   }
 
-  @Override
-  protected void write(CompoundTag compound, boolean clientPacket) {
-    super.write(compound, clientPacket);
-    compound.putFloat("RpmModifier", rpmModifier);
-    compound.putFloat("GeneratedSpeed", generatedSpeed);
-  }
 
-  @Override
-  protected void read(CompoundTag compound, boolean clientPacket) {
-    super.read(compound, clientPacket);
-    if (compound.contains("RpmModifier")) rpmModifier = compound.getFloat("RpmModifier");
-    if (compound.contains("GeneratedSpeed")) generatedSpeed = compound.getFloat("GeneratedSpeed");
-  }
+    @Override
+    protected void write(CompoundTag compound, HolderLookup.Provider registries, boolean clientPacket) {
+        super.write(compound, registries, clientPacket);
+        compound.putFloat("RpmModifier", rpmModifier);
+        compound.putFloat("GeneratedSpeed", generatedSpeed);
+    }
+
+    @Override
+    protected void read(CompoundTag compound, HolderLookup.Provider registries, boolean clientPacket) {
+        super.read(compound, registries, clientPacket);
+        if (compound.contains("RpmModifier")) rpmModifier = compound.getFloat("RpmModifier");
+        if (compound.contains("GeneratedSpeed")) generatedSpeed = compound.getFloat("GeneratedSpeed");
+    }
 
   @Override
   public void tick() {
@@ -123,8 +123,14 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
     } else { // If all valid blocks are the same
       adjustRPMModifier(blockSet);
     }
-
-    moveWorkerTo(getWorkerMob());
+    Mob worker = getWorkerMob();
+    if (worker == null){
+        level.setBlock(this.getBlockPos(), this.getBlockState().setValue(HAS_WORKER, false).setValue(SMALL_WORKER_STATE, false).setValue(MEDIUM_WORKER_STATE, false).setValue(LARGE_WORKER_STATE, false), 3);
+        CHPUtils.killLeashEntity(level, this.getBlockPos());
+      }
+    else{
+        moveWorkerTo(worker);
+    }
 
     updateAnimation();
   }
@@ -164,6 +170,10 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
       return;
     }
 
+   if (level == null || level.isClientSide()) {
+       return;
+   }
+
     if (worker instanceof Horse && ((Horse) worker).isEating()) {
       ((Horse) worker).setEating(false);
     }
@@ -179,15 +189,20 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
     double bx = pos.getX();
     double by = pos.getY();
     double bz = pos.getZ();
-    // add 0.5D so that we're targetting the center of the block, as blockPos selects a corner by default
+    // add 0.5D so that we're targeting the center of the block, as blockPos selects a corner by default
     bx += 0.5D;
     bz += 0.5D;
 
     double distanceToWorker = worker.distanceToSqr(pos.getCenter());
 
     if (distanceToWorker <= (radius * radius) + 20.5) {
-      double progress =
-          (worker.level().getGameTime() % ticksPerRotation) / (double) ticksPerRotation;
+        double progress;
+      if (ticksPerRotation == 0) {
+            progress = 0;
+        }
+      else {
+          progress = (worker.level().getGameTime() % ticksPerRotation) / (double) ticksPerRotation;
+      }
 
       double currentX = worker.xo;
       double currentZ = worker.zo;
@@ -225,20 +240,20 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
     int greatBlocks = 0;
 
     for (Block block : blockSet) {
-      if (Config.poor_path.contains(block)) {
+      if (Config.POOR_PATH.get().stream().map(pathName -> BuiltInRegistries.BLOCK.get(ResourceLocation.parse(pathName))).collect(Collectors.toSet()).contains(block)) {
         // If the block is poor, we can short circuit and set the rpmModifier to 0.5f
-        rpmModifier = 0.5f;
+        rpmModifier = (float) Config.POOR_MULTIPLIER.getAsDouble();
         return;
-      } else if (Config.normal_path.contains(block)) {
+      } else if (Config.NORMAL_PATH.get().stream().map(pathName -> BuiltInRegistries.BLOCK.get(ResourceLocation.parse(pathName))).collect(Collectors.toSet()).contains(block)) {
         ++normalBlocks;
-      } else if (Config.great_path.contains(block)) {
+      } else if (Config.GREAT_PATH.get().stream().map(pathName -> BuiltInRegistries.BLOCK.get(ResourceLocation.parse(pathName))).collect(Collectors.toSet()).contains(block)) {
         ++greatBlocks;
       }
     }
     if (normalBlocks > 0) {
-      rpmModifier = 1.0f;
+      rpmModifier = (float) Config.NORMAL_MULTIPLIER.getAsDouble();
     } else if (greatBlocks == blockSet.size()) {
-      rpmModifier = 2.0f;
+      rpmModifier = (float) Config.GREAT_MULTIPLIER.getAsDouble();
     }
   }
 
@@ -258,10 +273,9 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
 
     // Precompute the valid blocks set
     Set<Block> validBlocks = new HashSet<>();
-    validBlocks.addAll(Config.poor_path);
-    validBlocks.addAll(Config.normal_path);
-    validBlocks.addAll(Config.great_path);
-
+    validBlocks.addAll(Config.POOR_PATH.get().stream().map(pathName -> BuiltInRegistries.BLOCK.get(ResourceLocation.parse(pathName))).collect(Collectors.toSet()));
+      validBlocks.addAll(Config.NORMAL_PATH.get().stream().map(pathName -> BuiltInRegistries.BLOCK.get(ResourceLocation.parse(pathName))).collect(Collectors.toSet()));
+      validBlocks.addAll(Config.GREAT_PATH.get().stream().map(pathName -> BuiltInRegistries.BLOCK.get(ResourceLocation.parse(pathName))).collect(Collectors.toSet()));
     Block[] blockTypeGrid = new Block[OFFSETS.length];
     BlockPos pos = this.getBlockPos();
 
