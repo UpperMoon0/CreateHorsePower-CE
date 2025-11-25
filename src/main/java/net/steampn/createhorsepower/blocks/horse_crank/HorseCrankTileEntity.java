@@ -12,9 +12,11 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.WalkAnimationState;
@@ -24,8 +26,10 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
+import net.minecraftforge.registries.ForgeRegistries;
 import net.steampn.createhorsepower.config.Config;
 import net.steampn.createhorsepower.registry.BlockRegister;
+import net.steampn.createhorsepower.utils.CHPUtils;
 import org.slf4j.Logger;
 
 public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
@@ -42,7 +46,7 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
   private PathfinderMob cachedWorkerMob;
   private long lastBlockUpdateTick = -1, lastWorkerUpdateTick = -1;
   private float lastGeneratedSpeed = 0;
-  public float generatedSpeed = 4;
+  public float generatedSpeed;
   private float lastSpeed = 0;
 
   public HorseCrankTileEntity(BlockEntityType<?> type, BlockPos pos, BlockState state) {
@@ -64,6 +68,7 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
 
   @Override
   public float getGeneratedSpeed() {
+      generatedSpeed = (float) Config.BASE_CREATURE_RPM.get();
     return !this.getBlockState().getValue(HAS_WORKER) ? 0.0F : this.generatedSpeed * rpmModifier;
   }
 
@@ -74,9 +79,9 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
     if (getGeneratedSpeed() == 0 || !state.getValue(HAS_WORKER)) return 0;
 
     float capacity = 0;
-    if(state.getValue(SMALL_WORKER_STATE)) capacity = Config.small_creature_stress;
-    else if(state.getValue(MEDIUM_WORKER_STATE)) capacity = Config.medium_creature_stress;
-    else if(state.getValue(LARGE_WORKER_STATE)) capacity = Config.large_creature_stress;
+    if(state.getValue(SMALL_WORKER_STATE)) capacity = Config.SMALL_CREATURE_STRESS.get();
+    else if(state.getValue(MEDIUM_WORKER_STATE)) capacity = Config.MEDIUM_CREATURE_STRESS.get();
+    else if(state.getValue(LARGE_WORKER_STATE)) capacity = Config.LARGE_CREATURE_STRESS.get();
 
     capacity = Math.abs(capacity / Math.abs(getGeneratedSpeed()));
 
@@ -123,8 +128,14 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
     } else { // If all valid blocks are the same
       adjustRPMModifier(blockSet);
     }
-
-    moveWorkerTo(getWorkerMob());
+    Mob worker = getWorkerMob();
+    if (worker == null) {
+        level.setBlock(this.getBlockPos(), this.getBlockState().setValue(HAS_WORKER, false).setValue(SMALL_WORKER_STATE, false).setValue(MEDIUM_WORKER_STATE, false).setValue(LARGE_WORKER_STATE, false), 3);
+        CHPUtils.killLeashEntity(level, this.getBlockPos());
+    }
+    else {
+        moveWorkerTo(worker);
+    }
 
     updateAnimation();
   }
@@ -223,22 +234,25 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
     hasValidWorkingBlocks = true;
     int normalBlocks = 0;
     int greatBlocks = 0;
-
+    double rpmDouble;
     for (Block block : blockSet) {
-      if (Config.poor_path.contains(block)) {
+      if (Config.POOR_PATH.get().stream().map(pathName -> ForgeRegistries.BLOCKS.getValue(ResourceLocation.parse(pathName))).collect(Collectors.toSet()).contains(block)) {
         // If the block is poor, we can short circuit and set the rpmModifier to 0.5f
-        rpmModifier = 0.5f;
+          rpmDouble = Config.POOR_MULTIPLIER.get();
+        rpmModifier = (float) rpmDouble;
         return;
-      } else if (Config.normal_path.contains(block)) {
+      } else if (Config.NORMAL_PATH.get().stream().map(pathName -> ForgeRegistries.BLOCKS.getValue(ResourceLocation.parse(pathName))).collect(Collectors.toSet()).contains(block)) {
         ++normalBlocks;
-      } else if (Config.great_path.contains(block)) {
+      } else if (Config.GREAT_PATH.get().stream().map(pathName -> ForgeRegistries.BLOCKS.getValue(ResourceLocation.parse(pathName))).collect(Collectors.toSet()).contains(block)) {
         ++greatBlocks;
       }
     }
     if (normalBlocks > 0) {
-      rpmModifier = 1.0f;
+        rpmDouble = Config.NORMAL_MULTIPLIER.get();
+        rpmModifier = (float) rpmDouble;
     } else if (greatBlocks == blockSet.size()) {
-      rpmModifier = 2.0f;
+        rpmDouble = Config.GREAT_MULTIPLIER.get();
+      rpmModifier = (float) rpmDouble;
     }
   }
 
@@ -258,9 +272,9 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
 
     // Precompute the valid blocks set
     Set<Block> validBlocks = new HashSet<>();
-    validBlocks.addAll(Config.poor_path);
-    validBlocks.addAll(Config.normal_path);
-    validBlocks.addAll(Config.great_path);
+    validBlocks.addAll(Config.POOR_PATH.get().stream().map(pathName -> ForgeRegistries.BLOCKS.getValue(ResourceLocation.parse(pathName))).collect(Collectors.toSet()));
+    validBlocks.addAll(Config.NORMAL_PATH.get().stream().map(pathName -> ForgeRegistries.BLOCKS.getValue(ResourceLocation.parse(pathName))).collect(Collectors.toSet()));
+    validBlocks.addAll(Config.GREAT_PATH.get().stream().map(pathName -> ForgeRegistries.BLOCKS.getValue(ResourceLocation.parse(pathName))).collect(Collectors.toSet()));
 
     Block[] blockTypeGrid = new Block[OFFSETS.length];
     BlockPos pos = this.getBlockPos();

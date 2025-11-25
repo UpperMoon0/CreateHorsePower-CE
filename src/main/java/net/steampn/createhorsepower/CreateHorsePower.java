@@ -12,6 +12,7 @@ import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.server.ServerStartingEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.ModContainer;
 import net.minecraftforge.fml.ModLoadingContext;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.config.ModConfig;
@@ -42,7 +43,6 @@ public class CreateHorsePower {
         BlockRegister.register();
         TileEntityRegister.register();
         modEventBus.addListener(this::commonSetup);
-
         ModLoadingContext.get().registerConfig(ModConfig.Type.SERVER, Config.SPEC);
 
         MinecraftForge.EVENT_BUS.register(this);
@@ -58,18 +58,18 @@ public class CreateHorsePower {
     }
 
     private void configFileDebug(){
-        LOGGER.info("Base RPM for all creatures is {}", Config.base_creature_rpm);
-        LOGGER.info("Stress for Small is {}", Config.small_creature_stress);
-        LOGGER.info("Stress for Medium is {}", Config.medium_creature_stress);
-        LOGGER.info("Stress for Large is {}", Config.large_creature_stress);
+        LOGGER.info("Base RPM for all creatures is {}", Config.BASE_CREATURE_RPM.get());
+        LOGGER.info("Stress for Small is {}", Config.SMALL_CREATURE_STRESS.get());
+        LOGGER.info("Stress for Medium is {}", Config.MEDIUM_CREATURE_STRESS.get());
+        LOGGER.info("Stress for Large is {}", Config.LARGE_CREATURE_STRESS.get());
 
-        Config.small_mobs.forEach((mob) -> LOGGER.info("Selected Small mob: {}", mob));
-        Config.medium_mobs.forEach((mob) -> LOGGER.info("Selected Medium mob: {}", mob));
-        Config.large_mobs.forEach((mob) -> LOGGER.info("Selected Large mob: {}", mob));
+        Config.SMALL_CREATURES.get().forEach((mob) -> LOGGER.info("Selected Small mob: {}", mob));
+        Config.MEDIUM_CREATURES.get().forEach((mob) -> LOGGER.info("Selected Medium mob: {}", mob));
+        Config.LARGE_CREATURES.get().forEach((mob) -> LOGGER.info("Selected Large mob: {}", mob));
 
-        Config.poor_path.forEach((block) -> LOGGER.info("Selected Poor Path Block: {}", block));
-        Config.normal_path.forEach((block) -> LOGGER.info("Selected Normal Path Block: {}", block));
-        Config.great_path.forEach((block) -> LOGGER.info("Selected Great Path Block: {}", block));
+        Config.POOR_PATH.get().forEach((block) -> LOGGER.info("Selected Poor Path Block: {}", block));
+        Config.NORMAL_PATH.get().forEach((block) -> LOGGER.info("Selected Normal Path Block: {}", block));
+        Config.GREAT_PATH.get().forEach((block) -> LOGGER.info("Selected Great Path Block: {}", block));
     }
 
     public static ResourceLocation asResource(String path){
