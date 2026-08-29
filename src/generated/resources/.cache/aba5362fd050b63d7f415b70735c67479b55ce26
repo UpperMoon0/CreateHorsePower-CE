@@ -1,0 +1,7 @@
+// 1.21.1	2026-08-29T15:21:48.8247895	Registrate Provider for createhorsepower [Registries, Data Maps, Recipes, Advancements, Loot Tables, Tags (enchantments), Tags (blocks), Tags (items), Tags (fluids), Tags (entity_types), generic_server_provider, Blockstates, Item models, Lang (en_us/en_ud), generic_client_provider]
+0eaa6aaeb781471831449e213ce32b1e98bd3765 assets/createhorsepower/blockstates/horse_crank.json
+c392297d9340e8c43d3ca4aa199ef580b911982b assets/createhorsepower/lang/en_ud.json
+8a5d0fb0fd91ab1975aae2888bc62d3e6b780585 assets/createhorsepower/lang/en_us.json
+c0d5b670d62329a81c320807687717f6c34b90f0 assets/createhorsepower/models/item/horse_crank.json
+783069685ad05a86a3ca5ed01314fdd08e95692f data/createhorsepower/loot_table/blocks/horse_crank.json
+c134fbb550c4ac0102cf3acc320223b2d841316c data/minecraft/tags/block/mineable/pickaxe.json

@@ -2,7 +2,6 @@ package net.steampn.createhorsepower.client.ponders;
 
 import com.simibubi.create.AllBlocks;
 import com.simibubi.create.foundation.ponder.CreateSceneBuilder;
-import java.util.Optional;
 import net.createmod.catnip.math.Pointing;
 import net.createmod.ponder.api.PonderPalette;
 import net.createmod.ponder.api.element.ElementLink;
@@ -25,6 +24,8 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.Vec3;
 import net.steampn.createhorsepower.blocks.horse_crank.HorseCrankBlock;
+
+import java.util.Optional;
 
 public class HorseCrankBaseScene {
     public static void intro(SceneBuilder builder, SceneBuildingUtil util){

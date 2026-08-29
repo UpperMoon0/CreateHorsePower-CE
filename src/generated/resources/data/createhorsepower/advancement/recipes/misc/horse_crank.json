@@ -5,9 +5,7 @@
       "conditions": {
         "items": [
           {
-            "items": [
-              "create:cogwheel"
-            ]
+            "items": "create:cogwheel"
           }
         ]
       },
@@ -22,14 +20,13 @@
   },
   "requirements": [
     [
-      "has_cogwheel",
-      "has_the_recipe"
+      "has_the_recipe",
+      "has_cogwheel"
     ]
   ],
   "rewards": {
     "recipes": [
       "createhorsepower:horse_crank"
     ]
-  },
-  "sends_telemetry_event": false
+  }
 }

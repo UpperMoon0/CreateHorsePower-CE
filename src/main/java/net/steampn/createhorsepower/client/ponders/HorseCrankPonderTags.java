@@ -10,7 +10,7 @@ public class HorseCrankPonderTags {
 
   public static void register(PonderTagRegistrationHelper<ResourceLocation> helper) {
 
-    PonderTagRegistrationHelper<RegistryEntry<?>> HELPER = helper.withKeyFunction(
+    PonderTagRegistrationHelper<RegistryEntry<?, ?>> HELPER = helper.withKeyFunction(
         RegistryEntry::getId);
 
     HELPER.addToTag(AllCreatePonderTags.KINETIC_SOURCES)

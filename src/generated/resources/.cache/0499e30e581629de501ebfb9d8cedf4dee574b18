@@ -1,0 +1,4 @@
+// 1.21.1	2026-08-29T16:57:25.1843519	Tags for minecraft:block mod id createhorsepower
+c134fbb550c4ac0102cf3acc320223b2d841316c data/minecraft/tags/block/fences.json
+c134fbb550c4ac0102cf3acc320223b2d841316c data/minecraft/tags/block/mineable/pickaxe.json
+c134fbb550c4ac0102cf3acc320223b2d841316c data/minecraft/tags/block/needs_stone_tool.json

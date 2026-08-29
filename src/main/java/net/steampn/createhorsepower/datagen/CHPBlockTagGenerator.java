@@ -1,18 +1,17 @@
 package net.steampn.createhorsepower.datagen;
 
-import static net.steampn.createhorsepower.CreateHorsePower.MODID;
-
-import java.util.concurrent.CompletableFuture;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.data.PackOutput;
 import net.minecraft.tags.BlockTags;
-import net.minecraftforge.common.data.BlockTagsProvider;
-import net.minecraftforge.common.data.ExistingFileHelper;
 import net.steampn.createhorsepower.registry.BlockRegister;
 import org.jetbrains.annotations.Nullable;
 
-public class CHPBlockTagGenerator extends BlockTagsProvider {
-    public CHPBlockTagGenerator(PackOutput output, CompletableFuture<HolderLookup.Provider> lookupProvider, @Nullable ExistingFileHelper existingFileHelper) {
+import java.util.concurrent.CompletableFuture;
+
+import static net.steampn.createhorsepower.CreateHorsePower.MODID;
+
+public class CHPBlockTagGenerator extends net.neoforged.neoforge.common.data.BlockTagsProvider {
+    public CHPBlockTagGenerator(PackOutput output, CompletableFuture<HolderLookup.Provider> lookupProvider, @Nullable net.neoforged.neoforge.common.data.ExistingFileHelper existingFileHelper) {
         super(output, lookupProvider, MODID, existingFileHelper);
     }
 
@@ -22,6 +21,11 @@ public class CHPBlockTagGenerator extends BlockTagsProvider {
                 .add(BlockRegister.HORSE_CRANK.get());
 
         this.tag(BlockTags.NEEDS_STONE_TOOL)
+                .add(BlockRegister.HORSE_CRANK.get());
+
+        // Required for LeashFenceKnotEntity.survives() — without this, the knot
+        // discards itself after ~100 ticks (~5 seconds) breaking all leash attachments.
+        this.tag(BlockTags.FENCES)
                 .add(BlockRegister.HORSE_CRANK.get());
     }
 }
