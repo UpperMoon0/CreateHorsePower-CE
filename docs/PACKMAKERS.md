@@ -39,7 +39,7 @@ Execution Lifecycle:
        ↓
   Redstone Evaluation (Ignore, High Stops, High Runs)
        ↓
-  beforeWorkStart (KubeJS / NeoForge Event)
+  beforeWorkStart (optional KubeJS hook)
        ↓
   Kinetic Rotation & Stress Generation + Orbit Tracking
 ```
@@ -75,7 +75,7 @@ Execution Lifecycle:
 |---|---|---|---|
 | `rpm` | Float ($\ge 0$) | `4.0` | Base generation speed in RPM. |
 | `stress` | Float ($\ge 0$) | `256.0` | Base stress capacity in Stress Units (SU). |
-| `movement_radius` | Float ($[0.5, 32.0]$) | `2.5` | Orbital radius (in blocks) around crank center. |
+| `movement_radius` | Float ($[0.5, 6.0]$) | `2.5` | Orbital radius in blocks. The 6-block maximum keeps workers within vanilla lead mechanics. |
 | `speed_scaling` | Float ($\ge 0$) | `0.0` | Scaling weight for `generic.movement_speed` attribute. |
 | `speed_reference` | Float ($> 0$) | `0.225` | Species benchmark movement speed. |
 | `health_scaling` | Float ($\ge 0$) | `0.0` | Scaling weight for `generic.max_health` attribute. |
@@ -217,7 +217,29 @@ HorsePowerEvents.outputCalculated(event => {
         event.setStressMultiplier(1.5)
     }
 })
+
+// Adjust the evaluated path result
+HorsePowerEvents.pathEvaluated(event => {
+    if (event.invalidBlocks === 0) {
+        event.setSpeedMultiplier(event.speedMultiplier * 1.1)
+    }
+})
 ```
+
+Available server events:
+
+| Event | Cancellable | Available values / controls |
+|---|---|---|
+| `beforeAttach` | Yes | `player`, `worker`, `crankPos`, `level`, `profile` |
+| `workerAttached` | No | `worker`, `crankPos`, `level`, `profile` |
+| `workerDetached` | No | `worker` (nullable), `crankPos`, `level` |
+| `beforeWorkStart` | Yes | `worker`, `crankPos`, `level` |
+| `workStarted` | No | `worker`, `crankPos`, `level` |
+| `workStopped` | No | `crankPos`, `level` |
+| `outputCalculated` | No | `worker`, `crankPos`, `level`, `baseRpm`, `baseStress`, `setRpmMultiplier()`, `setStressMultiplier()` |
+| `pathEvaluated` | No | `crankPos`, `level`, `result`, `validBlocks`, `invalidBlocks`, `efficiencyPercent`, `setSpeedMultiplier()`, `setStressMultiplier()` |
+
+KubeJS is optional. Without it, Data Maps, tags, config, attachment, movement, and generation continue to work normally.
 
 ---
 
@@ -280,6 +302,8 @@ largeCreatures = ["minecraft:horse"]
 2. **NeoForge Data Map** (`createhorsepower:path_stats`)
 3. **Config Block List** (`greatPathBlock`, `normalPathBlock`, `poorPathBlock`)
 
+Higher-priority entries replace lower-priority tuning for the same entity or block. For example, the built-in `minecraft:dirt` Data Map profile wins over `poorMultiplier`; override that Data Map or register a KubeJS path profile to change dirt specifically.
+
 ---
 
 ## In-Game Diagnostics & Commands
@@ -304,3 +328,12 @@ largeCreatures = ["minecraft:horse"]
 - In 1.2, vanilla mobs (horse, donkey, mule, camel, llama, wolf, cow, pig, sheep) now have dedicated **Data Map profiles** (e.g. Horse defaults to `5 RPM / 600 SU` with individual speed/health scaling).
 - Because Data Maps take precedence over fallback config lists, modifying `largeCreatureStressRange` in config will only affect mobs without a Data Map entry.
 - To customize vanilla mobs in 1.2, override `data/createhorsepower/data_maps/entity_type/worker_stats.json` in a datapack or use `HorsePowerEvents.workerProfiles` in KubeJS.
+- Built-in path Data Maps use the same precedence. Changes to legacy path multipliers do not affect blocks such as dirt, dirt path, or gravel while those blocks have Data Map entries; override `createhorsepower:path_stats` or use a KubeJS path profile instead.
+
+### 3. Existing Horse Cranks and Redstone
+- Pre-1.2 Horse Cranks have no saved redstone mode and migrate to `IGNORE`, preserving their old behavior.
+- Newly placed 1.2 Horse Cranks use `defaultRedstoneMode` from the server config.
+
+### 4. Movement Radius
+- Version 1.2 accepts radii from `0.5` through `6.0` blocks. Values above 6 are rejected because normal Minecraft leads cannot reliably support larger working circles.
+- If a pack used an earlier 1.2 prerelease with a larger radius, change its Data Map or KubeJS profile before updating. Saved block-entity radii are clamped safely, but profile definitions outside the supported range fail validation.

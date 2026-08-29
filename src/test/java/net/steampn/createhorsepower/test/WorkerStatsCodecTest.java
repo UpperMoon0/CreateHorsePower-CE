@@ -101,9 +101,20 @@ public class WorkerStatsCodecTest {
     void testWorkerStatsBuilderValidation() {
         assertThrows(IllegalArgumentException.class, () -> WorkerStats.builder().rpm(-1.0f));
         assertThrows(IllegalArgumentException.class, () -> WorkerStats.builder().movementRadius(0.1f));
-        assertThrows(IllegalArgumentException.class, () -> WorkerStats.builder().movementRadius(50.0f));
+        assertEquals(0.5f, WorkerStats.builder().movementRadius(0.5f).build().movementRadius());
+        assertEquals(6.0f, WorkerStats.builder().movementRadius(6.0f).build().movementRadius());
+        assertThrows(IllegalArgumentException.class, () -> WorkerStats.builder().movementRadius(6.01f));
         assertThrows(IllegalArgumentException.class, () -> WorkerStats.builder().movementRadius(Float.NaN));
         assertThrows(IllegalArgumentException.class, () -> WorkerStats.builder().speedReference(0.0f));
+    }
+
+    @Test
+    @DisplayName("WorkerStats codec rejects movement radii beyond the vanilla leash-safe range")
+    void testWorkerStatsCodecRejectsExcessiveRadius() {
+        JsonObject jsonObject = JsonParser.parseString("{\"movement_radius\": 6.01}").getAsJsonObject();
+        var result = WorkerStats.CODEC.parse(JsonOps.INSTANCE, jsonObject);
+
+        assertTrue(result.error().isPresent(), "movement_radius above 6.0 must be rejected");
     }
 
     @Test

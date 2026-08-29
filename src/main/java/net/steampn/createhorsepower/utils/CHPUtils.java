@@ -8,6 +8,7 @@ import net.minecraft.world.entity.decoration.LeashFenceKnotEntity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 import net.steampn.createhorsepower.config.Config;
+import net.steampn.createhorsepower.content.stats.WorkerStats;
 
 import java.util.List;
 
@@ -61,7 +62,7 @@ public class CHPUtils {
         getKnot(level, pos).ifPresent(knot -> {
             List<Mob> mobs = level.getEntitiesOfClass(
                     Mob.class,
-                    new AABB(pos).inflate(36.0D),
+                    new AABB(pos).inflate(WorkerStats.MAX_MOVEMENT_RADIUS + 4.0D),
                     mob -> mob.getLeashHolder() == knot
             );
             for (Mob mob : mobs) {

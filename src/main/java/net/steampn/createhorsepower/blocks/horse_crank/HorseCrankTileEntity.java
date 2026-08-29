@@ -20,6 +20,7 @@ import net.steampn.createhorsepower.config.Config;
 import net.steampn.createhorsepower.content.crank.RedstoneMode;
 import net.steampn.createhorsepower.content.path.PathEvaluator;
 import net.steampn.createhorsepower.content.stats.WorkerResolver;
+import net.steampn.createhorsepower.content.stats.WorkerStats;
 import net.steampn.createhorsepower.utils.CHPUtils;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
@@ -68,6 +69,7 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
     private long lastPathCheckTick = -1;
     private int statRefreshTimer = 0;
     private long nextWorkStartRetryTick = 0;
+    private long nextFallbackWorkerSearchTick = 0;
 
     public HorseCrankTileEntity(BlockEntityType<?> type, BlockPos pos, BlockState state) {
         super(type, pos, state);
@@ -263,7 +265,12 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
         if (compound.contains("HasValidWorkingBlocks")) hasValidWorkingBlocks = compound.getBoolean("HasValidWorkingBlocks");
         if (compound.contains("EffectiveBaseRpm")) effectiveBaseRpm = compound.getFloat("EffectiveBaseRpm");
         if (compound.contains("EffectiveBaseStress")) effectiveBaseStress = compound.getFloat("EffectiveBaseStress");
-        if (compound.contains("WorkerRadius")) workerRadius = compound.getFloat("WorkerRadius");
+        if (compound.contains("WorkerRadius")) {
+            float savedRadius = compound.getFloat("WorkerRadius");
+            workerRadius = Float.isFinite(savedRadius)
+                    ? Math.max(WorkerStats.MIN_MOVEMENT_RADIUS, Math.min(WorkerStats.MAX_MOVEMENT_RADIUS, savedRadius))
+                    : WorkerStats.DEFAULT.movementRadius();
+        }
 
         if (compound.contains("RedstoneMode")) {
             String modeStr = compound.getString("RedstoneMode");
@@ -317,6 +324,7 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
         this.missingWorkerTicks = 0;
         this.statRefreshTimer = 0;
         this.nextWorkStartRetryTick = 0;
+        this.nextFallbackWorkerSearchTick = 0;
         this.scriptVetoed = false;
         this.workerResolved = true;
         this.workerEligible = profile.isValid();
@@ -403,6 +411,7 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
         this.missingWorkerTicks = 0;
         this.statRefreshTimer = 0;
         this.nextWorkStartRetryTick = 0;
+        this.nextFallbackWorkerSearchTick = 0;
         this.workerResolved = false;
         this.workerEligible = false;
         this.workerRadius = 2.5f;
@@ -514,6 +523,12 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
             }
         }
 
+        long gameTime = level.getGameTime();
+        if (gameTime < nextFallbackWorkerSearchTick) {
+            return null;
+        }
+        nextFallbackWorkerSearchTick = gameTime + 20;
+
         double searchRadius = Math.max(8.0D, workerRadius + 4.0D);
         List<Mob> nearby = level.getEntitiesOfClass(Mob.class, new AABB(worldPosition).inflate(searchRadius), this::isWorkerAttachedToThisCrank);
         if (!nearby.isEmpty()) {
@@ -537,6 +552,8 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
         Mob worker = resolveWorker();
         boolean wasResolved = this.workerResolved;
         boolean wasEligible = this.workerEligible;
+        boolean outputChanged = false;
+        boolean radiusChanged = false;
 
         if (worker != null) {
             this.workerResolved = true;
@@ -550,7 +567,18 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
                 statRefreshTimer = 0;
                 WorkerResolver.ResolvedWorker profile = WorkerResolver.resolve(worker);
                 this.workerEligible = profile.isValid();
+
+                float oldRpm = effectiveBaseRpm;
+                float oldStress = effectiveBaseStress;
+                float oldRadius = workerRadius;
                 applyProfile(worker, profile);
+
+                outputChanged = Float.compare(oldRpm, effectiveBaseRpm) != 0
+                        || Float.compare(oldStress, effectiveBaseStress) != 0;
+                radiusChanged = Float.compare(oldRadius, workerRadius) != 0;
+                if (radiusChanged) {
+                    checkPathBlocks();
+                }
             }
 
             if (!wasResolved) {
@@ -572,7 +600,7 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
             }
         }
 
-        if (wasResolved != this.workerResolved || wasEligible != this.workerEligible) {
+        if (wasResolved != this.workerResolved || wasEligible != this.workerEligible || outputChanged) {
             updateGeneratedRotation();
             notifyUpdate();
         }

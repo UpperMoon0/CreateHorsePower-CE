@@ -26,12 +26,14 @@ public record WorkerStats(
 
     public static final float DEFAULT_SPEED_REF = 0.225f;
     public static final float DEFAULT_HEALTH_REF = 20.0f;
+    public static final float MIN_MOVEMENT_RADIUS = 0.5f;
+    public static final float MAX_MOVEMENT_RADIUS = 6.0f;
 
     public static final WorkerStats DEFAULT = new WorkerStats(4.0f, 256.0f, 2.5f, 0.0f, DEFAULT_SPEED_REF, 0.0f, DEFAULT_HEALTH_REF, false, false);
 
     private static final Codec<Float> NON_NEGATIVE_FLOAT = Codec.floatRange(0.0f, Float.MAX_VALUE);
     private static final Codec<Float> POSITIVE_FLOAT = Codec.floatRange(0.001f, Float.MAX_VALUE);
-    private static final Codec<Float> RADIUS_FLOAT = Codec.floatRange(0.5f, 32.0f);
+    private static final Codec<Float> RADIUS_FLOAT = Codec.floatRange(MIN_MOVEMENT_RADIUS, MAX_MOVEMENT_RADIUS);
 
     public static final Codec<WorkerStats> CODEC = RecordCodecBuilder.create(instance -> instance.group(
             NON_NEGATIVE_FLOAT.optionalFieldOf("rpm", 4.0f).forGetter(WorkerStats::baseRpm),
@@ -60,8 +62,9 @@ public record WorkerStats(
     }
 
     public static float validateRadius(float value) {
-        if (!Float.isFinite(value) || value < 0.5f || value > 32.0f) {
-            throw new IllegalArgumentException("movementRadius must be finite and between 0.5 and 32.0 (got: " + value + ")");
+        if (!Float.isFinite(value) || value < MIN_MOVEMENT_RADIUS || value > MAX_MOVEMENT_RADIUS) {
+            throw new IllegalArgumentException("movementRadius must be finite and between "
+                    + MIN_MOVEMENT_RADIUS + " and " + MAX_MOVEMENT_RADIUS + " (got: " + value + ")");
         }
         return value;
     }

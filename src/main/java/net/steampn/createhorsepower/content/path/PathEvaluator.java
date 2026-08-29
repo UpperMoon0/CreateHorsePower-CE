@@ -45,6 +45,11 @@ public class PathEvaluator {
 
         for (BlockPos offset : offsets) {
             BlockPos targetPos = centerPos.offset(offset);
+            if (!level.hasChunkAt(targetPos)) {
+                invalidCount++;
+                allGreat = false;
+                continue;
+            }
             BlockState state = level.getBlockState(targetPos);
             Optional<PathStats> statsOpt = getPathStats(state.getBlock());
 
