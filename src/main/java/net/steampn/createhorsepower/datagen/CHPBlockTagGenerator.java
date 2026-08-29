@@ -22,5 +22,10 @@ public class CHPBlockTagGenerator extends net.neoforged.neoforge.common.data.Blo
 
         this.tag(BlockTags.NEEDS_STONE_TOOL)
                 .add(BlockRegister.HORSE_CRANK.get());
+
+        // Required for LeashFenceKnotEntity.survives() — without this, the knot
+        // discards itself after ~100 ticks (~5 seconds) breaking all leash attachments.
+        this.tag(BlockTags.FENCES)
+                .add(BlockRegister.HORSE_CRANK.get());
     }
 }

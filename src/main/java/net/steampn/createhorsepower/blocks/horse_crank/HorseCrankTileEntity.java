@@ -291,6 +291,15 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
             this.workerResolved = true;
             missingWorkerTicks = 0;
             lastKnownWorkerPos = worker.blockPosition();
+
+            // When coming back from unresolved, inherit the network's current direction
+            // before resuming generation to avoid a speed-sign conflict (same root cause as #25).
+            if (!wasResolved) {
+                float networkSpeed = getTheoreticalSpeed();
+                if (networkSpeed != 0) {
+                    generationDirection = Math.signum(networkSpeed);
+                }
+            }
         } else {
             this.workerResolved = false;
             BlockPos checkPos = lastKnownWorkerPos != null ? lastKnownWorkerPos : worldPosition;
