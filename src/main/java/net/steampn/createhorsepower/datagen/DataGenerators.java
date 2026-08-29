@@ -29,5 +29,6 @@ public class DataGenerators {
                 new CHPBlockTagGenerator(packOutput, lookupProvider, existingFileHelper));
         generator.addProvider(event.includeServer(), new CHPItemTagGenerator(packOutput, lookupProvider, blockTagGenerator.contentsGetter(), existingFileHelper));
         generator.addProvider(event.includeServer(), new CHPEntityTagGenerator(packOutput, lookupProvider, existingFileHelper));
+        generator.addProvider(event.includeServer(), new CHPDataMapProvider(packOutput, lookupProvider));
     }
 }

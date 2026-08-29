@@ -2,10 +2,11 @@ package net.steampn.createhorsepower.blocks.horse_crank;
 
 import com.mojang.logging.LogUtils;
 import com.simibubi.create.content.kinetics.base.GeneratingKineticBlockEntity;
+import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.Mob;
@@ -15,7 +16,12 @@ import net.minecraft.world.entity.decoration.LeashFenceKnotEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
+import net.steampn.createhorsepower.compat.OptionalIntegrations;
 import net.steampn.createhorsepower.config.Config;
+import net.steampn.createhorsepower.content.crank.RedstoneMode;
+import net.steampn.createhorsepower.content.path.PathEvaluator;
+import net.steampn.createhorsepower.content.stats.WorkerResolver;
+import net.steampn.createhorsepower.content.stats.WorkerStats;
 import net.steampn.createhorsepower.utils.CHPUtils;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
@@ -31,11 +37,23 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
 
     public boolean hasValidWorkingBlocks = false;
     private float rpmModifier = 1.0f;
+    private float pathStressModifier = 1.0f;
     private float generationDirection = 1.0f;
     private boolean needsLegacyDirectionResolution = false;
     private boolean suppressGeneration = false;
     private boolean resolvingLegacyDirection = false;
     private boolean workerResolved = false;
+
+    private float effectiveBaseRpm = 4.0f;
+    private float effectiveBaseStress = 256.0f;
+    private float speedBonusPercent = 0.0f;
+    private float healthBonusPercent = 0.0f;
+    private int efficiencyPercent = 100;
+    private int invalidBlockCount = 0;
+    private String cachedWorkerName = "";
+
+    private RedstoneMode redstoneMode = RedstoneMode.HIGH_STOPS;
+    private boolean lastRedstoneState = false;
 
     @Nullable
     private Mob cachedWorkerMob;
@@ -63,33 +81,94 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
         return offsets.toArray(new BlockPos[0]);
     }
 
+    public boolean isStoppedByRedstone() {
+        if (level == null) return false;
+        boolean signal = level.hasNeighborSignal(worldPosition);
+        return switch (redstoneMode) {
+            case HIGH_STOPS -> signal;
+            case HIGH_RUNS -> !signal;
+            case IGNORE -> false;
+        };
+    }
+
+    public RedstoneMode getRedstoneMode() {
+        return redstoneMode;
+    }
+
+    public void setRedstoneMode(RedstoneMode mode) {
+        this.redstoneMode = mode;
+        if (level != null && !level.isClientSide()) {
+            updateGeneratedRotation();
+            notifyUpdate();
+        }
+    }
+
+    public RedstoneMode cycleRedstoneMode() {
+        RedstoneMode next = redstoneMode.next();
+        setRedstoneMode(next);
+        return next;
+    }
+
     @Override
     public float getGeneratedSpeed() {
-        if (suppressGeneration) {
+        if (suppressGeneration || isStoppedByRedstone()) {
             return 0.0F;
         }
         BlockState state = getBlockState();
         if (!state.getValue(HAS_WORKER) || !workerResolved || !hasValidWorkingBlocks || rpmModifier <= 0.0f) {
             return 0.0F;
         }
-        float magnitude = (float) Config.BASE_CREATURE_RPM.getAsInt() * rpmModifier;
-        return magnitude * generationDirection;
+        return effectiveBaseRpm * rpmModifier * generationDirection;
     }
 
     @Override
     public float calculateAddedStressCapacity() {
         BlockState state = getBlockState();
         float speed = getGeneratedSpeed();
-        if (speed == 0 || !state.getValue(HAS_WORKER)) return 0;
+        if (speed == 0 || !state.getValue(HAS_WORKER) || !workerResolved) return 0;
 
-        float capacity = 0;
-        if (state.getValue(SMALL_WORKER_STATE)) capacity = Config.SMALL_CREATURE_STRESS.getAsInt();
-        else if (state.getValue(MEDIUM_WORKER_STATE)) capacity = Config.MEDIUM_CREATURE_STRESS.getAsInt();
-        else if (state.getValue(LARGE_WORKER_STATE)) capacity = Config.LARGE_CREATURE_STRESS.getAsInt();
-
+        float capacity = effectiveBaseStress * pathStressModifier;
         capacity = Math.abs(capacity / Math.abs(speed));
         this.lastCapacityProvided = capacity;
         return capacity;
+    }
+
+    @Override
+    public boolean addToGoggleTooltip(List<Component> tooltip, boolean isPlayerSneaking) {
+        tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.header").withStyle(ChatFormatting.GOLD));
+
+        if (!getBlockState().getValue(HAS_WORKER)) {
+            tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.no_worker").withStyle(ChatFormatting.GRAY));
+            return true;
+        }
+
+        if (isStoppedByRedstone()) {
+            tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.stopped_redstone").withStyle(ChatFormatting.RED));
+        } else if (!workerResolved) {
+            tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.worker_unloaded").withStyle(ChatFormatting.YELLOW));
+        } else if (!hasValidWorkingBlocks) {
+            tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.invalid_path", invalidBlockCount).withStyle(ChatFormatting.RED));
+        } else {
+            tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.working").withStyle(ChatFormatting.GREEN));
+        }
+
+        if (!cachedWorkerName.isEmpty()) {
+            tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.worker", cachedWorkerName).withStyle(ChatFormatting.WHITE));
+        }
+
+        tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.path_efficiency", efficiencyPercent + "%").withStyle(ChatFormatting.GRAY));
+
+        if (speedBonusPercent != 0) {
+            tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.speed_bonus", String.format("%+.1f%%", speedBonusPercent)).withStyle(ChatFormatting.AQUA));
+        }
+        if (healthBonusPercent != 0) {
+            tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.health_bonus", String.format("%+.1f%%", healthBonusPercent)).withStyle(ChatFormatting.LIGHT_PURPLE));
+        }
+
+        tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.redstone_mode", redstoneMode.getDisplayName()).withStyle(ChatFormatting.DARK_GRAY));
+
+        super.addToGoggleTooltip(tooltip, isPlayerSneaking);
+        return true;
     }
 
     @Override
@@ -101,16 +180,27 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
     protected void write(CompoundTag compound, HolderLookup.Provider registries, boolean clientPacket) {
         super.write(compound, registries, clientPacket);
         compound.putFloat("RpmModifier", rpmModifier);
+        compound.putFloat("PathStressModifier", pathStressModifier);
         compound.putBoolean("HasValidWorkingBlocks", hasValidWorkingBlocks);
         compound.putFloat("GenerationDirection", generationDirection);
+        compound.putString("RedstoneMode", redstoneMode.getSerializedName());
+        compound.putFloat("EffectiveBaseRpm", effectiveBaseRpm);
+        compound.putFloat("EffectiveBaseStress", effectiveBaseStress);
+
         if (workerUuid != null) {
             compound.putUUID("WorkerUUID", workerUuid);
         }
         if (lastKnownWorkerPos != null) {
             compound.putLong("WorkerPos", lastKnownWorkerPos.asLong());
         }
+
         if (clientPacket) {
             compound.putBoolean("WorkerResolved", workerResolved);
+            compound.putFloat("SpeedBonusPercent", speedBonusPercent);
+            compound.putFloat("HealthBonusPercent", healthBonusPercent);
+            compound.putInt("EfficiencyPercent", efficiencyPercent);
+            compound.putInt("InvalidBlockCount", invalidBlockCount);
+            compound.putString("CachedWorkerName", cachedWorkerName);
         }
     }
 
@@ -118,32 +208,55 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
     protected void read(CompoundTag compound, HolderLookup.Provider registries, boolean clientPacket) {
         super.read(compound, registries, clientPacket);
         if (compound.contains("RpmModifier")) rpmModifier = compound.getFloat("RpmModifier");
+        if (compound.contains("PathStressModifier")) pathStressModifier = compound.getFloat("PathStressModifier");
         if (compound.contains("HasValidWorkingBlocks")) hasValidWorkingBlocks = compound.getBoolean("HasValidWorkingBlocks");
+        if (compound.contains("EffectiveBaseRpm")) effectiveBaseRpm = compound.getFloat("EffectiveBaseRpm");
+        if (compound.contains("EffectiveBaseStress")) effectiveBaseStress = compound.getFloat("EffectiveBaseStress");
+
+        if (compound.contains("RedstoneMode")) {
+            String modeStr = compound.getString("RedstoneMode");
+            for (RedstoneMode mode : RedstoneMode.values()) {
+                if (mode.getSerializedName().equalsIgnoreCase(modeStr)) {
+                    redstoneMode = mode;
+                    break;
+                }
+            }
+        }
+
         if (compound.contains("GenerationDirection")) {
             generationDirection = compound.getFloat("GenerationDirection");
             if (generationDirection == 0) generationDirection = 1.0f;
         } else {
             needsLegacyDirectionResolution = true;
         }
+
         if (compound.hasUUID("WorkerUUID")) {
             workerUuid = compound.getUUID("WorkerUUID");
         }
         if (compound.contains("WorkerPos")) {
             lastKnownWorkerPos = BlockPos.of(compound.getLong("WorkerPos"));
         }
+
         if (clientPacket) {
             workerResolved = compound.getBoolean("WorkerResolved");
+            speedBonusPercent = compound.getFloat("SpeedBonusPercent");
+            healthBonusPercent = compound.getFloat("HealthBonusPercent");
+            efficiencyPercent = compound.getInt("EfficiencyPercent");
+            invalidBlockCount = compound.getInt("InvalidBlockCount");
+            cachedWorkerName = compound.getString("CachedWorkerName");
         } else {
             workerResolved = false;
         }
     }
 
-    public void attachWorker(Mob worker, CHPUtils.WorkerTier tier) {
+    public void attachWorker(Mob worker, WorkerResolver.ResolvedWorker profile) {
         this.cachedWorkerMob = worker;
         this.workerUuid = worker.getUUID();
         this.lastKnownWorkerPos = worker.blockPosition();
         this.missingWorkerTicks = 0;
         this.workerResolved = true;
+
+        applyProfile(worker, profile);
 
         float existingSpeed = getTheoreticalSpeed();
         if (existingSpeed != 0) {
@@ -154,33 +267,41 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
 
         if (level != null && !level.isClientSide()) {
             BlockState state = getBlockState();
-            boolean small = tier == CHPUtils.WorkerTier.SMALL;
-            boolean medium = tier == CHPUtils.WorkerTier.MEDIUM;
-            boolean large = tier == CHPUtils.WorkerTier.LARGE;
-            level.setBlock(worldPosition, state.setValue(HAS_WORKER, true)
-                    .setValue(SMALL_WORKER_STATE, small)
-                    .setValue(MEDIUM_WORKER_STATE, medium)
-                    .setValue(LARGE_WORKER_STATE, large), 3);
+            level.setBlock(worldPosition, state.setValue(HAS_WORKER, true), 3);
             checkPathBlocks();
             updateGeneratedRotation();
             notifyUpdate();
+            OptionalIntegrations.fireWorkerAttached(worker, worldPosition, level, profile);
+        }
+    }
+
+    private void applyProfile(Mob worker, WorkerResolver.ResolvedWorker profile) {
+        this.effectiveBaseRpm = profile.effectiveRpm();
+        this.effectiveBaseStress = profile.effectiveStressCapacity();
+        this.speedBonusPercent = profile.speedBonusPercent();
+        this.healthBonusPercent = profile.healthBonusPercent();
+        this.cachedWorkerName = worker.getName().getString();
+
+        if (level != null && !level.isClientSide()) {
+            float[] scriptModifiers = OptionalIntegrations.fireOutputCalculated(worker, worldPosition, level, effectiveBaseRpm, effectiveBaseStress);
+            this.effectiveBaseRpm *= scriptModifiers[0];
+            this.effectiveBaseStress *= scriptModifiers[1];
         }
     }
 
     public void detachWorker(boolean dropLead) {
+        Mob worker = cachedWorkerMob;
         clearWorkerReferences();
 
         if (level != null && !level.isClientSide()) {
             BlockState state = getBlockState();
             if (state.getValue(HAS_WORKER)) {
-                level.setBlock(worldPosition, state.setValue(HAS_WORKER, false)
-                        .setValue(SMALL_WORKER_STATE, false)
-                        .setValue(MEDIUM_WORKER_STATE, false)
-                        .setValue(LARGE_WORKER_STATE, false), 3);
+                level.setBlock(worldPosition, state.setValue(HAS_WORKER, false), 3);
             }
             CHPUtils.cleanUpLeash(level, worldPosition, dropLead);
             updateGeneratedRotation();
             notifyUpdate();
+            OptionalIntegrations.fireWorkerDetached(worker, worldPosition, level);
         }
     }
 
@@ -197,6 +318,9 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
         this.lastKnownWorkerPos = null;
         this.missingWorkerTicks = 0;
         this.workerResolved = false;
+        this.cachedWorkerName = "";
+        this.speedBonusPercent = 0.0f;
+        this.healthBonusPercent = 0.0f;
     }
 
     @Override
@@ -208,6 +332,14 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
                 suppressGeneration = true;
                 clearKineticInformation();
                 updateSpeed = true;
+            }
+
+            // Check redstone transition
+            boolean currentRedstone = level.hasNeighborSignal(worldPosition);
+            if (currentRedstone != lastRedstoneState) {
+                lastRedstoneState = currentRedstone;
+                updateGeneratedRotation();
+                notifyUpdate();
             }
         }
 
@@ -229,13 +361,14 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
         reconcileWorker();
 
         // 2. Update path state on interval
-        if (level.getGameTime() - lastPathCheckTick >= 20 || lastPathCheckTick < 0) {
+        int interval = Config.CHECK_INTERVAL_TICKS.get();
+        if (level.getGameTime() - lastPathCheckTick >= interval || lastPathCheckTick < 0) {
             lastPathCheckTick = level.getGameTime();
             checkPathBlocks();
         }
 
         // 3. Move animal along track if active
-        if (getBlockState().getValue(HAS_WORKER) && cachedWorkerMob != null && hasValidWorkingBlocks) {
+        if (getBlockState().getValue(HAS_WORKER) && cachedWorkerMob != null && hasValidWorkingBlocks && !isStoppedByRedstone()) {
             moveWorkerTo(cachedWorkerMob);
         }
     }
@@ -292,13 +425,17 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
             missingWorkerTicks = 0;
             lastKnownWorkerPos = worker.blockPosition();
 
-            // When coming back from unresolved, inherit the network's current direction
-            // before resuming generation to avoid a speed-sign conflict (same root cause as #25).
+            WorkerResolver.ResolvedWorker profile = WorkerResolver.resolve(worker);
+            if (profile.isValid()) {
+                applyProfile(worker, profile);
+            }
+
             if (!wasResolved) {
                 float networkSpeed = getTheoreticalSpeed();
                 if (networkSpeed != 0) {
                     generationDirection = Math.signum(networkSpeed);
                 }
+                OptionalIntegrations.fireWorkStarted(worker, worldPosition, level);
             }
         } else {
             this.workerResolved = false;
@@ -310,6 +447,9 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
                     return;
                 }
             }
+            if (wasResolved) {
+                OptionalIntegrations.fireWorkStopped(worldPosition, level);
+            }
         }
 
         if (wasResolved != this.workerResolved) {
@@ -320,128 +460,91 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
 
     private void checkPathBlocks() {
         if (level == null) return;
-        boolean allValid = true;
-        int greatCount = 0;
-        int normalCount = 0;
-        int poorCount = 0;
-        int total = OFFSETS.length;
 
-        Set<String> poorConfig = new HashSet<>(Config.POOR_PATH.get());
-        Set<String> normalConfig = new HashSet<>(Config.NORMAL_PATH.get());
-        Set<String> greatConfig = new HashSet<>(Config.GREAT_PATH.get());
+        boolean wasGenerating = hasValidWorkingBlocks && (rpmModifier > 0);
 
-        for (BlockPos offset : OFFSETS) {
-            BlockPos checkPos = worldPosition.offset(offset);
-            BlockState blockState = level.getBlockState(checkPos);
-            if (blockState.isAir()) {
-                allValid = false;
-                break;
-            }
-            String blockId = BuiltInRegistries.BLOCK.getKey(blockState.getBlock()).toString();
-            if (greatConfig.contains(blockId)) {
-                greatCount++;
-            } else if (normalConfig.contains(blockId)) {
-                normalCount++;
-            } else if (poorConfig.contains(blockId)) {
-                poorCount++;
-            } else {
-                allValid = false;
-                break;
-            }
-        }
+        PathEvaluator.Result evalResult = PathEvaluator.evaluate(level, worldPosition, OFFSETS);
+        float speedMult = evalResult.speedMultiplier();
+        float stressMult = evalResult.stressMultiplier();
 
-        float oldModifier = this.rpmModifier;
-        boolean oldValid = this.hasValidWorkingBlocks;
+        float[] scriptMods = OptionalIntegrations.firePathEvaluated(worldPosition, level, evalResult);
+        speedMult *= scriptMods[0];
+        stressMult *= scriptMods[1];
 
-        this.hasValidWorkingBlocks = allValid;
-        if (!allValid) {
-            this.rpmModifier = 0.0f;
-        } else if (poorCount > 0) {
-            this.rpmModifier = (float) Config.POOR_MULTIPLIER.getAsDouble();
-        } else if (greatCount == total) {
-            this.rpmModifier = (float) Config.GREAT_MULTIPLIER.getAsDouble();
-        } else {
-            this.rpmModifier = (float) Config.NORMAL_MULTIPLIER.getAsDouble();
-        }
+        this.hasValidWorkingBlocks = evalResult.isValid();
+        this.rpmModifier = speedMult;
+        this.pathStressModifier = stressMult;
+        this.efficiencyPercent = Math.round(speedMult * 100.0f);
+        this.invalidBlockCount = evalResult.invalidBlocks();
 
-        boolean wasGenerating = oldValid && oldModifier > 0 && getBlockState().getValue(HAS_WORKER);
-        boolean willGenerate = this.hasValidWorkingBlocks && this.rpmModifier > 0 && getBlockState().getValue(HAS_WORKER);
+        boolean willGenerate = hasValidWorkingBlocks && (rpmModifier > 0);
 
         if (!wasGenerating && willGenerate) {
-            float existing = getTheoreticalSpeed();
-            if (existing != 0) {
-                this.generationDirection = Math.signum(existing);
+            float networkSpeed = getTheoreticalSpeed();
+            if (networkSpeed != 0) {
+                this.generationDirection = Math.signum(networkSpeed);
             }
         }
 
-        if (oldModifier != this.rpmModifier || oldValid != this.hasValidWorkingBlocks) {
-            if (!level.isClientSide()) {
-                updateGeneratedRotation();
-                notifyUpdate();
-            }
-        }
+        updateGeneratedRotation();
+        notifyUpdate();
     }
 
-    private void moveWorkerTo(Mob worker) {
-        if (worker == null || level == null || level.isClientSide()) {
-            return;
-        }
-
-        if (worker instanceof Horse horse && horse.isEating()) {
-            horse.setEating(false);
-        }
-
-        double baseRadius = 3.0;
-        double sizeFactor = Math.max(0.8, 1.0 - (worker.getBbWidth() - 0.5));
-        double radius = baseRadius * sizeFactor;
-
-        int ticksPerRotation = (int) (20 * 10 * getTickSpeedModifier());
-
-        BlockPos pos = this.worldPosition;
-        double bx = pos.getX() + 0.5D;
-        double by = pos.getY();
-        double bz = pos.getZ() + 0.5D;
-
-        double distanceToWorker = worker.distanceToSqr(pos.getCenter());
-
-        if (distanceToWorker <= (radius * radius) + 20.5) {
-            double progress;
-            if (ticksPerRotation == 0) {
-                progress = 0;
-            } else {
-                progress = (worker.level().getGameTime() % ticksPerRotation) / (double) ticksPerRotation;
-            }
-
-            double direction = Math.signum(getGeneratedSpeed() != 0 ? getGeneratedSpeed() : generationDirection);
-            if (direction == 0) direction = 1.0;
-
-            double angle = 2 * Math.PI * progress * direction;
-            double xOffset = radius * Math.sin(angle);
-            double zOffset = radius * Math.cos(angle);
-            double targetX = bx + xOffset;
-            double targetZ = bz + zOffset;
-
-            double nextAngle = 2 * Math.PI * (progress + 0.01) * direction;
-            double nextX = bx + radius * Math.sin(nextAngle);
-            double nextZ = bz + radius * Math.cos(nextAngle);
-
-            worker.teleportTo(targetX, by, targetZ);
-            WalkAnimationState animation = worker.walkAnimation;
-            animation.update(-animation.position(), 1);
-            float movementYaw = calculateYaw(targetX, targetZ, nextX, nextZ);
-            worker.setYRot(movementYaw);
-            worker.setYHeadRot(movementYaw);
-        }
+    public float getEfficiencyPercent() {
+        return efficiencyPercent;
     }
 
-    private float calculateYaw(double currentX, double currentZ, double targetX, double targetZ) {
-        double deltaX = targetX - currentX;
-        double deltaZ = targetZ - currentZ;
-        float yaw = (float) Math.toDegrees(Math.atan2(deltaZ, deltaX));
-        return yaw - 90.0F;
+    public int getInvalidBlockCount() {
+        return invalidBlockCount;
     }
 
-    private double getTickSpeedModifier() {
-        return rpmModifier > 0 ? (Math.PI - .14d) / (2 * rpmModifier) : 0;
+    public float getSpeedBonusPercent() {
+        return speedBonusPercent;
+    }
+
+    public float getHealthBonusPercent() {
+        return healthBonusPercent;
+    }
+
+    public String getCachedWorkerName() {
+        return cachedWorkerName;
+    }
+
+    public float getEffectiveBaseRpm() {
+        return effectiveBaseRpm;
+    }
+
+    public float getEffectiveBaseStress() {
+        return effectiveBaseStress;
+    }
+
+    private void moveWorkerTo(Mob mob) {
+        if (level == null || mob == null) return;
+
+        double dt = (1.0 / 20.0);
+        float angularSpeed = (float) Math.toRadians(getGeneratedSpeed() * 6.0);
+        float currentAngle = (float) Math.toRadians(mob.getYRot());
+
+        float radius = 2.5f;
+        Optional<WorkerStats> stats = WorkerResolver.getBaseStats(mob.getType());
+        if (stats.isPresent()) {
+            radius = stats.get().movementRadius();
+        }
+
+        float forwardTangentAngle = currentAngle + (float) Math.toRadians(90.0 * Math.signum(getGeneratedSpeed()));
+        float newAngle = currentAngle + (angularSpeed * (float) dt);
+
+        double targetX = worldPosition.getX() + 0.5 + radius * Math.cos(newAngle);
+        double targetZ = worldPosition.getZ() + 0.5 + radius * Math.sin(newAngle);
+
+        mob.setYRot((float) Math.toDegrees(forwardTangentAngle));
+        mob.setYHeadRot((float) Math.toDegrees(forwardTangentAngle));
+        mob.setYBodyRot((float) Math.toDegrees(forwardTangentAngle));
+
+        mob.setPos(targetX, mob.getY(), targetZ);
+
+        WalkAnimationState walkState = mob.walkAnimation;
+        walkState.setSpeed(1.0f);
+        walkState.update(1.0f, 0.2f);
     }
 }

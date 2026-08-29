@@ -44,6 +44,7 @@ public class CreateHorsePower {
         BlockRegister.register();
         TileEntityRegister.register();
         modEventBus.addListener(this::commonSetup);
+        modEventBus.addListener(net.steampn.createhorsepower.registry.CHPDataMaps::register);
 
         modContainer.registerConfig(ModConfig.Type.SERVER, Config.SPEC);
 
@@ -52,6 +53,11 @@ public class CreateHorsePower {
 
     private void commonSetup(final FMLCommonSetupEvent event){
         LOGGER.debug("{} is registered!", BlockRegister.HORSE_CRANK.get());
+    }
+
+    @SubscribeEvent
+    public void onRegisterCommands(net.neoforged.neoforge.event.RegisterCommandsEvent event) {
+        net.steampn.createhorsepower.command.CHPCommands.register(event.getDispatcher(), event.getBuildContext());
     }
 
     @SubscribeEvent

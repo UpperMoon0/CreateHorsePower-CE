@@ -1,0 +1,73 @@
+{
+  "values": {
+    "#createhorsepower:workers/large": {
+      "health_scaling": 0.2,
+      "speed_scaling": 0.5,
+      "stress": 512.0
+    },
+    "#createhorsepower:workers/medium": {},
+    "#createhorsepower:workers/small": {
+      "stress": 128.0
+    },
+    "minecraft:camel": {
+      "health_scaling": 0.4,
+      "requires_tamed": true,
+      "speed_scaling": 0.4,
+      "stress": 750.0
+    },
+    "minecraft:cow": {
+      "health_scaling": 0.2,
+      "rpm": 3.0,
+      "stress": 300.0
+    },
+    "minecraft:donkey": {
+      "health_scaling": 0.3,
+      "requires_tamed": true,
+      "speed_scaling": 0.5,
+      "stress": 650.0
+    },
+    "minecraft:horse": {
+      "health_scaling": 0.25,
+      "requires_tamed": true,
+      "rpm": 5.0,
+      "speed_scaling": 0.75,
+      "stress": 600.0
+    },
+    "minecraft:llama": {
+      "health_scaling": 0.2,
+      "requires_tamed": true,
+      "rpm": 3.5,
+      "speed_scaling": 0.3,
+      "stress": 350.0
+    },
+    "minecraft:mule": {
+      "health_scaling": 0.35,
+      "requires_tamed": true,
+      "rpm": 4.5,
+      "speed_scaling": 0.6,
+      "stress": 700.0
+    },
+    "minecraft:pig": {
+      "health_scaling": 0.1,
+      "rpm": 3.5,
+      "speed_scaling": 0.2,
+      "stress": 200.0
+    },
+    "minecraft:sheep": {
+      "health_scaling": 0.1,
+      "rpm": 3.0,
+      "stress": 180.0
+    },
+    "minecraft:trader_llama": {
+      "health_scaling": 0.2,
+      "requires_tamed": true,
+      "rpm": 3.5,
+      "speed_scaling": 0.3,
+      "stress": 350.0
+    },
+    "minecraft:wolf": {
+      "requires_tamed": true,
+      "stress": 150.0
+    }
+  }
+}

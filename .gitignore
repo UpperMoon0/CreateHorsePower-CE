@@ -29,3 +29,5 @@ run
 run-data
 test
 .DS_Store
+.cache
+src/generated/resources/.cache/
