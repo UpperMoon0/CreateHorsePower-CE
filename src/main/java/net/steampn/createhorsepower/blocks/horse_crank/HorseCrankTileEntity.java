@@ -655,7 +655,7 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
         double targetX = centerX + radius * Math.cos(newAngle);
         double targetZ = centerZ + radius * Math.sin(newAngle);
 
-        mob.setPos(targetX, mob.getY(), targetZ);
+        mob.teleportTo(targetX, mob.getY(), targetZ);
 
         double tangentAngle = newAngle + (Math.PI / 2.0) * direction;
         float yaw = (float) Math.toDegrees(tangentAngle);

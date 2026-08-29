@@ -12,7 +12,6 @@
     "minecraft:camel": {
       "health_reference": 32.0,
       "health_scaling": 0.4,
-      "requires_tamed": true,
       "speed_reference": 0.09,
       "speed_scaling": 0.4,
       "stress": 750.0
@@ -26,7 +25,6 @@
     },
     "minecraft:donkey": {
       "health_scaling": 0.3,
-      "requires_tamed": true,
       "speed_reference": 0.175,
       "speed_scaling": 0.5,
       "stress": 650.0
@@ -34,14 +32,12 @@
     "minecraft:horse": {
       "health_reference": 22.0,
       "health_scaling": 0.25,
-      "requires_tamed": true,
       "rpm": 5.0,
       "speed_scaling": 0.75,
       "stress": 600.0
     },
     "minecraft:llama": {
       "health_scaling": 0.2,
-      "requires_tamed": true,
       "rpm": 3.5,
       "speed_reference": 0.175,
       "speed_scaling": 0.3,
@@ -50,7 +46,6 @@
     "minecraft:mule": {
       "health_reference": 24.0,
       "health_scaling": 0.35,
-      "requires_tamed": true,
       "rpm": 4.5,
       "speed_reference": 0.2,
       "speed_scaling": 0.6,
@@ -73,14 +68,12 @@
     },
     "minecraft:trader_llama": {
       "health_scaling": 0.2,
-      "requires_tamed": true,
       "rpm": 3.5,
       "speed_reference": 0.175,
       "speed_scaling": 0.3,
       "stress": 350.0
     },
     "minecraft:wolf": {
-      "requires_tamed": true,
       "speed_reference": 0.3,
       "stress": 150.0
     }

@@ -114,4 +114,22 @@ public class WorkerStatsCodecTest {
         assertThrows(IllegalArgumentException.class, () -> PathStats.of(1.0f, -0.5f));
         assertThrows(IllegalArgumentException.class, () -> new PathStats(Float.NaN, 1.0f));
     }
+
+    @Test
+    @DisplayName("Default WorkerStats has requiresTamed set to false")
+    void testDefaultWorkerStatsRequiresTamedFalse() {
+        assertFalse(WorkerStats.DEFAULT.requiresTamed(), "Default WorkerStats must have requiresTamed = false");
+        String horseJson = """
+                {
+                    "rpm": 5.0,
+                    "stress": 600.0,
+                    "speed_scaling": 0.75,
+                    "health_scaling": 0.25
+                }
+                """;
+        JsonObject jsonObject = JsonParser.parseString(horseJson).getAsJsonObject();
+        var result = WorkerStats.CODEC.parse(JsonOps.INSTANCE, jsonObject);
+        assertTrue(result.result().isPresent());
+        assertFalse(result.result().get().requiresTamed(), "Omitted requires_tamed must default to false");
+    }
 }
