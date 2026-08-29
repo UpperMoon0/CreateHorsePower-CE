@@ -14,7 +14,7 @@ import static com.simibubi.create.foundation.data.TagGen.pickaxeOnly;
 
 public class BlockRegister {
 
-    public static final CreateRegistrate REGISTRATE = CreateHorsePower.CREATE_REGISTRATE.defaultCreativeTab(CreativeModeTabs.FUNCTIONAL_BLOCKS);
+    public static final CreateRegistrate REGISTRATE = CreateHorsePower.CREATE_REGISTRATE.defaultCreativeTab(CHPCreativeTabs.MAIN_TAB.getKey());
 
     public static final BlockEntry<HorseCrankBlock> HORSE_CRANK = REGISTRATE.block("horse_crank", HorseCrankBlock::new)
             .initialProperties(SharedProperties::stone)

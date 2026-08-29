@@ -31,7 +31,7 @@ public class CreateHorsePower {
     private static final Logger LOGGER = LogUtils.getLogger();
     public static final String MODID = "createhorsepower";
     public static final CreateRegistrate CREATE_REGISTRATE = CreateRegistrate.create(MODID)
-            .defaultCreativeTab((ResourceKey<CreativeModeTab>) null);
+            .defaultCreativeTab(net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.CREATIVE_MODE_TAB, ResourceLocation.fromNamespaceAndPath(MODID, "main")));
 
     public CreateHorsePower(IEventBus modEventBus, ModContainer modContainer){
         CREATE_REGISTRATE.addDataGenerator(com.tterrag.registrate.providers.ProviderType.LANG, provider -> {
@@ -41,6 +41,7 @@ public class CreateHorsePower {
 
         CREATE_REGISTRATE.registerEventListeners(modEventBus);
 
+        net.steampn.createhorsepower.registry.CHPCreativeTabs.register(modEventBus);
         BlockRegister.register();
         TileEntityRegister.register();
         modEventBus.addListener(this::commonSetup);
