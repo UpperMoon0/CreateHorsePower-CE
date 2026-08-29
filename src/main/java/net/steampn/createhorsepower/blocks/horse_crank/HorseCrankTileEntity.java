@@ -109,6 +109,9 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
         if (lastKnownWorkerPos != null) {
             compound.putLong("WorkerPos", lastKnownWorkerPos.asLong());
         }
+        if (clientPacket) {
+            compound.putBoolean("WorkerResolved", workerResolved);
+        }
     }
 
     @Override
@@ -127,6 +130,11 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
         }
         if (compound.contains("WorkerPos")) {
             lastKnownWorkerPos = BlockPos.of(compound.getLong("WorkerPos"));
+        }
+        if (clientPacket) {
+            workerResolved = compound.getBoolean("WorkerResolved");
+        } else {
+            workerResolved = false;
         }
     }
 

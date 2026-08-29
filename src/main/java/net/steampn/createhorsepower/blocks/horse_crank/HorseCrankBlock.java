@@ -116,18 +116,63 @@ public class HorseCrankBlock extends KineticBlock implements ICogWheel, IBE<Hors
     }
 
     @Override
+    protected ItemInteractionResult useItemOn(ItemStack stack, BlockState state, Level level, BlockPos pos, Player player, InteractionHand hand, BlockHitResult hitResult) {
+        if (stack.is(Items.LEAD)) {
+            boolean hasKnot = CHPUtils.getKnot(level, pos).isPresent();
+            boolean hasWorker = state.getValue(HAS_WORKER) || hasKnot;
+
+            if (hasWorker) {
+                player.displayClientMessage(Component.translatable("tooltip.createhorsepower.horse_crank.alreadyHasWorker"), true);
+                return ItemInteractionResult.sidedSuccess(level.isClientSide);
+            }
+
+            List<Mob> mobsNearPlayer = level.getEntitiesOfClass(Mob.class, new AABB(pos).inflate(7.0D), mob -> mob.isLeashed() && mob.getLeashHolder() == player);
+
+            if (mobsNearPlayer.isEmpty()) {
+                return ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
+            }
+
+            if (mobsNearPlayer.size() > 1) {
+                player.displayClientMessage(Component.translatable("tooltip.createhorsepower.horse_crank.maximumMobs"), true);
+                return ItemInteractionResult.sidedSuccess(level.isClientSide);
+            }
+
+            Mob mob = mobsNearPlayer.getFirst();
+            CHPUtils.WorkerTier tier = CHPUtils.getWorkerTier(mob.getType());
+            if (!tier.isValid()) {
+                player.displayClientMessage(Component.translatable("tooltip.createhorsepower.horse_crank.notValidWorker"), true);
+                return ItemInteractionResult.sidedSuccess(level.isClientSide);
+            }
+
+            if (!level.isClientSide()) {
+                LeadItem.bindPlayerMobs(player, level, pos);
+                if (level.getBlockEntity(pos) instanceof HorseCrankTileEntity crankBe) {
+                    crankBe.attachWorker(mob, tier);
+                } else {
+                    boolean small = tier == CHPUtils.WorkerTier.SMALL;
+                    boolean medium = tier == CHPUtils.WorkerTier.MEDIUM;
+                    boolean large = tier == CHPUtils.WorkerTier.LARGE;
+                    level.setBlock(pos, state.setValue(HAS_WORKER, true).setValue(SMALL_WORKER_STATE, small).setValue(MEDIUM_WORKER_STATE, medium).setValue(LARGE_WORKER_STATE, large), 3);
+                }
+                player.displayClientMessage(Component.translatable("tooltip.createhorsepower.horse_crank.attached"), true);
+            }
+
+            return ItemInteractionResult.sidedSuccess(level.isClientSide);
+        }
+
+        if (!stack.isEmpty()) {
+            return ItemInteractionResult.SKIP_DEFAULT_BLOCK_INTERACTION;
+        }
+
+        return ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
+    }
+
+    @Override
     protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hitResult) {
         boolean hasKnot = CHPUtils.getKnot(level, pos).isPresent();
         boolean hasWorker = state.getValue(HAS_WORKER) || hasKnot;
 
-        List<Mob> mobsNearPlayer = level.getEntitiesOfClass(Mob.class, new AABB(pos).inflate(7.0D), mob -> mob.isLeashed() && mob.getLeashHolder() == player);
-
         if (hasWorker) {
-            if (!mobsNearPlayer.isEmpty()) {
-                player.displayClientMessage(Component.translatable("tooltip.createhorsepower.horse_crank.alreadyHasWorker"), true);
-                return InteractionResult.FAIL;
-            }
-
             // Detach mob cleanly through BE on server
             if (!level.isClientSide()) {
                 if (level.getBlockEntity(pos) instanceof HorseCrankTileEntity crankBe) {
@@ -140,35 +185,6 @@ public class HorseCrankBlock extends KineticBlock implements ICogWheel, IBE<Hors
             return InteractionResult.sidedSuccess(level.isClientSide);
         }
 
-        if (mobsNearPlayer.isEmpty()) {
-            return InteractionResult.PASS;
-        }
-
-        if (mobsNearPlayer.size() > 1) {
-            player.displayClientMessage(Component.translatable("tooltip.createhorsepower.horse_crank.maximumMobs"), true);
-            return InteractionResult.FAIL;
-        }
-
-        Mob mob = mobsNearPlayer.getFirst();
-        CHPUtils.WorkerTier tier = CHPUtils.getWorkerTier(mob.getType());
-        if (!tier.isValid()) {
-            player.displayClientMessage(Component.translatable("tooltip.createhorsepower.horse_crank.notValidWorker"), true);
-            return InteractionResult.FAIL;
-        }
-
-        if (!level.isClientSide()) {
-            LeadItem.bindPlayerMobs(player, level, pos);
-            if (level.getBlockEntity(pos) instanceof HorseCrankTileEntity crankBe) {
-                crankBe.attachWorker(mob, tier);
-            } else {
-                boolean small = tier == CHPUtils.WorkerTier.SMALL;
-                boolean medium = tier == CHPUtils.WorkerTier.MEDIUM;
-                boolean large = tier == CHPUtils.WorkerTier.LARGE;
-                level.setBlock(pos, state.setValue(HAS_WORKER, true).setValue(SMALL_WORKER_STATE, small).setValue(MEDIUM_WORKER_STATE, medium).setValue(LARGE_WORKER_STATE, large), 3);
-            }
-            player.displayClientMessage(Component.translatable("tooltip.createhorsepower.horse_crank.attached"), true);
-        }
-
-        return InteractionResult.sidedSuccess(level.isClientSide);
+        return InteractionResult.PASS;
     }
 }
