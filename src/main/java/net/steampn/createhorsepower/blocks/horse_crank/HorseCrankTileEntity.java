@@ -66,6 +66,7 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
     private int missingWorkerTicks = 0;
     private long lastPathCheckTick = -1;
     private int statRefreshTimer = 0;
+    private long nextWorkStartRetryTick = 0;
 
     public HorseCrankTileEntity(BlockEntityType<?> type, BlockPos pos, BlockState state) {
         super(type, pos, state);
@@ -133,7 +134,7 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
 
     @Override
     public float getGeneratedSpeed() {
-        if (!isWorking) {
+        if (!isWorking || !canPhysicallyWork()) {
             return 0.0F;
         }
         return effectiveBaseRpm * rpmModifier * generationDirection;
@@ -141,7 +142,7 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
 
     @Override
     public float calculateAddedStressCapacity() {
-        if (!isWorking) return 0;
+        if (!isWorking || !canPhysicallyWork()) return 0;
 
         float speed = getGeneratedSpeed();
         if (speed == 0) return 0;
@@ -209,8 +210,6 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
         compound.putString("RedstoneMode", redstoneMode.getSerializedName());
         compound.putFloat("EffectiveBaseRpm", effectiveBaseRpm);
         compound.putFloat("EffectiveBaseStress", effectiveBaseStress);
-        compound.putBoolean("WorkerEligible", workerEligible);
-        compound.putBoolean("IsWorking", isWorking);
 
         if (workerUuid != null) {
             compound.putUUID("WorkerUUID", workerUuid);
@@ -221,6 +220,8 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
 
         if (clientPacket) {
             compound.putBoolean("WorkerResolved", workerResolved);
+            compound.putBoolean("WorkerEligible", workerEligible);
+            compound.putBoolean("IsWorking", isWorking);
             compound.putBoolean("ScriptVetoed", scriptVetoed);
             compound.putFloat("SpeedBonusPercent", speedBonusPercent);
             compound.putFloat("HealthBonusPercent", healthBonusPercent);
@@ -238,8 +239,6 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
         if (compound.contains("HasValidWorkingBlocks")) hasValidWorkingBlocks = compound.getBoolean("HasValidWorkingBlocks");
         if (compound.contains("EffectiveBaseRpm")) effectiveBaseRpm = compound.getFloat("EffectiveBaseRpm");
         if (compound.contains("EffectiveBaseStress")) effectiveBaseStress = compound.getFloat("EffectiveBaseStress");
-        if (compound.contains("WorkerEligible")) workerEligible = compound.getBoolean("WorkerEligible");
-        if (compound.contains("IsWorking")) isWorking = compound.getBoolean("IsWorking");
 
         if (compound.contains("RedstoneMode")) {
             String modeStr = compound.getString("RedstoneMode");
@@ -267,6 +266,8 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
 
         if (clientPacket) {
             workerResolved = compound.getBoolean("WorkerResolved");
+            workerEligible = compound.getBoolean("WorkerEligible");
+            isWorking = compound.getBoolean("IsWorking");
             scriptVetoed = compound.getBoolean("ScriptVetoed");
             speedBonusPercent = compound.getFloat("SpeedBonusPercent");
             healthBonusPercent = compound.getFloat("HealthBonusPercent");
@@ -275,6 +276,9 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
             cachedWorkerName = compound.getString("CachedWorkerName");
         } else {
             workerResolved = false;
+            workerEligible = false;
+            isWorking = false;
+            scriptVetoed = false;
         }
     }
 
@@ -411,19 +415,23 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
             checkPathBlocks();
         }
 
-        // 3. Centralized working state transition with non-permanent beforeWorkStart check
+        // 3. Centralized working state transition with non-permanent beforeWorkStart check & cooldown
         boolean canWork = canPhysicallyWork();
         boolean wasWorking = this.isWorking;
 
         if (canWork) {
             if (!wasWorking) {
-                if (cachedWorkerMob != null && !OptionalIntegrations.fireBeforeWorkStart(cachedWorkerMob, worldPosition, level)) {
-                    this.scriptVetoed = true;
-                    this.isWorking = false;
-                } else {
-                    this.scriptVetoed = false;
-                    this.isWorking = true;
-                    OptionalIntegrations.fireWorkStarted(cachedWorkerMob, worldPosition, level);
+                long time = level.getGameTime();
+                if (!scriptVetoed || time >= nextWorkStartRetryTick) {
+                    if (cachedWorkerMob != null && !OptionalIntegrations.fireBeforeWorkStart(cachedWorkerMob, worldPosition, level)) {
+                        this.scriptVetoed = true;
+                        this.isWorking = false;
+                        this.nextWorkStartRetryTick = time + 20;
+                    } else {
+                        this.scriptVetoed = false;
+                        this.isWorking = true;
+                        OptionalIntegrations.fireWorkStarted(cachedWorkerMob, worldPosition, level);
+                    }
                 }
             }
         } else {

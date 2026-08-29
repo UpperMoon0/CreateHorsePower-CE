@@ -175,7 +175,7 @@ HorsePowerEvents.beforeAttach(event => {
 HorsePowerEvents.beforeWorkStart(event => {
     // event.worker, event.crankPos, event.level
     if (event.level.isRaining()) {
-        event.cancel() // Suspends work during rain
+        event.cancel() // Prevents the crank from starting during rain
     }
 })
 
@@ -203,7 +203,7 @@ HorsePowerEvents.outputCalculated(event => {
 Located at `saves/<world>/serverconfig/createhorsepower-server.toml`:
 
 ```toml
-[general]
+[balance]
     globalRpmMultiplier = 1.0
     globalStressMultiplier = 1.0
     enableIndividualAnimalStats = true
