@@ -9,8 +9,14 @@ public interface HorsePowerKubeEvents {
     EventHandler BEFORE_ATTACH = GROUP.server("beforeAttach", () -> BeforeAttachKubeEvent.class).hasResult();
     EventHandler WORKER_ATTACHED = GROUP.server("workerAttached", () -> WorkerAttachedKubeEvent.class);
     EventHandler WORKER_DETACHED = GROUP.server("workerDetached", () -> WorkerDetachedKubeEvent.class);
-    EventHandler WORK_STARTED = GROUP.server("workStarted", () -> WorkStartedKubeEvent.class).hasResult();
+
+    EventHandler BEFORE_WORK_START = GROUP.server("beforeWorkStart", () -> BeforeWorkStartKubeEvent.class).hasResult();
+    EventHandler WORK_STARTED = GROUP.server("workStarted", () -> WorkStartedKubeEvent.class);
     EventHandler WORK_STOPPED = GROUP.server("workStopped", () -> WorkStoppedKubeEvent.class);
+
     EventHandler OUTPUT_CALCULATED = GROUP.server("outputCalculated", () -> OutputCalculatedKubeEvent.class);
     EventHandler PATH_EVALUATED = GROUP.server("pathEvaluated", () -> PathEvaluatedKubeEvent.class);
+
+    EventHandler WORKER_PROFILES = GROUP.startup("workerProfiles", () -> WorkerProfilesKubeEvent.class);
+    EventHandler PATH_PROFILES = GROUP.startup("pathProfiles", () -> PathProfilesKubeEvent.class);
 }

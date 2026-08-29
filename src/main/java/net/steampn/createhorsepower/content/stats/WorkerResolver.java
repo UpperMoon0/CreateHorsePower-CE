@@ -44,6 +44,11 @@ public class WorkerResolver {
     }
 
     public static Optional<WorkerStats> getBaseStats(EntityType<?> type) {
+        Optional<WorkerStats> kjsStats = net.steampn.createhorsepower.compat.kubejs.KubeJSProfileRegistry.getWorker(type);
+        if (kjsStats.isPresent()) {
+            return kjsStats;
+        }
+
         Holder<EntityType<?>> holder = BuiltInRegistries.ENTITY_TYPE.wrapAsHolder(type);
         WorkerStats stats = holder.getData(CHPDataMaps.WORKER_STATS);
         if (stats != null) {
@@ -91,6 +96,13 @@ public class WorkerResolver {
         // Check baby constraint
         if (mob.isBaby() && !stats.allowBaby() && !Config.ALLOW_BABIES.get()) {
             return ResolvedWorker.INVALID;
+        }
+
+        // Check undead constraint
+        if (!Config.ALLOW_UNDEAD_WORKERS.get()) {
+            if (mob.isInvertedHealAndHarm() || mob.getType().is(net.minecraft.tags.EntityTypeTags.UNDEAD)) {
+                return ResolvedWorker.INVALID;
+            }
         }
 
         // Check tamed constraint

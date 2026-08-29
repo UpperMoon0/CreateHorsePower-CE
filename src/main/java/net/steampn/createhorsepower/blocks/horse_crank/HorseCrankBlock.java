@@ -139,9 +139,7 @@ public class HorseCrankBlock extends KineticBlock implements ICogWheel, IBE<Hors
             return ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
         }
 
-        if (stack.is(net.steampn.createhorsepower.utils.CHPTags.Items.WORKER_LEASHES)
-                || stack.is(net.steampn.createhorsepower.utils.CHPTags.Items.ATTACHMENT_ITEMS)
-                || stack.is(Items.LEAD)) {
+        if (stack.is(net.steampn.createhorsepower.utils.CHPTags.Items.ATTACHMENT_ITEMS)) {
 
             if (level.isClientSide()) {
                 return ItemInteractionResult.SUCCESS;

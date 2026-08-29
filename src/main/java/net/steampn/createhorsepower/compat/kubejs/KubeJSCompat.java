@@ -26,9 +26,14 @@ public class KubeJSCompat {
         HorsePowerKubeEvents.WORKER_DETACHED.post(ScriptType.SERVER, event);
     }
 
-    public static boolean fireWorkStarted(Mob worker, BlockPos pos, Level level) {
+    public static boolean fireBeforeWorkStart(Mob worker, BlockPos pos, Level level) {
+        BeforeWorkStartKubeEvent event = new BeforeWorkStartKubeEvent(worker, pos, level);
+        return !HorsePowerKubeEvents.BEFORE_WORK_START.post(ScriptType.SERVER, event).interruptFalse();
+    }
+
+    public static void fireWorkStarted(Mob worker, BlockPos pos, Level level) {
         WorkStartedKubeEvent event = new WorkStartedKubeEvent(worker, pos, level);
-        return !HorsePowerKubeEvents.WORK_STARTED.post(ScriptType.SERVER, event).interruptFalse();
+        HorsePowerKubeEvents.WORK_STARTED.post(ScriptType.SERVER, event);
     }
 
     public static void fireWorkStopped(BlockPos pos, Level level) {

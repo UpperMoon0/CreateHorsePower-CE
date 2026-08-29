@@ -114,6 +114,11 @@ public class PathEvaluator {
     }
 
     public static Optional<PathStats> getPathStats(Block block) {
+        Optional<PathStats> kjsStats = net.steampn.createhorsepower.compat.kubejs.KubeJSProfileRegistry.getPathBlock(block);
+        if (kjsStats.isPresent()) {
+            return kjsStats;
+        }
+
         Holder<Block> holder = BuiltInRegistries.BLOCK.wrapAsHolder(block);
         PathStats dataMapStats = holder.getData(CHPDataMaps.PATH_STATS);
         if (dataMapStats != null) {

@@ -40,6 +40,7 @@
   "tooltip.createhorsepower.goggles.status.worker_unloaded": "Status: Worker Unloaded (Suspended)",
   "tooltip.createhorsepower.goggles.status.worker_ineligible": "Status: Worker Not Eligible",
   "tooltip.createhorsepower.goggles.status.invalid_path": "Status: Invalid Path (%s invalid tiles)",
+  "tooltip.createhorsepower.goggles.status.vetoed": "Status: Work Suspended by Script",
   "tooltip.createhorsepower.goggles.status.working": "Status: Working",
   "tooltip.createhorsepower.goggles.worker": "Worker: %s",
   "tooltip.createhorsepower.goggles.path_efficiency": "Path Efficiency: %s",

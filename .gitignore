@@ -31,3 +31,4 @@ test
 .DS_Store
 .cache
 src/generated/resources/.cache/
+logs/

@@ -40,11 +40,17 @@ public final class OptionalIntegrations {
         }
     }
 
-    public static boolean fireWorkStarted(Mob worker, BlockPos pos, Level level) {
+    public static boolean fireBeforeWorkStart(Mob worker, BlockPos pos, Level level) {
         if (!KUBE_JS_LOADED) {
             return true;
         }
-        return KubeJSCompat.fireWorkStarted(worker, pos, level);
+        return KubeJSCompat.fireBeforeWorkStart(worker, pos, level);
+    }
+
+    public static void fireWorkStarted(Mob worker, BlockPos pos, Level level) {
+        if (KUBE_JS_LOADED) {
+            KubeJSCompat.fireWorkStarted(worker, pos, level);
+        }
     }
 
     public static void fireWorkStopped(BlockPos pos, Level level) {
