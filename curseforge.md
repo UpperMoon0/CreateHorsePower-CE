@@ -1,145 +1,62 @@
 # Create Horse Power - CE
 
-**CE stands for Community Edition.**
+**Create Horse Power - Community Edition** brings reliable animal-powered rotational generation to Create. Harness a supported mob to a Horse Crank, build a proper walking path, and power early factories without wind, water, steam, electricity, or engines.
 
-> **Create Horse Power - CE is an independent, community-maintained fork of [Create Horse Power](https://github.com/SteamPunkNation/CreateHorsePower) by SteamPunkNation. The original concept and project were created by SteamPunkNation; CE continues that work with maintenance, compatibility updates, and bug fixes.**
->
-> *Create Horse Power - CE intentionally retains the original `createhorsepower` mod ID for seamless world compatibility. Do not install CE and the original mod at the same time.*
+CE is an independent, community-maintained continuation of [Create Horse Power by SteamPunkNation](https://github.com/SteamPunkNation/CreateHorsePower). It intentionally retains the original `createhorsepower` mod ID for world compatibility. **Do not install CE and the original mod together.**
 
-Harness horses and other mobs to power Create contraptions — a community-maintained continuation with modern NeoForge support and long-standing lifecycle fixes.
+## Requirements
 
----
+- Minecraft 1.21.1
+- NeoForge 21.1.215 or newer
+- Create 6.0.8 up to, but not including, 6.1.0
+- Java 21
 
-# Overview
+Jade and KubeJS are optional integrations.
 
-**Create Horse Power - CE** adds animal-powered machinery to the Create ecosystem.
+## Animal Power Framework
 
-Its centerpiece is the **Horse Crank**: attach a suitable animal, give it a proper walking path, and let it turn your Create contraptions without water wheels, windmills, engines, or electricity.
+The 1.2 update expands the Horse Crank into a data-driven framework while preserving its early-game Create role:
 
-It is especially useful for **primitive, medieval, low-tech, and progression-focused modpacks**, where Create automation should become available before more advanced power sources.
+- Worker Data Maps define RPM, stress capacity, movement radius, attribute scaling, taming requirements, and baby-worker rules.
+- Path Data Maps define speed and stress multipliers for any block.
+- Individual movement speed and max health can scale a worker's live output.
+- Weighted-average, worst-block, and legacy path evaluation modes support different pack designs.
+- Redstone modes can stop, require, or ignore a signal and can be cycled with a Create wrench.
+- Custom attachment items and worker tiers can be supplied through datapack tags.
+- Engineer's Goggles, Jade, and `/createhorsepower` commands expose useful diagnostics.
+- Optional KubeJS startup profiles and lifecycle events support scripted packs.
 
-Community Edition continues the original Create Horse Power project while focusing on **maintenance, stability, modern Minecraft support, and better modpack integration**.
+Movement radii are supported from 0.5 to 6.0 blocks. This cap keeps workers within normal Minecraft lead mechanics.
 
-## What Does It Add?
+## Reliability Improvements
 
-### Horse Crank
+- Persistent worker identity and recovery across chunk reloads.
+- Safe cleanup when a worker detaches or a crank is removed.
+- Stable direction handling beside existing Create kinetic networks.
+- Smooth server-authoritative worker movement.
+- Live kinetic refresh when worker attributes change.
+- Unloaded workers, invalid paths, redstone stops, ineligible workers, and KubeJS vetoes remain distinct states.
 
-The Horse Crank converts animal labor into Create rotational power.
+## For Modpacks
 
-Attach a supported mob to the crank and it will walk around the mechanism while generating **RPM and Stress Units** for the connected Create network.
+Create Horse Power CE supports primitive, medieval, historical, and staged technology packs. Packmakers can customize workers, output, paths, attachment items, redstone behavior, and scripts without editing Java code.
 
-This makes animal power a practical early-game alternative to conventional Create generators.
+Read the complete [Packmaker and Modder Guide](https://github.com/UpperMoon0/CreateHorsePower-CE/blob/main/docs/PACKMAKERS.md) for schemas, examples, config keys, precedence, commands, and KubeJS events.
 
-### Different Worker Sizes
+KubeJS profiles take priority over NeoForge Data Maps, which take priority over legacy tags and config lists. Built-in worker and path profiles therefore override old fallback values for the same mob or block.
 
-Workers can be classified into different power tiers:
+## Updating from CE 1.1
 
-- **Small workers** — lighter animals with lower stress capacity.
-- **Medium workers** — stronger general-purpose animals.
-- **Large workers** — powerful animals such as horses, donkeys, mules, and similar mobs.
+- Legacy server-config keys remain at the TOML root.
+- Existing cranks preserve the old redstone-ignored behavior; newly placed cranks use the configured default mode.
+- Built-in vanilla worker and path Data Maps take precedence over old tier and path settings. Override those Data Maps or use KubeJS to retune them.
+- Update any prerelease worker profile above a 6-block movement radius before loading it in 1.2; out-of-range Data Map or KubeJS values are rejected.
+- Back up important worlds before updating.
 
-This lets modpack authors build progression around the animals available to the player.
+Full release details are available in the [1.2.0 changelog](https://github.com/UpperMoon0/CreateHorsePower-CE/blob/main/changelog/1.21.1-1.2.0-ce.1.md).
 
-### Path Quality Matters
+## Credits
 
-The surface around the Horse Crank affects how efficiently the animal can work.
+The original project, concept, and foundation were created by SteamPunkNation. Community Edition is maintained by UpperMoon0 with contributions from the original and community contributors.
 
-Different configured path materials can provide:
-
-- **Poor paths** — reduced output.
-- **Normal paths** — standard output.
-- **Great paths** — improved output.
-
-That means upgrading the working area around the crank can become part of your progression instead of the block simply producing free power anywhere.
-
-### Configurable Power
-
-Server owners and modpack developers can configure:
-
-- Base RPM.
-- Stress capacity for each worker tier.
-- Poor, normal, and great path multipliers.
-- Which mobs are valid workers.
-- Which blocks count as valid path materials.
-
-Community Edition also supports **data-driven entity tags**, making it easier for datapacks and other mods to add compatible workers without hard-coded integrations.
-
----
-
-# Why Community Edition?
-
-The original Create Horse Power introduced a great idea, but development eventually slowed and several issues remained open.
-
-**Community Edition exists to keep that idea usable on modern Create installations.**
-
-Compared with the older version, CE focuses on fixing several long-standing problems:
-
-- **Chunk reload reliability** — attached workers are tracked persistently instead of being forgotten when chunks unload and reload.
-- **Stable adjacent Horse Cranks** — generator direction handling has been reworked to cooperate with Create's kinetic network instead of corrupting rotation state.
-- **Proper leash cleanup** — breaking or detaching a Horse Crank no longer leaves behind ghost leash-knot entities.
-- **Modern 1.21.1 data formats** — recipes, loot tables, advancements, and blockstate resources have been updated for current Minecraft formats.
-- **NeoForge 1.21.1 support** — the project has been modernized for the current NeoForge/Create ecosystem.
-- **Broader modded-mob compatibility** — worker handling is no longer limited to a narrow class of vanilla-style pathfinding mobs.
-- **Data-driven worker categories** — datapacks can extend small, medium, and large worker lists using entity tags.
-- **Cleaner Create integration** — kinetic lifecycle handling now follows Create's own block-entity and network behavior more closely.
-
-The goal is not to turn Horse Power into a completely different mod. It is to keep the original concept simple while making it **reliable enough for real survival worlds and large modpacks**.
-
----
-
-# Why Use Animal Power?
-
-Create has many excellent ways to generate rotational force, but animal power fills a progression niche that most generators do not.
-
-It works particularly well for:
-
-- **Primitive and medieval modpacks**
-- **Age-based progression**
-- **Low-tech Create starts**
-- **Historical or survival-focused packs**
-- **Automation before wind, steam, electricity, or engines**
-- **Players who want functional farms to be part of their mechanical infrastructure**
-
-Instead of placing a passive generator and forgetting about it, your power source becomes part of the world: an animal, a working area, and a machine built around it.
-
----
-
-# Modpack Friendly
-
-Create Horse Power - CE is designed with modpack authors in mind.
-
-Worker lists, power values, path materials, and efficiency multipliers can all be adjusted to fit different progression systems.
-
-For example, a pack could make:
-
-**Donkey power → Horse power → Water power → Wind power → Steam power**
-
-a real technological progression rather than giving the player every Create power source at once.
-
----
-
-# Original Project & Credits
-
-Create Horse Power - CE is a maintained community fork of the original **Create Horse Power** project by **SteamPunkNation**.
-
-The original project, concept, and much of the foundation of this mod come from:
-
-[SteamPunkNation/CreateHorsePower — Powering Create Mod contraptions like it's medieval times.](https://github.com/SteamPunkNation/CreateHorsePower)
-
-Huge credit goes to **SteamPunkNation and the original contributors** for creating the mod and establishing the animal-powered Create concept.
-
-Community Edition builds on that work with maintenance, compatibility updates, bug fixes, and further modpack-focused improvements.
-
----
-
-# Requirements
-
-- **Minecraft 1.21.1**
-- **NeoForge**
-- **Create**
-
-Exact supported versions are listed on each release file.
-
----
-
-**Put your animals to work, power your early factories, and bring real horsepower to Create.**
+Source code and issue tracker: [UpperMoon0/CreateHorsePower-CE](https://github.com/UpperMoon0/CreateHorsePower-CE)

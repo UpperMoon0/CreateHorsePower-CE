@@ -1,7 +1,0 @@
-// 1.21.1	2026-08-29T15:21:48.8237895	Tags for minecraft:entity_type mod id createhorsepower
-304da94b4314e97a7a23ef255a7583fc273d727d data/createhorsepower/tags/entity_type/workers/large.json
-9722a482e5e1e1fe617a9d251ce1cdaffc254f50 data/createhorsepower/tags/entity_type/workers/medium.json
-6428137e941fff57159148308058b90f210b539e data/createhorsepower/tags/entity_type/workers/small.json
-949f3be327d6f38c958557c2d757811ba77ace56 data/createhorsepower/tags/entity_type/worker_large.json
-32b9ea08d5ff39927a11951bbc7dc6a2e23a3f00 data/createhorsepower/tags/entity_type/worker_medium.json
-7cf64a3416c06648c9ab905093af5a88d086fdd8 data/createhorsepower/tags/entity_type/worker_small.json

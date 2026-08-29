@@ -4,6 +4,7 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.item.Item;
 
 import static net.steampn.createhorsepower.CreateHorsePower.MODID;
 
@@ -19,6 +20,15 @@ public class CHPTags {
 
         private static TagKey<EntityType<?>> tag(String name){
             return TagKey.create(Registries.ENTITY_TYPE, ResourceLocation.fromNamespaceAndPath(MODID, name));
+        }
+    }
+
+    public static class Items {
+        public static final TagKey<Item> WORKER_LEASHES = tag("worker_leashes");
+        public static final TagKey<Item> ATTACHMENT_ITEMS = tag("attachment_items");
+
+        private static TagKey<Item> tag(String name) {
+            return TagKey.create(Registries.ITEM, ResourceLocation.fromNamespaceAndPath(MODID, name));
         }
     }
 }

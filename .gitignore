@@ -25,7 +25,10 @@ run
 forge*changelog.txt
 
 # Files from build
-run
-run-data
-test
+/run
+/run-data
+/test/
 .DS_Store
+.cache
+src/generated/resources/.cache/
+logs/
