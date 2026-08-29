@@ -14,6 +14,16 @@ public record WorkerStats(
         boolean requiresTamed,
         boolean allowBaby
 ) {
+    public WorkerStats {
+        validateNonNegativeFinite(baseRpm, "baseRpm");
+        validateNonNegativeFinite(stressCapacity, "stressCapacity");
+        validateRadius(movementRadius);
+        validateNonNegativeFinite(speedScaling, "speedScaling");
+        validatePositiveFinite(speedReference, "speedReference");
+        validateNonNegativeFinite(healthScaling, "healthScaling");
+        validatePositiveFinite(healthReference, "healthReference");
+    }
+
     public static final float DEFAULT_SPEED_REF = 0.225f;
     public static final float DEFAULT_HEALTH_REF = 20.0f;
 

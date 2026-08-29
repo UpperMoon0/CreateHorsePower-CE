@@ -105,4 +105,13 @@ public class WorkerStatsCodecTest {
         assertThrows(IllegalArgumentException.class, () -> WorkerStats.builder().movementRadius(Float.NaN));
         assertThrows(IllegalArgumentException.class, () -> WorkerStats.builder().speedReference(0.0f));
     }
+
+    @Test
+    @DisplayName("PathStats rejects non-finite or negative values")
+    void testPathStatsValidation() {
+        assertThrows(IllegalArgumentException.class, () -> PathStats.of(Float.NaN, 1.0f));
+        assertThrows(IllegalArgumentException.class, () -> PathStats.of(Float.POSITIVE_INFINITY, 1.0f));
+        assertThrows(IllegalArgumentException.class, () -> PathStats.of(1.0f, -0.5f));
+        assertThrows(IllegalArgumentException.class, () -> new PathStats(Float.NaN, 1.0f));
+    }
 }

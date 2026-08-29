@@ -133,10 +133,12 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
     }
 
     private void stopWorking() {
-        if (!isWorking) return;
+        boolean wasWorking = this.isWorking;
         this.isWorking = false;
         this.scriptVetoed = false;
-        if (level != null && !level.isClientSide()) {
+        this.nextWorkStartRetryTick = 0;
+
+        if (wasWorking && level != null && !level.isClientSide()) {
             OptionalIntegrations.fireWorkStopped(worldPosition, level);
         }
     }
@@ -296,6 +298,9 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
         this.workerUuid = worker.getUUID();
         this.lastKnownWorkerPos = worker.blockPosition();
         this.missingWorkerTicks = 0;
+        this.statRefreshTimer = 0;
+        this.nextWorkStartRetryTick = 0;
+        this.scriptVetoed = false;
         this.workerResolved = true;
         this.workerEligible = profile.isValid();
 
@@ -361,9 +366,13 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
     }
 
     public void onCrankRemoved() {
+        Mob worker = cachedWorkerMob;
         stopWorking();
         if (level != null && !level.isClientSide()) {
             CHPUtils.cleanUpLeash(level, worldPosition, true);
+            if (worker != null || workerUuid != null) {
+                OptionalIntegrations.fireWorkerDetached(worker, worldPosition, level);
+            }
         }
         clearWorkerReferences();
     }
@@ -373,6 +382,8 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
         this.workerUuid = null;
         this.lastKnownWorkerPos = null;
         this.missingWorkerTicks = 0;
+        this.statRefreshTimer = 0;
+        this.nextWorkStartRetryTick = 0;
         this.workerResolved = false;
         this.workerEligible = false;
         this.cachedWorkerName = "";

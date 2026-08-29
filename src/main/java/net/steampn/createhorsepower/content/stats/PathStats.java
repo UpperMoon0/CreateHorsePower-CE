@@ -7,6 +7,11 @@ public record PathStats(
         float speedMultiplier,
         float stressMultiplier
 ) {
+    public PathStats {
+        WorkerStats.validateNonNegativeFinite(speedMultiplier, "speedMultiplier");
+        WorkerStats.validateNonNegativeFinite(stressMultiplier, "stressMultiplier");
+    }
+
     public static final PathStats DEFAULT = new PathStats(1.0f, 1.0f);
     public static final PathStats NORMAL = new PathStats(1.0f, 1.0f);
     public static final PathStats POOR = new PathStats(0.75f, 0.90f);
@@ -20,6 +25,6 @@ public record PathStats(
     ).apply(instance, PathStats::new));
 
     public static PathStats of(float speedMultiplier, float stressMultiplier) {
-        return new PathStats(Math.max(0.0f, speedMultiplier), Math.max(0.0f, stressMultiplier));
+        return new PathStats(speedMultiplier, stressMultiplier);
     }
 }
