@@ -140,16 +140,19 @@ dependencies {
     compileOnly("dev.engine-room.flywheel:flywheel-neoforge-api-${minecraft_version}:${flywheel_version}")
     runtimeOnly("dev.engine-room.flywheel:flywheel-neoforge-${minecraft_version}:${flywheel_version}")
     implementation("com.tterrag.registrate:Registrate:${registrate_version}")
-    // compile against the JEI API but do not include it at runtime
-    compileOnly("mezz.jei:jei-${mc_version}-neoforge-api:${jei_version}")
-    // at runtime, use the full JEI jar for NeoForge
-    runtimeOnly("mezz.jei:jei-${mc_version}-neoforge:${jei_version}")
 
-    // Optional integrations
-    compileOnly("dev.latvian.mods:kubejs-neoforge:2101.7.2-build.368")
+    // JEI
+    compileOnly("mezz.jei:jei-${mc_version}-common-api:${jei_version}")
+    compileOnly("mezz.jei:jei-${mc_version}-neoforge-api:${jei_version}")
+    localRuntime("mezz.jei:jei-${mc_version}-neoforge:${jei_version}")
+
+    // Jade
     compileOnly("maven.modrinth:jade:15.10.5+neoforge")
-    localRuntime("dev.latvian.mods:kubejs-neoforge:2101.7.2-build.368")
     localRuntime("maven.modrinth:jade:15.10.5+neoforge")
+
+    // KubeJS
+    compileOnly("dev.latvian.mods:kubejs-neoforge:2101.7.2-build.368")
+    localRuntime("dev.latvian.mods:kubejs-neoforge:2101.7.2-build.368")
 }
 
 // This block of code expands all declared replace properties in the specified resource targets.
