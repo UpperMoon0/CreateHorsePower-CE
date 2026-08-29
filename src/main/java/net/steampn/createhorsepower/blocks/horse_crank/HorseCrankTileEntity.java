@@ -197,7 +197,7 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
             tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.invalid_path", invalidBlockCount).withStyle(ChatFormatting.RED));
         } else if (scriptVetoed) {
             tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.vetoed").withStyle(ChatFormatting.YELLOW));
-        } else {
+        } else if (isWorking) {
             tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.working").withStyle(ChatFormatting.GREEN));
         }
 
@@ -600,7 +600,7 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
             }
         }
 
-        if (wasResolved != this.workerResolved || wasEligible != this.workerEligible || outputChanged) {
+        if (wasResolved != this.workerResolved || wasEligible != this.workerEligible || outputChanged || radiusChanged) {
             updateGeneratedRotation();
             notifyUpdate();
         }

@@ -27,7 +27,7 @@ public class PathEvaluator {
     }
 
     public static Result evaluate(Level level, BlockPos centerPos, BlockPos[] offsets) {
-        if (level == null || offsets == null || offsets.length == 0) {
+        if (level == null || centerPos == null || offsets == null || offsets.length == 0) {
             return Result.INVALID;
         }
 
