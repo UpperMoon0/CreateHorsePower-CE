@@ -2,8 +2,13 @@ name: Release
 
 on:
   push:
+    branches:
+      - main
+    paths:
+      - 'gradle.properties'
     tags:
       - 'v*'
+  workflow_dispatch:
 
 concurrency:
   group: release-workflow
@@ -20,6 +25,31 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ensure Git tag exists
+        id: ensure_tag
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mod_version="$(sed -n 's/^mod_version[[:space:]]*=[[:space:]]*//p' gradle.properties | head -n1 | tr -d '\r' | xargs)"
+          if [[ -z "$mod_version" ]]; then
+            echo "mod_version is missing from gradle.properties" >&2
+            exit 1
+          fi
+          tag="v${mod_version}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --tags origin "$tag" | grep -q .; then
+            echo "Tag $tag already exists."
+          else
+            echo "Creating tag $tag..."
+            git tag -a "$tag" -m "Create Horse Power - CE ${mod_version}"
+            git push origin "$tag"
+          fi
 
       - name: Setup Java 21
         uses: actions/setup-java@v4
@@ -49,11 +79,6 @@ jobs:
           fi
           if [[ ! "$mod_version" =~ ^[0-9A-Za-z][0-9A-Za-z._+-]*$ ]]; then
             printf 'Invalid mod_version: %q\n' "$mod_version" >&2
-            exit 1
-          fi
-
-          if [[ "${GITHUB_REF_NAME}" != "v${mod_version}" ]]; then
-            echo "Tag ${GITHUB_REF_NAME} does not match mod_version v${mod_version}" >&2
             exit 1
           fi
 
@@ -158,6 +183,8 @@ jobs:
           if [[ "$http_status" =~ ^2 ]]; then
             file_id="$(jq -er '.id' <<< "$response")"
             echo "Published ${JAR_PATH} to CurseForge as file ID ${file_id}."
+          elif grep -Eqi 'already|duplicate' <<< "$response"; then
+            echo "CurseForge already has ${JAR_PATH}; treating this retry as successful."
           else
             echo "CurseForge upload failed with HTTP ${http_status}: ${response}" >&2
             exit 1
