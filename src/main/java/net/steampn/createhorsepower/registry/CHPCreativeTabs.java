@@ -16,9 +16,6 @@ public final class CHPCreativeTabs {
             () -> CreativeModeTab.builder()
                     .title(Component.translatable("itemGroup.createhorsepower"))
                     .icon(() -> new ItemStack(BlockRegister.HORSE_CRANK.get()))
-                    .displayItems((parameters, output) -> {
-                        output.accept(BlockRegister.HORSE_CRANK.get());
-                    })
                     .build());
 
     public static void register(IEventBus bus) {
