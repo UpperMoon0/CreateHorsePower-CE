@@ -20,7 +20,6 @@ import net.steampn.createhorsepower.config.Config;
 import net.steampn.createhorsepower.content.crank.RedstoneMode;
 import net.steampn.createhorsepower.content.path.PathEvaluator;
 import net.steampn.createhorsepower.content.stats.WorkerResolver;
-import net.steampn.createhorsepower.content.stats.WorkerStats;
 import net.steampn.createhorsepower.utils.CHPUtils;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
@@ -32,7 +31,6 @@ import static net.steampn.createhorsepower.blocks.horse_crank.HorseCrankBlock.*;
 public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
 
     private static final Logger LOGGER = LogUtils.getLogger();
-    private static final BlockPos[] OFFSETS = generateOffsets();
 
     public boolean hasValidWorkingBlocks = false;
     private float rpmModifier = 1.0f;
@@ -48,6 +46,9 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
 
     private float effectiveBaseRpm = 4.0f;
     private float effectiveBaseStress = 256.0f;
+    private float workerRadius = 2.5f;
+    private BlockPos[] cachedOffsets;
+    private float cachedOffsetsRadius = Float.NaN;
     private float speedBonusPercent = 0.0f;
     private float healthBonusPercent = 0.0f;
     private int efficiencyPercent = 100;
@@ -73,12 +74,15 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
         this.redstoneMode = Config.DEFAULT_REDSTONE_MODE.get();
     }
 
-    private static BlockPos[] generateOffsets() {
+    public static BlockPos[] generateOffsetsForRadius(float radius) {
         List<BlockPos> offsets = new ArrayList<>();
-        for (int z = -3; z <= 3; z++) {
-            for (int x = -3; x <= 3; x++) {
+        int rInt = (int) Math.ceil(radius + 1.0f);
+        double minSq = Math.max(0.5, (radius - 0.75) * (radius - 0.75));
+        double maxSq = (radius + 0.75) * (radius + 0.75);
+        for (int z = -rInt; z <= rInt; z++) {
+            for (int x = -rInt; x <= rInt; x++) {
                 double distSq = x * x + z * z;
-                if (distSq >= 4.0 && distSq <= 11.0) {
+                if (distSq >= minSq && distSq <= maxSq) {
                     offsets.add(new BlockPos(x, -1, z));
                 }
             }
@@ -216,7 +220,7 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
 
     @Override
     protected AABB createRenderBoundingBox() {
-        return new AABB(this.getBlockPos()).inflate(4.0D);
+        return new AABB(this.getBlockPos()).inflate(Math.max(4.0D, workerRadius + 2.0D));
     }
 
     @Override
@@ -229,6 +233,7 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
         compound.putString("RedstoneMode", redstoneMode.getSerializedName());
         compound.putFloat("EffectiveBaseRpm", effectiveBaseRpm);
         compound.putFloat("EffectiveBaseStress", effectiveBaseStress);
+        compound.putFloat("WorkerRadius", workerRadius);
 
         if (workerUuid != null) {
             compound.putUUID("WorkerUUID", workerUuid);
@@ -258,6 +263,7 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
         if (compound.contains("HasValidWorkingBlocks")) hasValidWorkingBlocks = compound.getBoolean("HasValidWorkingBlocks");
         if (compound.contains("EffectiveBaseRpm")) effectiveBaseRpm = compound.getFloat("EffectiveBaseRpm");
         if (compound.contains("EffectiveBaseStress")) effectiveBaseStress = compound.getFloat("EffectiveBaseStress");
+        if (compound.contains("WorkerRadius")) workerRadius = compound.getFloat("WorkerRadius");
 
         if (compound.contains("RedstoneMode")) {
             String modeStr = compound.getString("RedstoneMode");
@@ -267,6 +273,9 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
                     break;
                 }
             }
+        } else if (!clientPacket) {
+            // Pre-1.2 crank from 1.1 save: redstone never affected it.
+            redstoneMode = RedstoneMode.IGNORE;
         }
 
         if (compound.contains("GenerationDirection")) {
@@ -336,6 +345,7 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
             this.workerEligible = false;
             this.effectiveBaseRpm = 0.0f;
             this.effectiveBaseStress = 0.0f;
+            this.workerRadius = 2.5f;
             this.speedBonusPercent = 0.0f;
             this.healthBonusPercent = 0.0f;
             this.cachedWorkerName = worker.getName().getString();
@@ -345,6 +355,7 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
         this.workerEligible = true;
         this.effectiveBaseRpm = profile.effectiveRpm();
         this.effectiveBaseStress = profile.effectiveStressCapacity();
+        this.workerRadius = profile.baseStats().movementRadius();
         this.speedBonusPercent = profile.speedBonusPercent();
         this.healthBonusPercent = profile.healthBonusPercent();
         this.cachedWorkerName = worker.getName().getString();
@@ -394,6 +405,7 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
         this.nextWorkStartRetryTick = 0;
         this.workerResolved = false;
         this.workerEligible = false;
+        this.workerRadius = 2.5f;
         this.cachedWorkerName = "";
         this.speedBonusPercent = 0.0f;
         this.healthBonusPercent = 0.0f;
@@ -502,7 +514,8 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
             }
         }
 
-        List<Mob> nearby = level.getEntitiesOfClass(Mob.class, new AABB(worldPosition).inflate(8.0D), this::isWorkerAttachedToThisCrank);
+        double searchRadius = Math.max(8.0D, workerRadius + 4.0D);
+        List<Mob> nearby = level.getEntitiesOfClass(Mob.class, new AABB(worldPosition).inflate(searchRadius), this::isWorkerAttachedToThisCrank);
         if (!nearby.isEmpty()) {
             Mob mob = nearby.getFirst();
             cachedWorkerMob = mob;
@@ -565,10 +578,19 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
         }
     }
 
+    private BlockPos[] offsetsForRadius(float radius) {
+        if (cachedOffsets == null || cachedOffsetsRadius != radius) {
+            cachedOffsets = generateOffsetsForRadius(radius);
+            cachedOffsetsRadius = radius;
+        }
+        return cachedOffsets;
+    }
+
     private void checkPathBlocks() {
         if (level == null) return;
 
-        PathEvaluator.Result evalResult = PathEvaluator.evaluate(level, worldPosition, OFFSETS);
+        BlockPos[] offsets = offsetsForRadius(workerRadius);
+        PathEvaluator.Result evalResult = PathEvaluator.evaluate(level, worldPosition, offsets);
         float speedMult = evalResult.speedMultiplier();
         float stressMult = evalResult.stressMultiplier();
 
@@ -648,11 +670,7 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
 
         double currentAngle = Math.atan2(dz, dx);
 
-        float radius = 2.5f;
-        Optional<WorkerStats> stats = WorkerResolver.getBaseStats(mob.getType());
-        if (stats.isPresent()) {
-            radius = stats.get().movementRadius();
-        }
+        float radius = this.workerRadius;
 
         double direction = Math.signum(speed);
         double angularVelocity = Math.toRadians(Math.abs(speed) * 6.0); // 6 deg/sec per RPM

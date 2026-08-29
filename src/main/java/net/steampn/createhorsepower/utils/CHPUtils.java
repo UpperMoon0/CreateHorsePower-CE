@@ -61,7 +61,7 @@ public class CHPUtils {
         getKnot(level, pos).ifPresent(knot -> {
             List<Mob> mobs = level.getEntitiesOfClass(
                     Mob.class,
-                    new AABB(pos).inflate(10.0D),
+                    new AABB(pos).inflate(36.0D),
                     mob -> mob.getLeashHolder() == knot
             );
             for (Mob mob : mobs) {

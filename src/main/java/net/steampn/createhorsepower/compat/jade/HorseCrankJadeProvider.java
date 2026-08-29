@@ -58,7 +58,7 @@ public enum HorseCrankJadeProvider implements IBlockComponentProvider, IServerDa
             tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.invalid_path", data.getInt("InvalidBlocks")).withStyle(ChatFormatting.RED));
         } else if (data.getBoolean("ScriptVetoed")) {
             tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.vetoed").withStyle(ChatFormatting.YELLOW));
-        } else {
+        } else if (data.getBoolean("IsWorking")) {
             tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.working").withStyle(ChatFormatting.GREEN));
         }
 
