@@ -50,5 +50,6 @@
   "tooltip.createhorsepower.redstone_mode.ignore": "Ignore Redstone",
   "tooltip.createhorsepower.redstone_mode.high_stops": "Powered = Stop",
   "tooltip.createhorsepower.redstone_mode.high_runs": "Powered = Run",
-  "tooltip.createhorsepower.redstone_mode.changed": "Redstone Mode: %s"
+  "tooltip.createhorsepower.redstone_mode.changed": "Redstone Mode: %s",
+  "config.jade.plugin_createhorsepower.horse_crank_info": "Horse Crank Diagnostics"
 }
