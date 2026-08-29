@@ -9,7 +9,6 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.Mob;
-import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.WalkAnimationState;
 import net.minecraft.world.entity.animal.horse.Horse;
 import net.minecraft.world.entity.decoration.LeashFenceKnotEntity;
@@ -18,6 +17,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.steampn.createhorsepower.config.Config;
 import net.steampn.createhorsepower.utils.CHPUtils;
+import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 
 import java.util.*;
@@ -31,9 +31,16 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
 
     public boolean hasValidWorkingBlocks = false;
     private float rpmModifier = 1.0f;
-    private PathfinderMob cachedWorkerMob;
+    private float generationDirection = 1.0f;
+    private boolean needsLegacyDirectionResolution = false;
+
+    @Nullable
+    private Mob cachedWorkerMob;
+    @Nullable
     private UUID workerUuid;
-    private int missingWorkerGraceTicks = 0;
+    @Nullable
+    private BlockPos lastKnownWorkerPos;
+    private int missingWorkerTicks = 0;
     private long lastPathCheckTick = -1;
 
     public HorseCrankTileEntity(BlockEntityType<?> type, BlockPos pos, BlockState state) {
@@ -59,7 +66,8 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
         if (!state.getValue(HAS_WORKER) || !hasValidWorkingBlocks || rpmModifier <= 0.0f) {
             return 0.0F;
         }
-        return (float) Config.BASE_CREATURE_RPM.getAsInt() * rpmModifier;
+        float magnitude = (float) Config.BASE_CREATURE_RPM.getAsInt() * rpmModifier;
+        return magnitude * generationDirection;
     }
 
     @Override
@@ -88,8 +96,12 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
         super.write(compound, registries, clientPacket);
         compound.putFloat("RpmModifier", rpmModifier);
         compound.putBoolean("HasValidWorkingBlocks", hasValidWorkingBlocks);
+        compound.putFloat("GenerationDirection", generationDirection);
         if (workerUuid != null) {
             compound.putUUID("WorkerUUID", workerUuid);
+        }
+        if (lastKnownWorkerPos != null) {
+            compound.putLong("WorkerPos", lastKnownWorkerPos.asLong());
         }
     }
 
@@ -98,26 +110,70 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
         super.read(compound, registries, clientPacket);
         if (compound.contains("RpmModifier")) rpmModifier = compound.getFloat("RpmModifier");
         if (compound.contains("HasValidWorkingBlocks")) hasValidWorkingBlocks = compound.getBoolean("HasValidWorkingBlocks");
+        if (compound.contains("GenerationDirection")) {
+            generationDirection = compound.getFloat("GenerationDirection");
+            if (generationDirection == 0) generationDirection = 1.0f;
+        } else {
+            needsLegacyDirectionResolution = true;
+        }
         if (compound.hasUUID("WorkerUUID")) {
             workerUuid = compound.getUUID("WorkerUUID");
         }
+        if (compound.contains("WorkerPos")) {
+            lastKnownWorkerPos = BlockPos.of(compound.getLong("WorkerPos"));
+        }
     }
 
-    public void onWorkerAttached(Mob mob) {
-        this.cachedWorkerMob = (mob instanceof PathfinderMob pm ? pm : null);
-        this.workerUuid = mob.getUUID();
-        this.missingWorkerGraceTicks = 0;
-        checkPathBlocks();
-        updateGeneratedRotation();
-        notifyUpdate();
+    public void attachWorker(Mob worker, CHPUtils.WorkerTier tier) {
+        this.cachedWorkerMob = worker;
+        this.workerUuid = worker.getUUID();
+        this.lastKnownWorkerPos = worker.blockPosition();
+        this.missingWorkerTicks = 0;
+
+        float existingSpeed = getTheoreticalSpeed();
+        if (existingSpeed != 0) {
+            this.generationDirection = Math.signum(existingSpeed);
+        } else {
+            this.generationDirection = 1.0f;
+        }
+
+        if (level != null && !level.isClientSide()) {
+            BlockState state = getBlockState();
+            boolean small = tier == CHPUtils.WorkerTier.SMALL;
+            boolean medium = tier == CHPUtils.WorkerTier.MEDIUM;
+            boolean large = tier == CHPUtils.WorkerTier.LARGE;
+            level.setBlock(worldPosition, state.setValue(HAS_WORKER, true)
+                    .setValue(SMALL_WORKER_STATE, small)
+                    .setValue(MEDIUM_WORKER_STATE, medium)
+                    .setValue(LARGE_WORKER_STATE, large), 3);
+            checkPathBlocks();
+            updateGeneratedRotation();
+            notifyUpdate();
+        }
     }
 
-    public void onWorkerDetached() {
+    public void detachWorker(boolean dropLead) {
         this.cachedWorkerMob = null;
         this.workerUuid = null;
-        this.missingWorkerGraceTicks = 0;
-        updateGeneratedRotation();
-        notifyUpdate();
+        this.lastKnownWorkerPos = null;
+        this.missingWorkerTicks = 0;
+
+        if (level != null && !level.isClientSide()) {
+            BlockState state = getBlockState();
+            if (state.getValue(HAS_WORKER)) {
+                level.setBlock(worldPosition, state.setValue(HAS_WORKER, false)
+                        .setValue(SMALL_WORKER_STATE, false)
+                        .setValue(MEDIUM_WORKER_STATE, false)
+                        .setValue(LARGE_WORKER_STATE, false), 3);
+            }
+            CHPUtils.cleanUpLeash(level, worldPosition, dropLead);
+            updateGeneratedRotation();
+            notifyUpdate();
+        }
+    }
+
+    public void onCrankRemoved() {
+        detachWorker(true);
     }
 
     @Override
@@ -127,72 +183,93 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
             return;
         }
 
+        if (needsLegacyDirectionResolution) {
+            needsLegacyDirectionResolution = false;
+            float existingSpeed = getTheoreticalSpeed();
+            if (existingSpeed != 0) {
+                generationDirection = Math.signum(existingSpeed);
+            } else {
+                generationDirection = 1.0f;
+            }
+            updateGeneratedRotation();
+        }
+
+        // 1. Reconcile attachment lifecycle
+        reconcileWorker();
+
+        // 2. Update path state on interval
         if (level.getGameTime() - lastPathCheckTick >= 20 || lastPathCheckTick < 0) {
             lastPathCheckTick = level.getGameTime();
             checkPathBlocks();
         }
 
-        BlockState state = getBlockState();
-        if (!state.getValue(HAS_WORKER)) {
-            cachedWorkerMob = null;
-            workerUuid = null;
-            missingWorkerGraceTicks = 0;
-            return;
-        }
-
-        Mob worker = getWorkerMob();
-        if (worker == null) {
-            missingWorkerGraceTicks++;
-            if (missingWorkerGraceTicks > 60) {
-                level.setBlock(worldPosition, state.setValue(HAS_WORKER, false).setValue(SMALL_WORKER_STATE, false).setValue(MEDIUM_WORKER_STATE, false).setValue(LARGE_WORKER_STATE, false), 3);
-                CHPUtils.cleanUpLeash(level, worldPosition, true);
-                cachedWorkerMob = null;
-                workerUuid = null;
-                missingWorkerGraceTicks = 0;
-                updateGeneratedRotation();
-            }
-        } else {
-            missingWorkerGraceTicks = 0;
-            workerUuid = worker.getUUID();
-            moveWorkerTo(worker);
+        // 3. Move animal along track if active
+        if (getBlockState().getValue(HAS_WORKER) && cachedWorkerMob != null && hasValidWorkingBlocks) {
+            moveWorkerTo(cachedWorkerMob);
         }
     }
 
-    private Mob getWorkerMob() {
-        if (cachedWorkerMob != null && cachedWorkerMob.isAlive() && isLeashedToThis(cachedWorkerMob)) {
+    private boolean isWorkerAttachedToThisCrank(Mob mob) {
+        if (mob == null || !mob.isAlive() || !mob.isLeashed()) {
+            return false;
+        }
+        Entity holder = mob.getLeashHolder();
+        if (holder instanceof LeashFenceKnotEntity knot) {
+            return knot.blockPosition().equals(this.worldPosition);
+        }
+        return false;
+    }
+
+    private Mob resolveWorker() {
+        if (cachedWorkerMob != null && isWorkerAttachedToThisCrank(cachedWorkerMob)) {
             return cachedWorkerMob;
         }
 
         if (workerUuid != null && level instanceof ServerLevel serverLevel) {
             Entity ent = serverLevel.getEntity(workerUuid);
-            if (ent instanceof Mob mob && mob.isAlive() && isLeashedToThis(mob)) {
-                if (mob instanceof PathfinderMob pm) {
-                    cachedWorkerMob = pm;
-                }
+            if (ent instanceof Mob mob && isWorkerAttachedToThisCrank(mob)) {
+                cachedWorkerMob = mob;
+                lastKnownWorkerPos = mob.blockPosition();
                 return mob;
             }
         }
 
-        List<Mob> mobsNearCrank = level.getEntitiesOfClass(Mob.class, new AABB(worldPosition).inflate(8.0D), this::isLeashedToThis);
-        if (!mobsNearCrank.isEmpty()) {
-            Mob mob = mobsNearCrank.getFirst();
-            if (mob instanceof PathfinderMob pm) {
-                cachedWorkerMob = pm;
-            }
+        List<Mob> nearby = level.getEntitiesOfClass(Mob.class, new AABB(worldPosition).inflate(8.0D), this::isWorkerAttachedToThisCrank);
+        if (!nearby.isEmpty()) {
+            Mob mob = nearby.getFirst();
+            cachedWorkerMob = mob;
             workerUuid = mob.getUUID();
+            lastKnownWorkerPos = mob.blockPosition();
             return mob;
         }
 
         return null;
     }
 
-    private boolean isLeashedToThis(Mob mob) {
-        if (!mob.isLeashed()) return false;
-        Entity holder = mob.getLeashHolder();
-        if (holder instanceof LeashFenceKnotEntity knot) {
-            return knot.blockPosition().equals(this.worldPosition);
+    private void reconcileWorker() {
+        BlockState state = getBlockState();
+        if (!state.getValue(HAS_WORKER)) {
+            cachedWorkerMob = null;
+            workerUuid = null;
+            lastKnownWorkerPos = null;
+            missingWorkerTicks = 0;
+            return;
         }
-        return false;
+
+        Mob worker = resolveWorker();
+        if (worker != null) {
+            missingWorkerTicks = 0;
+            lastKnownWorkerPos = worker.blockPosition();
+            return;
+        }
+
+        BlockPos checkPos = lastKnownWorkerPos != null ? lastKnownWorkerPos : worldPosition;
+        if (level.hasChunkAt(checkPos)) {
+            missingWorkerTicks++;
+            if (missingWorkerTicks > 80) {
+                detachWorker(true);
+            }
+        }
     }
 
     private void checkPathBlocks() {
@@ -278,18 +355,23 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
                 progress = (worker.level().getGameTime() % ticksPerRotation) / (double) ticksPerRotation;
             }
 
-            double currentX = worker.xo;
-            double currentZ = worker.zo;
+            double direction = Math.signum(getGeneratedSpeed() != 0 ? getGeneratedSpeed() : generationDirection);
+            if (direction == 0) direction = 1.0;
 
-            double angle = 2 * Math.PI * progress;
+            double angle = 2 * Math.PI * progress * direction;
             double xOffset = radius * Math.sin(angle);
             double zOffset = radius * Math.cos(angle);
             double targetX = bx + xOffset;
             double targetZ = bz + zOffset;
+
+            double nextAngle = 2 * Math.PI * (progress + 0.01) * direction;
+            double nextX = bx + radius * Math.sin(nextAngle);
+            double nextZ = bz + radius * Math.cos(nextAngle);
+
             worker.teleportTo(targetX, by, targetZ);
             WalkAnimationState animation = worker.walkAnimation;
             animation.update(-animation.position(), 1);
-            float movementYaw = calculateYaw(currentX, currentZ, targetX, targetZ);
+            float movementYaw = calculateYaw(targetX, targetZ, nextX, nextZ);
             worker.setYRot(movementYaw);
             worker.setYHeadRot(movementYaw);
         }
