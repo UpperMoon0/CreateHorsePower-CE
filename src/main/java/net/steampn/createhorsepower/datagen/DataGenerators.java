@@ -28,15 +28,6 @@ public class DataGenerators {
         CHPBlockTagGenerator blockTagGenerator = generator.addProvider(event.includeServer(),
                 new CHPBlockTagGenerator(packOutput, lookupProvider, existingFileHelper));
         generator.addProvider(event.includeServer(), new CHPItemTagGenerator(packOutput, lookupProvider, blockTagGenerator.contentsGetter(), existingFileHelper));
-        CreateHorsePower.CREATE_REGISTRATE.addDataGenerator(ProviderType.LANG, provider -> {
-            BiConsumer<String, String> langConsumer = provider::add;
-            providePonderLang(langConsumer);
-        });
-    }
-
-    private static void providePonderLang(BiConsumer<String, String> consumer) {
-        PonderIndex.addPlugin(new HorseCrankPonderPlugin());
-
-        PonderIndex.getLangAccess().provideLang(MODID, consumer);
+        generator.addProvider(event.includeServer(), new CHPEntityTagGenerator(packOutput, lookupProvider, existingFileHelper));
     }
 }

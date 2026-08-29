@@ -34,6 +34,11 @@ public class CreateHorsePower {
             .defaultCreativeTab((ResourceKey<CreativeModeTab>) null);
 
     public CreateHorsePower(IEventBus modEventBus, ModContainer modContainer){
+        CREATE_REGISTRATE.addDataGenerator(com.tterrag.registrate.providers.ProviderType.LANG, provider -> {
+            PonderIndex.addPlugin(new HorseCrankPonderPlugin());
+            PonderIndex.getLangAccess().provideLang(MODID, provider::add);
+        });
+
         CREATE_REGISTRATE.registerEventListeners(modEventBus);
 
         BlockRegister.register();

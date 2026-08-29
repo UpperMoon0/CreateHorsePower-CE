@@ -78,7 +78,13 @@ public class HorseCrankBlock extends KineticBlock implements ICogWheel, IBE<Hors
 
     @Override
     public void onRemove(BlockState pState, Level pLevel, BlockPos pPos, BlockState pNewState, boolean pIsMoving) {
-        if (pState.hasBlockEntity() && pState.getBlock() != pNewState.getBlock()) pLevel.removeBlockEntity(pPos);
+        if (pState.getBlock() != pNewState.getBlock()) {
+            CHPUtils.cleanUpLeash(pLevel, pPos, true);
+            if (pState.hasBlockEntity()) {
+                pLevel.removeBlockEntity(pPos);
+            }
+        }
+        super.onRemove(pState, pLevel, pPos, pNewState, pIsMoving);
     }
 
     @Override
@@ -114,75 +120,53 @@ public class HorseCrankBlock extends KineticBlock implements ICogWheel, IBE<Hors
 
     @Override
     protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hitResult) {
-        //Get nearby mobs in 7 block radius
-        List<Mob> mobsNearPlayer = level.getEntitiesOfClass(Mob.class, new AABB(pos).inflate(7.0D));
+        // Check if crank already has mob attached
+        long leashKnots = level.getEntitiesOfClass(LeashFenceKnotEntity.class, new AABB(pos).inflate(0.5D)).size();
+        boolean hasWorker = state.getValue(HAS_WORKER) || leashKnots > 0;
 
+        List<Mob> mobsNearPlayer = level.getEntitiesOfClass(Mob.class, new AABB(pos).inflate(7.0D), mob -> mob.isLeashed() && mob.getLeashHolder() == player);
 
-        //Check if crank already has mob attached, if so do nothing
-        long leashKnots = level.getEntitiesOfClass(LeashFenceKnotEntity.class, new AABB(pos).inflate(0.2D)).size();
-        if (leashKnots > 0) {
-            if (mobsNearPlayer.stream().filter(mob -> mob.isLeashed() && mob.getLeashHolder() == player).count() >= 1){
+        if (hasWorker) {
+            if (!mobsNearPlayer.isEmpty()) {
                 player.displayClientMessage(Component.translatable("tooltip.createhorsepower.horse_crank.alreadyHasWorker"), true);
                 return InteractionResult.FAIL;
             }
 
-            //If hand is empty, detach mob if mob is attached to block
+            // Detach mob if crank has worker and player right clicks
             level.setBlock(pos, state.setValue(HAS_WORKER, false).setValue(SMALL_WORKER_STATE, false).setValue(MEDIUM_WORKER_STATE, false).setValue(LARGE_WORKER_STATE, false), 3);
-            return CHPUtils.killLeashEntity(level, pos);
+            CHPUtils.cleanUpLeash(level, pos, true);
+            if (level.getBlockEntity(pos) instanceof HorseCrankTileEntity crankBe) {
+                crankBe.onWorkerDetached();
+            }
+            return InteractionResult.sidedSuccess(level.isClientSide);
         }
 
-        //If num of mobs attached to player is 0, do nothing
-        if (mobsNearPlayer.stream().filter(mob -> mob.isLeashed() && mob.getLeashHolder() == player).count() <= 0) {
-            return InteractionResult.FAIL;
+        if (mobsNearPlayer.isEmpty()) {
+            return InteractionResult.PASS;
         }
 
-        //If num of mobs attached to player is > 1, do nothing
-        if (mobsNearPlayer.stream().filter(mob -> mob.isLeashed() && mob.getLeashHolder() == player).count() > 1) {
+        if (mobsNearPlayer.size() > 1) {
             player.displayClientMessage(Component.translatable("tooltip.createhorsepower.horse_crank.maximumMobs"), true);
             return InteractionResult.FAIL;
         }
-        //Get what mob and verify its worker status, if not worker do nothing
-        if (!verifyMobIsInConfig(getMobType(getMob(mobsNearPlayer, player)), level, pos, state)) {
+
+        Mob mob = mobsNearPlayer.getFirst();
+        CHPUtils.WorkerTier tier = CHPUtils.getWorkerTier(mob.getType());
+        if (!tier.isValid()) {
             player.displayClientMessage(Component.translatable("tooltip.createhorsepower.horse_crank.notValidWorker"), true);
             return InteractionResult.FAIL;
         }
 
-        //If Player has mob attached to them and right clicks, attach mob to crank.
-        if (getMob(mobsNearPlayer, player).getLeashHolder() == player){
-            LeadItem.bindPlayerMobs(player, level, pos);
-            player.displayClientMessage(Component.translatable("tooltip.createhorsepower.horse_crank.attached"), true);
-            return InteractionResult.sidedSuccess(level.isClientSide);
+        boolean small = tier == CHPUtils.WorkerTier.SMALL;
+        boolean medium = tier == CHPUtils.WorkerTier.MEDIUM;
+        boolean large = tier == CHPUtils.WorkerTier.LARGE;
+
+        level.setBlock(pos, state.setValue(HAS_WORKER, true).setValue(SMALL_WORKER_STATE, small).setValue(MEDIUM_WORKER_STATE, medium).setValue(LARGE_WORKER_STATE, large), 3);
+        LeadItem.bindPlayerMobs(player, level, pos);
+        if (level.getBlockEntity(pos) instanceof HorseCrankTileEntity crankBe) {
+            crankBe.onWorkerAttached(mob);
         }
-
-        return InteractionResult.FAIL;
-    }
-
-    private Mob getMob(List<Mob> mobsNearPlayer, Player player){
-        Stream<Mob> mobsAttachedToPlayer = mobsNearPlayer.stream()
-                .filter(mob -> mob.isLeashed() &&  mob.getLeashHolder() == player);
-        return mobsAttachedToPlayer.toList().getFirst();
-    }
-
-    private ResourceLocation getMobType(Mob mob){
-        return EntityType.getKey(mob.getType());
-    }
-
-    private boolean verifyMobIsInConfig(ResourceLocation mobType, Level level, BlockPos pos, BlockState state){
-        boolean valid = false, small = false, medium = false, large = false;
-
-        if (Config.SMALL_CREATURES.get().contains(mobType.toString())) {
-            small = true;
-            valid = true;
-        }
-        else if (Config.MEDIUM_CREATURES.get().contains(mobType.toString())) {
-            medium = true;
-            valid = true;
-        }
-        else if (Config.LARGE_CREATURES.get().contains(mobType.toString())) {
-            large = true;
-            valid = true;
-        }
-        level.setBlock(pos, state.setValue(HAS_WORKER, valid).setValue(SMALL_WORKER_STATE, small).setValue(MEDIUM_WORKER_STATE, medium).setValue(LARGE_WORKER_STATE, large), 3);
-        return small || medium || large;
+        player.displayClientMessage(Component.translatable("tooltip.createhorsepower.horse_crank.attached"), true);
+        return InteractionResult.sidedSuccess(level.isClientSide);
     }
 }
