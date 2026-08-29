@@ -24,8 +24,11 @@ public enum HorseCrankJadeProvider implements IBlockComponentProvider, IServerDa
         boolean hasWorker = accessor.getBlockState().getValue(HorseCrankBlock.HAS_WORKER);
         data.putBoolean("HasWorker", hasWorker);
         data.putBoolean("StoppedRedstone", crank.isStoppedByRedstone());
-        data.putBoolean("ValidPath", crank.hasValidWorkingBlocks);
+        data.putBoolean("WorkerResolved", crank.isWorkerResolved());
         data.putBoolean("WorkerEligible", crank.isWorkerEligible());
+        data.putBoolean("ValidPath", crank.hasValidWorkingBlocks);
+        data.putBoolean("ScriptVetoed", crank.isScriptVetoed());
+        data.putBoolean("IsWorking", crank.isWorking());
         data.putString("WorkerName", crank.getCachedWorkerName());
         data.putFloat("SpeedBonus", crank.getSpeedBonusPercent());
         data.putFloat("HealthBonus", crank.getHealthBonusPercent());
@@ -47,10 +50,14 @@ public enum HorseCrankJadeProvider implements IBlockComponentProvider, IServerDa
 
         if (data.getBoolean("StoppedRedstone")) {
             tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.stopped_redstone").withStyle(ChatFormatting.RED));
+        } else if (!data.getBoolean("WorkerResolved")) {
+            tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.worker_unloaded").withStyle(ChatFormatting.YELLOW));
         } else if (!data.getBoolean("WorkerEligible")) {
             tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.worker_ineligible").withStyle(ChatFormatting.RED));
         } else if (!data.getBoolean("ValidPath")) {
             tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.invalid_path", data.getInt("InvalidBlocks")).withStyle(ChatFormatting.RED));
+        } else if (data.getBoolean("ScriptVetoed")) {
+            tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.vetoed").withStyle(ChatFormatting.YELLOW));
         } else {
             tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.working").withStyle(ChatFormatting.GREEN));
         }

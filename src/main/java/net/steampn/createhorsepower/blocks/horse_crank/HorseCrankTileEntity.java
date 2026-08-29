@@ -114,8 +114,16 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
         return next;
     }
 
+    public boolean isWorkerResolved() {
+        return workerResolved;
+    }
+
     public boolean isWorkerEligible() {
         return workerEligible;
+    }
+
+    public boolean isScriptVetoed() {
+        return scriptVetoed;
     }
 
     public boolean isWorking() {

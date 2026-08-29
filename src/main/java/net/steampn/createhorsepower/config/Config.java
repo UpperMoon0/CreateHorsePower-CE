@@ -12,7 +12,24 @@ public class Config {
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
 
     // ==========================================
-    // BALANCE
+    // LEGACY ROOT KEYS (Preserved for 1.1 backward compatibility)
+    // ==========================================
+    public static final ModConfigSpec.IntValue BASE_CREATURE_RPM;
+    public static final ModConfigSpec.IntValue SMALL_CREATURE_STRESS;
+    public static final ModConfigSpec.IntValue MEDIUM_CREATURE_STRESS;
+    public static final ModConfigSpec.IntValue LARGE_CREATURE_STRESS;
+    public static final ModConfigSpec.DoubleValue POOR_MULTIPLIER;
+    public static final ModConfigSpec.DoubleValue NORMAL_MULTIPLIER;
+    public static final ModConfigSpec.DoubleValue GREAT_MULTIPLIER;
+    public static final ModConfigSpec.ConfigValue<List<? extends String>> POOR_PATH;
+    public static final ModConfigSpec.ConfigValue<List<? extends String>> NORMAL_PATH;
+    public static final ModConfigSpec.ConfigValue<List<? extends String>> GREAT_PATH;
+    public static final ModConfigSpec.ConfigValue<List<? extends String>> SMALL_CREATURES;
+    public static final ModConfigSpec.ConfigValue<List<? extends String>> MEDIUM_CREATURES;
+    public static final ModConfigSpec.ConfigValue<List<? extends String>> LARGE_CREATURES;
+
+    // ==========================================
+    // BALANCE (1.2+)
     // ==========================================
     public static final ModConfigSpec.DoubleValue GLOBAL_RPM_MULTIPLIER;
     public static final ModConfigSpec.DoubleValue GLOBAL_STRESS_MULTIPLIER;
@@ -22,45 +39,80 @@ public class Config {
     public static final ModConfigSpec.DoubleValue MIN_HEALTH_SCALING_CLAMP;
     public static final ModConfigSpec.DoubleValue MAX_HEALTH_SCALING_CLAMP;
 
-    // Legacy balance settings
-    public static final ModConfigSpec.IntValue BASE_CREATURE_RPM;
-    public static final ModConfigSpec.IntValue SMALL_CREATURE_STRESS;
-    public static final ModConfigSpec.IntValue MEDIUM_CREATURE_STRESS;
-    public static final ModConfigSpec.IntValue LARGE_CREATURE_STRESS;
-    public static final ModConfigSpec.DoubleValue POOR_MULTIPLIER;
-    public static final ModConfigSpec.DoubleValue NORMAL_MULTIPLIER;
-    public static final ModConfigSpec.DoubleValue GREAT_MULTIPLIER;
-
     // ==========================================
-    // WORKERS
+    // WORKERS (1.2+)
     // ==========================================
     public static final ModConfigSpec.BooleanValue ALLOW_BABIES;
     public static final ModConfigSpec.BooleanValue REQUIRE_TAMED_HORSE;
     public static final ModConfigSpec.BooleanValue ALLOW_UNDEAD_WORKERS;
 
-    // Legacy worker lists
-    public static final ModConfigSpec.ConfigValue<List<? extends String>> SMALL_CREATURES;
-    public static final ModConfigSpec.ConfigValue<List<? extends String>> MEDIUM_CREATURES;
-    public static final ModConfigSpec.ConfigValue<List<? extends String>> LARGE_CREATURES;
-
     // ==========================================
-    // PATH
+    // PATH (1.2+)
     // ==========================================
     public static final ModConfigSpec.EnumValue<PathEvaluationMode> PATH_EVALUATION_MODE;
     public static final ModConfigSpec.DoubleValue MINIMUM_PATH_COVERAGE;
     public static final ModConfigSpec.IntValue CHECK_INTERVAL_TICKS;
 
-    // Legacy path lists
-    public static final ModConfigSpec.ConfigValue<List<? extends String>> POOR_PATH;
-    public static final ModConfigSpec.ConfigValue<List<? extends String>> NORMAL_PATH;
-    public static final ModConfigSpec.ConfigValue<List<? extends String>> GREAT_PATH;
-
     // ==========================================
-    // AUTOMATION
+    // AUTOMATION (1.2+)
     // ==========================================
     public static final ModConfigSpec.EnumValue<RedstoneMode> DEFAULT_REDSTONE_MODE;
 
     static {
+        // --- 1.1 Legacy root keys ---
+        BASE_CREATURE_RPM = BUILDER
+                .comment("Base rpm creatures can spin the horse crank (fallback when not defined by Data Maps).")
+                .defineInRange("creatureRPMRange", 4, 1, Integer.MAX_VALUE);
+
+        SMALL_CREATURE_STRESS = BUILDER
+                .comment("How much stress small creatures can produce for the horse crank (fallback when not defined by Data Maps).")
+                .defineInRange("smallCreatureStressRange", 128, 1, Integer.MAX_VALUE);
+
+        MEDIUM_CREATURE_STRESS = BUILDER
+                .comment("How much stress medium creatures can produce for the horse crank (fallback when not defined by Data Maps).")
+                .defineInRange("mediumCreatureStressRange", 256, 1, Integer.MAX_VALUE);
+
+        LARGE_CREATURE_STRESS = BUILDER
+                .comment("How much stress large creatures can produce for the horse crank (fallback when not defined by Data Maps).")
+                .defineInRange("largeCreatureStressRange", 512, 1, Integer.MAX_VALUE);
+
+        POOR_MULTIPLIER = BUILDER
+                .comment("The multiplier for \"Poor\" paths.")
+                .defineInRange("poorMultiplier", 0.5, 0.0, Double.MAX_VALUE);
+
+        NORMAL_MULTIPLIER = BUILDER
+                .comment("The multiplier for \"Normal\" paths.")
+                .defineInRange("normalMultiplier", 1.0, 0.0, Double.MAX_VALUE);
+
+        GREAT_MULTIPLIER = BUILDER
+                .comment("The multiplier for \"Great\" paths.")
+                .defineInRange("greatMultiplier", 2.0, 0.0, Double.MAX_VALUE);
+
+        POOR_PATH = BUILDER
+                .comment("Types of blocks valid as \"Poor\" quality (legacy fallback list).")
+                .defineListAllowEmpty("poorPathBlock", List.of("minecraft:dirt", "minecraft:grass_block"), () -> "", Config::validateBlockName);
+
+        NORMAL_PATH = BUILDER
+                .comment("Types of blocks valid as \"Normal\" quality (legacy fallback list).")
+                .defineListAllowEmpty("normalPathBlock", List.of("minecraft:dirt_path", "minecraft:gravel"), () -> "", Config::validateBlockName);
+
+        GREAT_PATH = BUILDER
+                .comment("Types of blocks valid as \"Great\" quality (legacy fallback list).")
+                .defineListAllowEmpty("greatPathBlock", List.of("minecraft:ice", "minecraft:packed_ice", "minecraft:blue_ice"), () -> "", Config::validateBlockName);
+
+        SMALL_CREATURES = BUILDER
+                .comment("Valid \"Small\" creatures (legacy fallback list).")
+                .defineListAllowEmpty("smallCreatures", List.of("minecraft:wolf"), () -> "", Config::validateMobName);
+
+        MEDIUM_CREATURES = BUILDER
+                .comment("Valid \"Medium\" creatures (legacy fallback list).")
+                .defineListAllowEmpty("mediumCreatures", List.of("minecraft:cow"), () -> "", Config::validateMobName);
+
+        LARGE_CREATURES = BUILDER
+                .comment("Valid \"Large\" creatures (legacy fallback list).")
+                .defineListAllowEmpty("largeCreatures", List.of("minecraft:horse"), () -> "", Config::validateMobName);
+
+        // --- 1.2+ Sections ---
         BUILDER.push("balance");
         GLOBAL_RPM_MULTIPLIER = BUILDER
                 .comment("Global multiplier applied to all crank RPM output.")
@@ -83,28 +135,6 @@ public class Config {
         MAX_HEALTH_SCALING_CLAMP = BUILDER
                 .comment("Maximum health scaling multiplier clamp.")
                 .defineInRange("maxHealthScalingClamp", 3.0, 0.1, 100.0);
-
-        BASE_CREATURE_RPM = BUILDER
-                .comment("Fallback base rpm when not defined by Data Maps.")
-                .defineInRange("creatureRPMRange", 4, 1, Integer.MAX_VALUE);
-        SMALL_CREATURE_STRESS = BUILDER
-                .comment("Fallback stress for small creatures when not defined by Data Maps.")
-                .defineInRange("smallCreatureStressRange", 128, 1, Integer.MAX_VALUE);
-        MEDIUM_CREATURE_STRESS = BUILDER
-                .comment("Fallback stress for medium creatures when not defined by Data Maps.")
-                .defineInRange("mediumCreatureStressRange", 256, 1, Integer.MAX_VALUE);
-        LARGE_CREATURE_STRESS = BUILDER
-                .comment("Fallback stress for large creatures when not defined by Data Maps.")
-                .defineInRange("largeCreatureStressRange", 512, 1, Integer.MAX_VALUE);
-        POOR_MULTIPLIER = BUILDER
-                .comment("Fallback multiplier for \"Poor\" paths.")
-                .defineInRange("poorMultiplier", 0.5, 0.0, Double.MAX_VALUE);
-        NORMAL_MULTIPLIER = BUILDER
-                .comment("Fallback multiplier for \"Normal\" paths.")
-                .defineInRange("normalMultiplier", 1.0, 0.0, Double.MAX_VALUE);
-        GREAT_MULTIPLIER = BUILDER
-                .comment("Fallback multiplier for \"Great\" paths.")
-                .defineInRange("greatMultiplier", 2.0, 0.0, Double.MAX_VALUE);
         BUILDER.pop();
 
         BUILDER.push("workers");
@@ -117,16 +147,6 @@ public class Config {
         ALLOW_UNDEAD_WORKERS = BUILDER
                 .comment("Allow undead/skeleton horses and mobs as workers.")
                 .define("allowUndeadWorkers", true);
-
-        SMALL_CREATURES = BUILDER
-                .comment("Legacy list of valid \"Small\" creatures.")
-                .defineListAllowEmpty("smallCreatures", List.of("minecraft:wolf"), () -> "", Config::validateMobName);
-        MEDIUM_CREATURES = BUILDER
-                .comment("Legacy list of valid \"Medium\" creatures.")
-                .defineListAllowEmpty("mediumCreatures", List.of("minecraft:cow"), () -> "", Config::validateMobName);
-        LARGE_CREATURES = BUILDER
-                .comment("Legacy list of valid \"Large\" creatures.")
-                .defineListAllowEmpty("largeCreatures", List.of("minecraft:horse"), () -> "", Config::validateMobName);
         BUILDER.pop();
 
         BUILDER.push("path");
@@ -139,16 +159,6 @@ public class Config {
         CHECK_INTERVAL_TICKS = BUILDER
                 .comment("Interval in ticks between path condition checks.")
                 .defineInRange("checkIntervalTicks", 40, 1, 1200);
-
-        POOR_PATH = BUILDER
-                .comment("Legacy fallback list of \"Poor\" quality blocks.")
-                .defineListAllowEmpty("poorPathBlock", List.of("minecraft:dirt", "minecraft:grass_block"), () -> "", Config::validateBlockName);
-        NORMAL_PATH = BUILDER
-                .comment("Legacy fallback list of \"Normal\" quality blocks.")
-                .defineListAllowEmpty("normalPathBlock", List.of("minecraft:dirt_path", "minecraft:gravel"), () -> "", Config::validateBlockName);
-        GREAT_PATH = BUILDER
-                .comment("Legacy fallback list of \"Great\" quality blocks.")
-                .defineListAllowEmpty("greatPathBlock", List.of("minecraft:ice", "minecraft:packed_ice", "minecraft:blue_ice"), () -> "", Config::validateBlockName);
         BUILDER.pop();
 
         BUILDER.push("automation");

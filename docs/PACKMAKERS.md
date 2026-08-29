@@ -64,7 +64,7 @@ Execution Lifecycle:
       "speed_reference": 0.225,
       "health_scaling": 0.25,
       "health_reference": 22.0,
-      "requires_tamed": true,
+      "requires_tamed": false,
       "allow_baby": false
     }
   }
@@ -225,10 +225,29 @@ HorsePowerEvents.outputCalculated(event => {
 Located at `saves/<world>/serverconfig/createhorsepower-server.toml`:
 
 ```toml
+# Legacy root keys (preserved for 1.1 backward compatibility)
+creatureRPMRange = 4
+smallCreatureStressRange = 128
+mediumCreatureStressRange = 256
+largeCreatureStressRange = 512
+poorMultiplier = 0.5
+normalMultiplier = 1.0
+greatMultiplier = 2.0
+poorPathBlock = ["minecraft:dirt", "minecraft:grass_block"]
+normalPathBlock = ["minecraft:dirt_path", "minecraft:gravel"]
+greatPathBlock = ["minecraft:ice", "minecraft:packed_ice", "minecraft:blue_ice"]
+smallCreatures = ["minecraft:wolf"]
+mediumCreatures = ["minecraft:cow"]
+largeCreatures = ["minecraft:horse"]
+
 [balance]
     globalRpmMultiplier = 1.0
     globalStressMultiplier = 1.0
     enableIndividualAnimalStats = true
+    minSpeedScalingClamp = 0.5
+    maxSpeedScalingClamp = 2.5
+    minHealthScalingClamp = 0.5
+    maxHealthScalingClamp = 3.0
 
 [workers]
     allowBabies = false
@@ -271,3 +290,17 @@ Located at `saves/<world>/serverconfig/createhorsepower-server.toml`:
   - `/createhorsepower inspect` — Inspect the targeted horse crank.
   - `/createhorsepower worker <entity_type>` — Query effective worker stats for an entity type.
   - `/createhorsepower path <block>` — Query speed and stress multipliers for a path block.
+
+---
+
+## Migration from 1.1
+
+### 1. Server Configuration Compatibility
+- All 1.1 configuration keys (`creatureRPMRange`, `largeCreatureStressRange`, `poorPathBlock`, etc.) remain at the **root** of `createhorsepower-server.toml`.
+- Existing server config files from 1.1 will load seamlessly without reset or missing properties.
+
+### 2. Precedence and Data Map Overrides
+- In 1.1, mob stats were solely governed by the 3 config lists (`smallCreatures`, `mediumCreatures`, `largeCreatures`).
+- In 1.2, vanilla mobs (horse, donkey, mule, camel, llama, wolf, cow, pig, sheep) now have dedicated **Data Map profiles** (e.g. Horse defaults to `5 RPM / 600 SU` with individual speed/health scaling).
+- Because Data Maps take precedence over fallback config lists, modifying `largeCreatureStressRange` in config will only affect mobs without a Data Map entry.
+- To customize vanilla mobs in 1.2, override `data/createhorsepower/data_maps/entity_type/worker_stats.json` in a datapack or use `HorsePowerEvents.workerProfiles` in KubeJS.
