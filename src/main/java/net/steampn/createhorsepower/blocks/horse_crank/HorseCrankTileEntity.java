@@ -33,6 +33,8 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
     private float rpmModifier = 1.0f;
     private float generationDirection = 1.0f;
     private boolean needsLegacyDirectionResolution = false;
+    private boolean suppressGeneration = false;
+    private boolean resolvingLegacyDirection = false;
 
     @Nullable
     private Mob cachedWorkerMob;
@@ -62,6 +64,9 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
 
     @Override
     public float getGeneratedSpeed() {
+        if (suppressGeneration) {
+            return 0.0F;
+        }
         BlockState state = getBlockState();
         if (!state.getValue(HAS_WORKER) || !hasValidWorkingBlocks || rpmModifier <= 0.0f) {
             return 0.0F;
@@ -153,10 +158,7 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
     }
 
     public void detachWorker(boolean dropLead) {
-        this.cachedWorkerMob = null;
-        this.workerUuid = null;
-        this.lastKnownWorkerPos = null;
-        this.missingWorkerTicks = 0;
+        clearWorkerReferences();
 
         if (level != null && !level.isClientSide()) {
             BlockState state = getBlockState();
@@ -173,24 +175,42 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
     }
 
     public void onCrankRemoved() {
-        detachWorker(true);
+        if (level != null && !level.isClientSide()) {
+            CHPUtils.cleanUpLeash(level, worldPosition, true);
+        }
+        clearWorkerReferences();
+    }
+
+    private void clearWorkerReferences() {
+        this.cachedWorkerMob = null;
+        this.workerUuid = null;
+        this.lastKnownWorkerPos = null;
+        this.missingWorkerTicks = 0;
     }
 
     @Override
     public void tick() {
+        if (level != null && !level.isClientSide()) {
+            if (needsLegacyDirectionResolution) {
+                needsLegacyDirectionResolution = false;
+                resolvingLegacyDirection = true;
+                suppressGeneration = true;
+                clearKineticInformation();
+                updateSpeed = true;
+            }
+        }
+
         super.tick();
+
         if (level == null || level.isClientSide()) {
             return;
         }
 
-        if (needsLegacyDirectionResolution) {
-            needsLegacyDirectionResolution = false;
-            float existingSpeed = getTheoreticalSpeed();
-            if (existingSpeed != 0) {
-                generationDirection = Math.signum(existingSpeed);
-            } else {
-                generationDirection = 1.0f;
-            }
+        if (resolvingLegacyDirection) {
+            resolvingLegacyDirection = false;
+            float networkSpeed = getTheoreticalSpeed();
+            generationDirection = (networkSpeed == 0) ? 1.0f : Math.signum(networkSpeed);
+            suppressGeneration = false;
             updateGeneratedRotation();
         }
 
@@ -249,10 +269,7 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
     private void reconcileWorker() {
         BlockState state = getBlockState();
         if (!state.getValue(HAS_WORKER)) {
-            cachedWorkerMob = null;
-            workerUuid = null;
-            lastKnownWorkerPos = null;
-            missingWorkerTicks = 0;
+            clearWorkerReferences();
             return;
         }
 
@@ -299,7 +316,8 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
             } else if (poorConfig.contains(blockId)) {
                 poorCount++;
             } else {
-                poorCount++;
+                allValid = false;
+                break;
             }
         }
 
@@ -315,6 +333,16 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
             this.rpmModifier = (float) Config.GREAT_MULTIPLIER.getAsDouble();
         } else {
             this.rpmModifier = (float) Config.NORMAL_MULTIPLIER.getAsDouble();
+        }
+
+        boolean wasGenerating = oldValid && oldModifier > 0 && getBlockState().getValue(HAS_WORKER);
+        boolean willGenerate = this.hasValidWorkingBlocks && this.rpmModifier > 0 && getBlockState().getValue(HAS_WORKER);
+
+        if (!wasGenerating && willGenerate) {
+            float existing = getTheoreticalSpeed();
+            if (existing != 0) {
+                this.generationDirection = Math.signum(existing);
+            }
         }
 
         if (oldModifier != this.rpmModifier || oldValid != this.hasValidWorkingBlocks) {

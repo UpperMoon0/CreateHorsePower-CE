@@ -39,18 +39,36 @@ public class CHPUtils {
         return WorkerTier.NONE;
     }
 
-    public static InteractionResult cleanUpLeash(Level level, BlockPos pos, boolean dropLead) {
-        if (level == null) return InteractionResult.PASS;
-        List<LeashFenceKnotEntity> knots = level.getEntitiesOfClass(LeashFenceKnotEntity.class, new AABB(pos).inflate(0.5D));
+    public static java.util.Optional<LeashFenceKnotEntity> getKnot(Level level, BlockPos pos) {
+        if (level == null) return java.util.Optional.empty();
+        int x = pos.getX();
+        int y = pos.getY();
+        int z = pos.getZ();
+        List<LeashFenceKnotEntity> knots = level.getEntitiesOfClass(
+                LeashFenceKnotEntity.class,
+                new AABB(x - 1, y - 1, z - 1, x + 1, y + 1, z + 1)
+        );
         for (LeashFenceKnotEntity knot : knots) {
-            if (!level.isClientSide()) {
-                List<Mob> mobs = level.getEntitiesOfClass(Mob.class, new AABB(pos).inflate(10.0D), mob -> mob.getLeashHolder() == knot);
-                for (Mob mob : mobs) {
-                    mob.dropLeash(true, dropLead);
-                }
+            if (knot.getPos().equals(pos)) {
+                return java.util.Optional.of(knot);
+            }
+        }
+        return java.util.Optional.empty();
+    }
+
+    public static InteractionResult cleanUpLeash(Level level, BlockPos pos, boolean dropLead) {
+        if (level == null || level.isClientSide()) return InteractionResult.PASS;
+        getKnot(level, pos).ifPresent(knot -> {
+            List<Mob> mobs = level.getEntitiesOfClass(
+                    Mob.class,
+                    new AABB(pos).inflate(10.0D),
+                    mob -> mob.getLeashHolder() == knot
+            );
+            for (Mob mob : mobs) {
+                mob.dropLeash(true, dropLead);
             }
             knot.discard();
-        }
+        });
         return InteractionResult.SUCCESS;
     }
 
