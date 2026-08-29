@@ -1,5 +1,6 @@
 package net.steampn.createhorsepower.compat.kubejs;
 
+import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.TagKey;
@@ -8,14 +9,14 @@ import net.minecraft.world.level.block.Block;
 import net.steampn.createhorsepower.content.stats.PathStats;
 import net.steampn.createhorsepower.content.stats.WorkerStats;
 
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 public final class KubeJSProfileRegistry {
     private static final Map<ResourceLocation, WorkerStats> WORKER_PROFILES = new ConcurrentHashMap<>();
     private static final Map<ResourceLocation, PathStats> PATH_BLOCK_PROFILES = new ConcurrentHashMap<>();
-    private static final Map<TagKey<Block>, PathStats> PATH_TAG_PROFILES = new ConcurrentHashMap<>();
+    private static final List<Map.Entry<TagKey<Block>, PathStats>> PATH_TAG_PROFILES = new CopyOnWriteArrayList<>();
 
     public static void registerWorker(ResourceLocation id, WorkerStats stats) {
         WORKER_PROFILES.put(id, stats);
@@ -26,7 +27,7 @@ public final class KubeJSProfileRegistry {
     }
 
     public static void registerPathTag(TagKey<Block> tag, PathStats stats) {
-        PATH_TAG_PROFILES.put(tag, stats);
+        PATH_TAG_PROFILES.add(Map.entry(tag, stats));
     }
 
     public static Optional<WorkerStats> getWorker(ResourceLocation id) {
@@ -49,8 +50,10 @@ public final class KubeJSProfileRegistry {
             return Optional.of(stats);
         }
 
-        for (Map.Entry<TagKey<Block>, PathStats> entry : PATH_TAG_PROFILES.entrySet()) {
-            if (BuiltInRegistries.BLOCK.wrapAsHolder(block).is(entry.getKey())) {
+        Holder<Block> holder = BuiltInRegistries.BLOCK.wrapAsHolder(block);
+        for (int i = PATH_TAG_PROFILES.size() - 1; i >= 0; i--) {
+            Map.Entry<TagKey<Block>, PathStats> entry = PATH_TAG_PROFILES.get(i);
+            if (holder.is(entry.getKey())) {
                 return Optional.of(entry.getValue());
             }
         }

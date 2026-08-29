@@ -4,6 +4,7 @@ import dev.latvian.mods.kubejs.event.KubeEvent;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.level.Level;
+import net.steampn.createhorsepower.content.stats.WorkerStats;
 
 public class OutputCalculatedKubeEvent implements KubeEvent {
     private final Mob worker;
@@ -47,7 +48,7 @@ public class OutputCalculatedKubeEvent implements KubeEvent {
     }
 
     public void setRpmMultiplier(float rpmMultiplier) {
-        this.rpmMultiplier = rpmMultiplier;
+        this.rpmMultiplier = WorkerStats.validateNonNegativeFinite(rpmMultiplier, "rpmMultiplier");
     }
 
     public float getStressMultiplier() {
@@ -55,6 +56,6 @@ public class OutputCalculatedKubeEvent implements KubeEvent {
     }
 
     public void setStressMultiplier(float stressMultiplier) {
-        this.stressMultiplier = stressMultiplier;
+        this.stressMultiplier = WorkerStats.validateNonNegativeFinite(stressMultiplier, "stressMultiplier");
     }
 }

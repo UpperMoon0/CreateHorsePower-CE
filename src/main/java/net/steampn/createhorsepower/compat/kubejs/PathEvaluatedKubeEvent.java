@@ -4,6 +4,7 @@ import dev.latvian.mods.kubejs.event.KubeEvent;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
 import net.steampn.createhorsepower.content.path.PathEvaluator;
+import net.steampn.createhorsepower.content.stats.WorkerStats;
 
 public class PathEvaluatedKubeEvent implements KubeEvent {
     private final BlockPos crankPos;
@@ -49,7 +50,7 @@ public class PathEvaluatedKubeEvent implements KubeEvent {
     }
 
     public void setSpeedMultiplier(float speedMultiplier) {
-        this.speedMultiplier = speedMultiplier;
+        this.speedMultiplier = WorkerStats.validateNonNegativeFinite(speedMultiplier, "speedMultiplier");
     }
 
     public float getStressMultiplier() {
@@ -57,6 +58,6 @@ public class PathEvaluatedKubeEvent implements KubeEvent {
     }
 
     public void setStressMultiplier(float stressMultiplier) {
-        this.stressMultiplier = stressMultiplier;
+        this.stressMultiplier = WorkerStats.validateNonNegativeFinite(stressMultiplier, "stressMultiplier");
     }
 }

@@ -117,7 +117,29 @@ Execution Lifecycle:
 ### Item Tags
 - `#createhorsepower:attachment_items`: Root tag of items allowed to attach animals to the crank.
   - `#createhorsepower:worker_leashes`: Default member tag containing `minecraft:lead`.
-  - To require a custom harness item (e.g. `firstworks:rope_harness`), override `data/createhorsepower/tags/item/attachment_items.json`.
+
+#### Requiring a Custom Harness (Replacing Vanilla Lead)
+Tags in NeoForge merge additively by default. If your modpack wants to **prohibit vanilla leads** and require a custom harness, set `"replace": true` in `data/createhorsepower/tags/item/attachment_items.json`:
+
+```json
+{
+  "replace": true,
+  "values": [
+    "firstworks:rope_harness"
+  ]
+}
+```
+
+#### Adding Alternative Leashes (Additive)
+To allow additional leash items alongside the vanilla lead without removing it, omit `"replace"`:
+
+```json
+{
+  "values": [
+    "some_mod:custom_leash"
+  ]
+}
+```
 
 ### Entity Tags
 - `#createhorsepower:workers/small` (fallback: 4 RPM, small tier stress)

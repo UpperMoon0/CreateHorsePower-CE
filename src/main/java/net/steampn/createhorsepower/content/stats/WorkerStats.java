@@ -35,6 +35,27 @@ public record WorkerStats(
             Codec.BOOL.optionalFieldOf("allow_baby", false).forGetter(WorkerStats::allowBaby)
     ).apply(instance, WorkerStats::new));
 
+    public static float validateNonNegativeFinite(float value, String fieldName) {
+        if (!Float.isFinite(value) || value < 0.0f) {
+            throw new IllegalArgumentException(fieldName + " must be finite and >= 0 (got: " + value + ")");
+        }
+        return value;
+    }
+
+    public static float validatePositiveFinite(float value, String fieldName) {
+        if (!Float.isFinite(value) || value <= 0.0f) {
+            throw new IllegalArgumentException(fieldName + " must be finite and > 0 (got: " + value + ")");
+        }
+        return value;
+    }
+
+    public static float validateRadius(float value) {
+        if (!Float.isFinite(value) || value < 0.5f || value > 32.0f) {
+            throw new IllegalArgumentException("movementRadius must be finite and between 0.5 and 32.0 (got: " + value + ")");
+        }
+        return value;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -51,37 +72,37 @@ public record WorkerStats(
         private boolean allowBaby = false;
 
         public Builder rpm(float rpm) {
-            this.baseRpm = Math.max(0.0f, rpm);
+            this.baseRpm = validateNonNegativeFinite(rpm, "rpm");
             return this;
         }
 
         public Builder stress(float stress) {
-            this.stressCapacity = Math.max(0.0f, stress);
+            this.stressCapacity = validateNonNegativeFinite(stress, "stress");
             return this;
         }
 
         public Builder movementRadius(float radius) {
-            this.movementRadius = Math.max(0.5f, radius);
+            this.movementRadius = validateRadius(radius);
             return this;
         }
 
         public Builder speedScaling(float scaling) {
-            this.speedScaling = Math.max(0.0f, scaling);
+            this.speedScaling = validateNonNegativeFinite(scaling, "speedScaling");
             return this;
         }
 
         public Builder speedReference(float ref) {
-            this.speedReference = Math.max(0.001f, ref);
+            this.speedReference = validatePositiveFinite(ref, "speedReference");
             return this;
         }
 
         public Builder healthScaling(float scaling) {
-            this.healthScaling = Math.max(0.0f, scaling);
+            this.healthScaling = validateNonNegativeFinite(scaling, "healthScaling");
             return this;
         }
 
         public Builder healthReference(float ref) {
-            this.healthReference = Math.max(0.001f, ref);
+            this.healthReference = validatePositiveFinite(ref, "healthReference");
             return this;
         }
 

@@ -95,4 +95,14 @@ public class WorkerStatsCodecTest {
 
         assertTrue(result.error().isPresent(), "PathStats must reject negative speed multiplier");
     }
+
+    @Test
+    @DisplayName("WorkerStats.Builder rejects non-finite or out-of-range values")
+    void testWorkerStatsBuilderValidation() {
+        assertThrows(IllegalArgumentException.class, () -> WorkerStats.builder().rpm(-1.0f));
+        assertThrows(IllegalArgumentException.class, () -> WorkerStats.builder().movementRadius(0.1f));
+        assertThrows(IllegalArgumentException.class, () -> WorkerStats.builder().movementRadius(50.0f));
+        assertThrows(IllegalArgumentException.class, () -> WorkerStats.builder().movementRadius(Float.NaN));
+        assertThrows(IllegalArgumentException.class, () -> WorkerStats.builder().speedReference(0.0f));
+    }
 }

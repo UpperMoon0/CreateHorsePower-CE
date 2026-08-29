@@ -132,6 +132,15 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
                 && (effectiveBaseRpm * rpmModifier > 0);
     }
 
+    private void stopWorking() {
+        if (!isWorking) return;
+        this.isWorking = false;
+        this.scriptVetoed = false;
+        if (level != null && !level.isClientSide()) {
+            OptionalIntegrations.fireWorkStopped(worldPosition, level);
+        }
+    }
+
     @Override
     public float getGeneratedSpeed() {
         if (!isWorking || !canPhysicallyWork()) {
@@ -336,6 +345,7 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
 
     public void detachWorker(boolean dropLead) {
         Mob worker = cachedWorkerMob;
+        stopWorking();
         clearWorkerReferences();
 
         if (level != null && !level.isClientSide()) {
@@ -351,6 +361,7 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
     }
 
     public void onCrankRemoved() {
+        stopWorking();
         if (level != null && !level.isClientSide()) {
             CHPUtils.cleanUpLeash(level, worldPosition, true);
         }
@@ -364,8 +375,6 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
         this.missingWorkerTicks = 0;
         this.workerResolved = false;
         this.workerEligible = false;
-        this.isWorking = false;
-        this.scriptVetoed = false;
         this.cachedWorkerName = "";
         this.speedBonusPercent = 0.0f;
         this.healthBonusPercent = 0.0f;
@@ -435,11 +444,7 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
                 }
             }
         } else {
-            this.scriptVetoed = false;
-            if (wasWorking) {
-                this.isWorking = false;
-                OptionalIntegrations.fireWorkStopped(worldPosition, level);
-            }
+            stopWorking();
         }
 
         if (wasWorking != this.isWorking) {
