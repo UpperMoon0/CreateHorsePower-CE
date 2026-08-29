@@ -115,6 +115,7 @@ neoForge {
         // multi mod projects should define one per mod
         "${mod_id}" {
             sourceSet(sourceSets.main)
+            sourceSet(sourceSets.test)
         }
     }
 }
@@ -132,6 +133,7 @@ tasks.named('processResources', ProcessResources).configure {
 // "optional", meaning it will not be pulled by dependents of this mod.
 configurations {
     runtimeClasspath.extendsFrom localRuntime
+    testImplementation.extendsFrom compileClasspath
 }
 
 dependencies {
@@ -153,6 +155,13 @@ dependencies {
     // KubeJS
     compileOnly("dev.latvian.mods:kubejs-neoforge:2101.7.2-build.368")
     localRuntime("dev.latvian.mods:kubejs-neoforge:2101.7.2-build.368")
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform()
 }
 
 // This block of code expands all declared replace properties in the specified resource targets.

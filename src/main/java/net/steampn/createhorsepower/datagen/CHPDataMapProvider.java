@@ -22,31 +22,34 @@ public class CHPDataMapProvider extends DataMapProvider {
         var workerBuilder = this.builder(CHPDataMaps.WORKER_STATS);
 
         // Tier tags
-        workerBuilder.add(CHPTags.Entities.WORKERS_SMALL, WorkerStats.SMALL_DEFAULT, false);
-        workerBuilder.add(CHPTags.Entities.WORKERS_MEDIUM, WorkerStats.MEDIUM_DEFAULT, false);
-        workerBuilder.add(CHPTags.Entities.WORKERS_LARGE, WorkerStats.LARGE_DEFAULT, false);
+        workerBuilder.add(CHPTags.Entities.WORKERS_SMALL,
+                new WorkerStats(4.0f, 128.0f, 2.5f, 0.0f, 0.225f, 0.0f, 20.0f, false, false), false);
+        workerBuilder.add(CHPTags.Entities.WORKERS_MEDIUM,
+                new WorkerStats(4.0f, 256.0f, 2.5f, 0.0f, 0.225f, 0.0f, 20.0f, false, false), false);
+        workerBuilder.add(CHPTags.Entities.WORKERS_LARGE,
+                new WorkerStats(4.0f, 512.0f, 2.5f, 0.5f, 0.225f, 0.2f, 20.0f, false, false), false);
 
-        // Specific entity profiles with individual attribute scaling
+        // Specific entity profiles with individual attribute scaling and reference values
         workerBuilder.add(EntityType.HORSE.builtInRegistryHolder(),
-                new WorkerStats(5.0f, 600.0f, 2.5f, 0.75f, 0.25f, true, false), false);
+                new WorkerStats(5.0f, 600.0f, 2.5f, 0.75f, 0.225f, 0.25f, 22.0f, true, false), false);
         workerBuilder.add(EntityType.DONKEY.builtInRegistryHolder(),
-                new WorkerStats(4.0f, 650.0f, 2.5f, 0.50f, 0.30f, true, false), false);
+                new WorkerStats(4.0f, 650.0f, 2.5f, 0.50f, 0.175f, 0.30f, 20.0f, true, false), false);
         workerBuilder.add(EntityType.MULE.builtInRegistryHolder(),
-                new WorkerStats(4.5f, 700.0f, 2.5f, 0.60f, 0.35f, true, false), false);
+                new WorkerStats(4.5f, 700.0f, 2.5f, 0.60f, 0.200f, 0.35f, 24.0f, true, false), false);
         workerBuilder.add(EntityType.CAMEL.builtInRegistryHolder(),
-                new WorkerStats(4.0f, 750.0f, 2.5f, 0.40f, 0.40f, true, false), false);
+                new WorkerStats(4.0f, 750.0f, 2.5f, 0.40f, 0.090f, 0.40f, 32.0f, true, false), false);
         workerBuilder.add(EntityType.LLAMA.builtInRegistryHolder(),
-                new WorkerStats(3.5f, 350.0f, 2.5f, 0.30f, 0.20f, true, false), false);
+                new WorkerStats(3.5f, 350.0f, 2.5f, 0.30f, 0.175f, 0.20f, 20.0f, true, false), false);
         workerBuilder.add(EntityType.TRADER_LLAMA.builtInRegistryHolder(),
-                new WorkerStats(3.5f, 350.0f, 2.5f, 0.30f, 0.20f, true, false), false);
+                new WorkerStats(3.5f, 350.0f, 2.5f, 0.30f, 0.175f, 0.20f, 20.0f, true, false), false);
         workerBuilder.add(EntityType.COW.builtInRegistryHolder(),
-                new WorkerStats(3.0f, 300.0f, 2.5f, 0.0f, 0.20f, false, false), false);
+                new WorkerStats(3.0f, 300.0f, 2.5f, 0.0f, 0.200f, 0.20f, 10.0f, false, false), false);
         workerBuilder.add(EntityType.PIG.builtInRegistryHolder(),
-                new WorkerStats(3.5f, 200.0f, 2.5f, 0.20f, 0.10f, false, false), false);
+                new WorkerStats(3.5f, 200.0f, 2.5f, 0.20f, 0.200f, 0.10f, 10.0f, false, false), false);
         workerBuilder.add(EntityType.SHEEP.builtInRegistryHolder(),
-                new WorkerStats(3.0f, 180.0f, 2.5f, 0.0f, 0.10f, false, false), false);
+                new WorkerStats(3.0f, 180.0f, 2.5f, 0.0f, 0.200f, 0.10f, 8.0f, false, false), false);
         workerBuilder.add(EntityType.WOLF.builtInRegistryHolder(),
-                new WorkerStats(4.0f, 150.0f, 2.5f, 0.0f, 0.0f, true, false), false);
+                new WorkerStats(4.0f, 150.0f, 2.5f, 0.0f, 0.300f, 0.0f, 20.0f, true, false), false);
 
         var pathBuilder = this.builder(CHPDataMaps.PATH_STATS);
         pathBuilder.add(Blocks.DIRT_PATH.builtInRegistryHolder(), PathStats.NORMAL, false);

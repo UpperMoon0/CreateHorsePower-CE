@@ -38,6 +38,7 @@
   "tooltip.createhorsepower.goggles.status.no_worker": "Status: No Worker Attached",
   "tooltip.createhorsepower.goggles.status.stopped_redstone": "Status: Stopped by Redstone",
   "tooltip.createhorsepower.goggles.status.worker_unloaded": "Status: Worker Unloaded (Suspended)",
+  "tooltip.createhorsepower.goggles.status.worker_ineligible": "Status: Worker Not Eligible",
   "tooltip.createhorsepower.goggles.status.invalid_path": "Status: Invalid Path (%s invalid tiles)",
   "tooltip.createhorsepower.goggles.status.working": "Status: Working",
   "tooltip.createhorsepower.goggles.worker": "Worker: %s",

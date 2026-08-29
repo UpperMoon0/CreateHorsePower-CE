@@ -17,7 +17,10 @@ public class CHPItemTagGenerator extends ItemTagsProvider {
     }
 
     @Override
-    protected void addTags(HolderLookup.Provider p_256380_) {
-
+    protected void addTags(HolderLookup.Provider provider) {
+        tag(net.steampn.createhorsepower.utils.CHPTags.Items.WORKER_LEASHES)
+                .add(net.minecraft.world.item.Items.LEAD);
+        tag(net.steampn.createhorsepower.utils.CHPTags.Items.ATTACHMENT_ITEMS)
+                .addTag(net.steampn.createhorsepower.utils.CHPTags.Items.WORKER_LEASHES);
     }
 }

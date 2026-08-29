@@ -11,10 +11,21 @@ import net.steampn.createhorsepower.content.stats.WorkerResolver;
 import org.jetbrains.annotations.Nullable;
 
 public final class OptionalIntegrations {
-    private static final boolean KUBE_JS_LOADED = ModList.get().isLoaded("kubejs");
+    private static final boolean KUBE_JS_LOADED = isKubeJsPresent();
+
+    private static boolean isKubeJsPresent() {
+        try {
+            return ModList.get() != null && ModList.get().isLoaded("kubejs");
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
 
     public static boolean fireBeforeAttach(@Nullable Player player, Mob worker, BlockPos pos, Level level, WorkerResolver.ResolvedWorker profile) {
-        return KUBE_JS_LOADED && KubeJSCompat.fireBeforeAttach(player, worker, pos, level, profile);
+        if (!KUBE_JS_LOADED) {
+            return true;
+        }
+        return KubeJSCompat.fireBeforeAttach(player, worker, pos, level, profile);
     }
 
     public static void fireWorkerAttached(Mob worker, BlockPos pos, Level level, WorkerResolver.ResolvedWorker profile) {
@@ -30,7 +41,10 @@ public final class OptionalIntegrations {
     }
 
     public static boolean fireWorkStarted(Mob worker, BlockPos pos, Level level) {
-        return KUBE_JS_LOADED && KubeJSCompat.fireWorkStarted(worker, pos, level);
+        if (!KUBE_JS_LOADED) {
+            return true;
+        }
+        return KubeJSCompat.fireWorkStarted(worker, pos, level);
     }
 
     public static void fireWorkStopped(BlockPos pos, Level level) {

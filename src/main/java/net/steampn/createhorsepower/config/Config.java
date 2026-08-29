@@ -138,7 +138,7 @@ public class Config {
                 .defineInRange("minimumCoverage", 1.0, 0.0, 1.0);
         CHECK_INTERVAL_TICKS = BUILDER
                 .comment("Interval in ticks between path condition checks.")
-                .defineInRange("checkIntervalTicks", 20, 1, 1200);
+                .defineInRange("checkIntervalTicks", 40, 1, 1200);
 
         POOR_PATH = BUILDER
                 .comment("Legacy fallback list of \"Poor\" quality blocks.")

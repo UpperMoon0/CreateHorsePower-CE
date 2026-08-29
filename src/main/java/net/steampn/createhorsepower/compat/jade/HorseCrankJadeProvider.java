@@ -25,6 +25,7 @@ public enum HorseCrankJadeProvider implements IBlockComponentProvider, IServerDa
         data.putBoolean("HasWorker", hasWorker);
         data.putBoolean("StoppedRedstone", crank.isStoppedByRedstone());
         data.putBoolean("ValidPath", crank.hasValidWorkingBlocks);
+        data.putBoolean("WorkerEligible", crank.isWorkerEligible());
         data.putString("WorkerName", crank.getCachedWorkerName());
         data.putFloat("SpeedBonus", crank.getSpeedBonusPercent());
         data.putFloat("HealthBonus", crank.getHealthBonusPercent());
@@ -46,6 +47,8 @@ public enum HorseCrankJadeProvider implements IBlockComponentProvider, IServerDa
 
         if (data.getBoolean("StoppedRedstone")) {
             tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.stopped_redstone").withStyle(ChatFormatting.RED));
+        } else if (!data.getBoolean("WorkerEligible")) {
+            tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.worker_ineligible").withStyle(ChatFormatting.RED));
         } else if (!data.getBoolean("ValidPath")) {
             tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.invalid_path", data.getInt("InvalidBlocks")).withStyle(ChatFormatting.RED));
         } else {

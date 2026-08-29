@@ -11,7 +11,6 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.WalkAnimationState;
-import net.minecraft.world.entity.animal.horse.Horse;
 import net.minecraft.world.entity.decoration.LeashFenceKnotEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
@@ -43,6 +42,8 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
     private boolean suppressGeneration = false;
     private boolean resolvingLegacyDirection = false;
     private boolean workerResolved = false;
+    private boolean workerEligible = false;
+    private boolean lastWorkingState = false;
 
     private float effectiveBaseRpm = 4.0f;
     private float effectiveBaseStress = 256.0f;
@@ -52,7 +53,7 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
     private int invalidBlockCount = 0;
     private String cachedWorkerName = "";
 
-    private RedstoneMode redstoneMode = RedstoneMode.HIGH_STOPS;
+    private RedstoneMode redstoneMode;
     private boolean lastRedstoneState = false;
 
     @Nullable
@@ -63,9 +64,11 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
     private BlockPos lastKnownWorkerPos;
     private int missingWorkerTicks = 0;
     private long lastPathCheckTick = -1;
+    private int statRefreshTimer = 0;
 
     public HorseCrankTileEntity(BlockEntityType<?> type, BlockPos pos, BlockState state) {
         super(type, pos, state);
+        this.redstoneMode = Config.DEFAULT_REDSTONE_MODE.get();
     }
 
     private static BlockPos[] generateOffsets() {
@@ -109,9 +112,23 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
         return next;
     }
 
+    public boolean isWorkerEligible() {
+        return workerEligible;
+    }
+
+    public boolean computeWorkingState() {
+        return getBlockState().getValue(HAS_WORKER)
+                && workerResolved
+                && workerEligible
+                && hasValidWorkingBlocks
+                && !isStoppedByRedstone()
+                && !suppressGeneration
+                && (effectiveBaseRpm * rpmModifier > 0);
+    }
+
     @Override
     public float getGeneratedSpeed() {
-        if (suppressGeneration || isStoppedByRedstone()) {
+        if (suppressGeneration || isStoppedByRedstone() || !workerEligible) {
             return 0.0F;
         }
         BlockState state = getBlockState();
@@ -125,7 +142,7 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
     public float calculateAddedStressCapacity() {
         BlockState state = getBlockState();
         float speed = getGeneratedSpeed();
-        if (speed == 0 || !state.getValue(HAS_WORKER) || !workerResolved) return 0;
+        if (speed == 0 || !state.getValue(HAS_WORKER) || !workerResolved || !workerEligible) return 0;
 
         float capacity = effectiveBaseStress * pathStressModifier;
         capacity = Math.abs(capacity / Math.abs(speed));
@@ -146,6 +163,8 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
             tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.stopped_redstone").withStyle(ChatFormatting.RED));
         } else if (!workerResolved) {
             tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.worker_unloaded").withStyle(ChatFormatting.YELLOW));
+        } else if (!workerEligible) {
+            tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.worker_ineligible").withStyle(ChatFormatting.RED));
         } else if (!hasValidWorkingBlocks) {
             tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.invalid_path", invalidBlockCount).withStyle(ChatFormatting.RED));
         } else {
@@ -186,6 +205,7 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
         compound.putString("RedstoneMode", redstoneMode.getSerializedName());
         compound.putFloat("EffectiveBaseRpm", effectiveBaseRpm);
         compound.putFloat("EffectiveBaseStress", effectiveBaseStress);
+        compound.putBoolean("WorkerEligible", workerEligible);
 
         if (workerUuid != null) {
             compound.putUUID("WorkerUUID", workerUuid);
@@ -212,6 +232,7 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
         if (compound.contains("HasValidWorkingBlocks")) hasValidWorkingBlocks = compound.getBoolean("HasValidWorkingBlocks");
         if (compound.contains("EffectiveBaseRpm")) effectiveBaseRpm = compound.getFloat("EffectiveBaseRpm");
         if (compound.contains("EffectiveBaseStress")) effectiveBaseStress = compound.getFloat("EffectiveBaseStress");
+        if (compound.contains("WorkerEligible")) workerEligible = compound.getBoolean("WorkerEligible");
 
         if (compound.contains("RedstoneMode")) {
             String modeStr = compound.getString("RedstoneMode");
@@ -255,6 +276,7 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
         this.lastKnownWorkerPos = worker.blockPosition();
         this.missingWorkerTicks = 0;
         this.workerResolved = true;
+        this.workerEligible = profile.isValid();
 
         applyProfile(worker, profile);
 
@@ -276,6 +298,17 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
     }
 
     private void applyProfile(Mob worker, WorkerResolver.ResolvedWorker profile) {
+        if (!profile.isValid()) {
+            this.workerEligible = false;
+            this.effectiveBaseRpm = 0.0f;
+            this.effectiveBaseStress = 0.0f;
+            this.speedBonusPercent = 0.0f;
+            this.healthBonusPercent = 0.0f;
+            this.cachedWorkerName = worker.getName().getString();
+            return;
+        }
+
+        this.workerEligible = true;
         this.effectiveBaseRpm = profile.effectiveRpm();
         this.effectiveBaseStress = profile.effectiveStressCapacity();
         this.speedBonusPercent = profile.speedBonusPercent();
@@ -318,6 +351,7 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
         this.lastKnownWorkerPos = null;
         this.missingWorkerTicks = 0;
         this.workerResolved = false;
+        this.workerEligible = false;
         this.cachedWorkerName = "";
         this.speedBonusPercent = 0.0f;
         this.healthBonusPercent = 0.0f;
@@ -367,8 +401,23 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
             checkPathBlocks();
         }
 
-        // 3. Move animal along track if active
-        if (getBlockState().getValue(HAS_WORKER) && cachedWorkerMob != null && hasValidWorkingBlocks && !isStoppedByRedstone()) {
+        // 3. Centralized working state transition
+        boolean isWorking = computeWorkingState();
+        if (!lastWorkingState && isWorking) {
+            if (cachedWorkerMob != null && !OptionalIntegrations.fireWorkStarted(cachedWorkerMob, worldPosition, level)) {
+                suppressGeneration = true;
+                updateGeneratedRotation();
+            } else {
+                lastWorkingState = true;
+                suppressGeneration = false;
+            }
+        } else if (lastWorkingState && !isWorking) {
+            lastWorkingState = false;
+            OptionalIntegrations.fireWorkStopped(worldPosition, level);
+        }
+
+        // 4. Move animal along track if active
+        if (lastWorkingState && cachedWorkerMob != null) {
             moveWorkerTo(cachedWorkerMob);
         }
     }
@@ -419,14 +468,20 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
 
         Mob worker = resolveWorker();
         boolean wasResolved = this.workerResolved;
+        boolean wasEligible = this.workerEligible;
 
         if (worker != null) {
             this.workerResolved = true;
             missingWorkerTicks = 0;
             lastKnownWorkerPos = worker.blockPosition();
 
-            WorkerResolver.ResolvedWorker profile = WorkerResolver.resolve(worker);
-            if (profile.isValid()) {
+            statRefreshTimer++;
+            boolean needStatRefresh = !wasResolved || (statRefreshTimer >= 60);
+
+            if (needStatRefresh) {
+                statRefreshTimer = 0;
+                WorkerResolver.ResolvedWorker profile = WorkerResolver.resolve(worker);
+                this.workerEligible = profile.isValid();
                 applyProfile(worker, profile);
             }
 
@@ -435,10 +490,10 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
                 if (networkSpeed != 0) {
                     generationDirection = Math.signum(networkSpeed);
                 }
-                OptionalIntegrations.fireWorkStarted(worker, worldPosition, level);
             }
         } else {
             this.workerResolved = false;
+            this.workerEligible = false;
             BlockPos checkPos = lastKnownWorkerPos != null ? lastKnownWorkerPos : worldPosition;
             if (level.hasChunkAt(checkPos)) {
                 missingWorkerTicks++;
@@ -447,12 +502,9 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
                     return;
                 }
             }
-            if (wasResolved) {
-                OptionalIntegrations.fireWorkStopped(worldPosition, level);
-            }
         }
 
-        if (wasResolved != this.workerResolved) {
+        if (wasResolved != this.workerResolved || wasEligible != this.workerEligible) {
             updateGeneratedRotation();
             notifyUpdate();
         }
@@ -460,8 +512,6 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
 
     private void checkPathBlocks() {
         if (level == null) return;
-
-        boolean wasGenerating = hasValidWorkingBlocks && (rpmModifier > 0);
 
         PathEvaluator.Result evalResult = PathEvaluator.evaluate(level, worldPosition, OFFSETS);
         float speedMult = evalResult.speedMultiplier();
@@ -471,23 +521,34 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
         speedMult *= scriptMods[0];
         stressMult *= scriptMods[1];
 
-        this.hasValidWorkingBlocks = evalResult.isValid();
-        this.rpmModifier = speedMult;
-        this.pathStressModifier = stressMult;
-        this.efficiencyPercent = Math.round(speedMult * 100.0f);
-        this.invalidBlockCount = evalResult.invalidBlocks();
+        boolean valid = evalResult.isValid();
+        int invalidCount = evalResult.invalidBlocks();
+        int eff = Math.round(speedMult * 100.0f);
 
-        boolean willGenerate = hasValidWorkingBlocks && (rpmModifier > 0);
+        boolean changed = (this.hasValidWorkingBlocks != valid)
+                || (this.rpmModifier != speedMult)
+                || (this.pathStressModifier != stressMult)
+                || (this.invalidBlockCount != invalidCount);
 
-        if (!wasGenerating && willGenerate) {
-            float networkSpeed = getTheoreticalSpeed();
-            if (networkSpeed != 0) {
-                this.generationDirection = Math.signum(networkSpeed);
+        if (changed) {
+            boolean wasGenerating = hasValidWorkingBlocks && (rpmModifier > 0);
+            this.hasValidWorkingBlocks = valid;
+            this.rpmModifier = speedMult;
+            this.pathStressModifier = stressMult;
+            this.efficiencyPercent = eff;
+            this.invalidBlockCount = invalidCount;
+
+            boolean willGenerate = hasValidWorkingBlocks && (rpmModifier > 0);
+            if (!wasGenerating && willGenerate) {
+                float networkSpeed = getTheoreticalSpeed();
+                if (networkSpeed != 0) {
+                    this.generationDirection = Math.signum(networkSpeed);
+                }
             }
-        }
 
-        updateGeneratedRotation();
-        notifyUpdate();
+            updateGeneratedRotation();
+            notifyUpdate();
+        }
     }
 
     public float getEfficiencyPercent() {
@@ -521,9 +582,16 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
     private void moveWorkerTo(Mob mob) {
         if (level == null || mob == null) return;
 
-        double dt = (1.0 / 20.0);
-        float angularSpeed = (float) Math.toRadians(getGeneratedSpeed() * 6.0);
-        float currentAngle = (float) Math.toRadians(mob.getYRot());
+        float speed = getGeneratedSpeed();
+        if (speed == 0.0f) return;
+
+        double centerX = worldPosition.getX() + 0.5;
+        double centerZ = worldPosition.getZ() + 0.5;
+
+        double dx = mob.getX() - centerX;
+        double dz = mob.getZ() - centerZ;
+
+        double currentAngle = Math.atan2(dz, dx);
 
         float radius = 2.5f;
         Optional<WorkerStats> stats = WorkerResolver.getBaseStats(mob.getType());
@@ -531,17 +599,23 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
             radius = stats.get().movementRadius();
         }
 
-        float forwardTangentAngle = currentAngle + (float) Math.toRadians(90.0 * Math.signum(getGeneratedSpeed()));
-        float newAngle = currentAngle + (angularSpeed * (float) dt);
+        double direction = Math.signum(speed);
+        double angularVelocity = Math.toRadians(Math.abs(speed) * 6.0); // 6 deg/sec per RPM
+        double angularDelta = (angularVelocity * direction) / 20.0;
 
-        double targetX = worldPosition.getX() + 0.5 + radius * Math.cos(newAngle);
-        double targetZ = worldPosition.getZ() + 0.5 + radius * Math.sin(newAngle);
+        double newAngle = currentAngle + angularDelta;
 
-        mob.setYRot((float) Math.toDegrees(forwardTangentAngle));
-        mob.setYHeadRot((float) Math.toDegrees(forwardTangentAngle));
-        mob.setYBodyRot((float) Math.toDegrees(forwardTangentAngle));
+        double targetX = centerX + radius * Math.cos(newAngle);
+        double targetZ = centerZ + radius * Math.sin(newAngle);
 
         mob.setPos(targetX, mob.getY(), targetZ);
+
+        double tangentAngle = newAngle + (Math.PI / 2.0) * direction;
+        float yaw = (float) Math.toDegrees(tangentAngle);
+
+        mob.setYRot(yaw);
+        mob.setYHeadRot(yaw);
+        mob.setYBodyRot(yaw);
 
         WalkAnimationState walkState = mob.walkAnimation;
         walkState.setSpeed(1.0f);

@@ -4,7 +4,6 @@ import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.EntityType;
-import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.TamableAnimal;
 import net.minecraft.world.entity.ai.attributes.Attributes;
@@ -12,7 +11,6 @@ import net.minecraft.world.entity.animal.horse.AbstractHorse;
 import net.steampn.createhorsepower.config.Config;
 import net.steampn.createhorsepower.registry.CHPDataMaps;
 import net.steampn.createhorsepower.utils.CHPTags;
-import net.steampn.createhorsepower.utils.CHPUtils;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Optional;
@@ -30,6 +28,21 @@ public class WorkerResolver {
         public static final ResolvedWorker INVALID = new ResolvedWorker(WorkerStats.DEFAULT, 0.0f, 0.0f, 0.0f, 0.0f, false);
     }
 
+    private static WorkerStats createLegacyProfile(float stressCapacity) {
+        float rpm = (float) Config.BASE_CREATURE_RPM.getAsInt();
+        return new WorkerStats(
+                rpm,
+                stressCapacity,
+                2.5f,
+                0.5f,
+                WorkerStats.DEFAULT_SPEED_REF,
+                0.2f,
+                WorkerStats.DEFAULT_HEALTH_REF,
+                false,
+                false
+        );
+    }
+
     public static Optional<WorkerStats> getBaseStats(EntityType<?> type) {
         Holder<EntityType<?>> holder = BuiltInRegistries.ENTITY_TYPE.wrapAsHolder(type);
         WorkerStats stats = holder.getData(CHPDataMaps.WORKER_STATS);
@@ -37,27 +50,27 @@ public class WorkerResolver {
             return Optional.of(stats);
         }
 
-        // Fallback to legacy worker tags
+        // Fallback to legacy worker tags with live config values
         if (holder.is(CHPTags.Entities.WORKERS_LARGE) || holder.is(CHPTags.Entities.LARGE_WORKER_TAG)) {
-            return Optional.of(WorkerStats.LARGE_DEFAULT);
+            return Optional.of(createLegacyProfile(Config.LARGE_CREATURE_STRESS.getAsInt()));
         }
         if (holder.is(CHPTags.Entities.WORKERS_MEDIUM) || holder.is(CHPTags.Entities.MEDIUM_WORKER_TAG)) {
-            return Optional.of(WorkerStats.MEDIUM_DEFAULT);
+            return Optional.of(createLegacyProfile(Config.MEDIUM_CREATURE_STRESS.getAsInt()));
         }
         if (holder.is(CHPTags.Entities.WORKERS_SMALL) || holder.is(CHPTags.Entities.SMALL_WORKER_TAG)) {
-            return Optional.of(WorkerStats.SMALL_DEFAULT);
+            return Optional.of(createLegacyProfile(Config.SMALL_CREATURE_STRESS.getAsInt()));
         }
 
         // Fallback to legacy config lists
         String entityKey = BuiltInRegistries.ENTITY_TYPE.getKey(type).toString();
         if (Config.LARGE_CREATURES.get().contains(entityKey)) {
-            return Optional.of(WorkerStats.LARGE_DEFAULT);
+            return Optional.of(createLegacyProfile(Config.LARGE_CREATURE_STRESS.getAsInt()));
         }
         if (Config.MEDIUM_CREATURES.get().contains(entityKey)) {
-            return Optional.of(WorkerStats.MEDIUM_DEFAULT);
+            return Optional.of(createLegacyProfile(Config.MEDIUM_CREATURE_STRESS.getAsInt()));
         }
         if (Config.SMALL_CREATURES.get().contains(entityKey)) {
-            return Optional.of(WorkerStats.SMALL_DEFAULT);
+            return Optional.of(createLegacyProfile(Config.SMALL_CREATURE_STRESS.getAsInt()));
         }
 
         return Optional.empty();
@@ -100,7 +113,7 @@ public class WorkerResolver {
             // Speed scaling -> RPM
             if (stats.speedScaling() > 0.0f && mob.getAttributes().hasAttribute(Attributes.MOVEMENT_SPEED)) {
                 double speed = mob.getAttributeValue(Attributes.MOVEMENT_SPEED);
-                double baseSpeedRef = 0.225d; // Standard horse movement speed reference
+                double baseSpeedRef = stats.speedReference();
                 double ratio = speed / baseSpeedRef;
                 double clamped = Mth.clamp(ratio, Config.MIN_SPEED_SCALING_CLAMP.get(), Config.MAX_SPEED_SCALING_CLAMP.get());
                 speedBonus = (float) ((clamped - 1.0) * stats.speedScaling());
@@ -110,7 +123,7 @@ public class WorkerResolver {
             // Health scaling -> Stress
             if (stats.healthScaling() > 0.0f && mob.getAttributes().hasAttribute(Attributes.MAX_HEALTH)) {
                 double maxHealth = mob.getAttributeValue(Attributes.MAX_HEALTH);
-                double baseHealthRef = 20.0d; // Standard horse max health reference
+                double baseHealthRef = stats.healthReference();
                 double ratio = maxHealth / baseHealthRef;
                 double clamped = Mth.clamp(ratio, Config.MIN_HEALTH_SCALING_CLAMP.get(), Config.MAX_HEALTH_SCALING_CLAMP.get());
                 healthBonus = (float) ((clamped - 1.0) * stats.healthScaling());
