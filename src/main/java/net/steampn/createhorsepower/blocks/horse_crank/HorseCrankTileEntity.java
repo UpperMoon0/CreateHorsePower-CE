@@ -35,6 +35,7 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
     private boolean needsLegacyDirectionResolution = false;
     private boolean suppressGeneration = false;
     private boolean resolvingLegacyDirection = false;
+    private boolean workerResolved = false;
 
     @Nullable
     private Mob cachedWorkerMob;
@@ -68,7 +69,7 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
             return 0.0F;
         }
         BlockState state = getBlockState();
-        if (!state.getValue(HAS_WORKER) || !hasValidWorkingBlocks || rpmModifier <= 0.0f) {
+        if (!state.getValue(HAS_WORKER) || !workerResolved || !hasValidWorkingBlocks || rpmModifier <= 0.0f) {
             return 0.0F;
         }
         float magnitude = (float) Config.BASE_CREATURE_RPM.getAsInt() * rpmModifier;
@@ -134,6 +135,7 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
         this.workerUuid = worker.getUUID();
         this.lastKnownWorkerPos = worker.blockPosition();
         this.missingWorkerTicks = 0;
+        this.workerResolved = true;
 
         float existingSpeed = getTheoreticalSpeed();
         if (existingSpeed != 0) {
@@ -186,6 +188,7 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
         this.workerUuid = null;
         this.lastKnownWorkerPos = null;
         this.missingWorkerTicks = 0;
+        this.workerResolved = false;
     }
 
     @Override
@@ -274,18 +277,27 @@ public class HorseCrankTileEntity extends GeneratingKineticBlockEntity {
         }
 
         Mob worker = resolveWorker();
+        boolean wasResolved = this.workerResolved;
+
         if (worker != null) {
+            this.workerResolved = true;
             missingWorkerTicks = 0;
             lastKnownWorkerPos = worker.blockPosition();
-            return;
+        } else {
+            this.workerResolved = false;
+            BlockPos checkPos = lastKnownWorkerPos != null ? lastKnownWorkerPos : worldPosition;
+            if (level.hasChunkAt(checkPos)) {
+                missingWorkerTicks++;
+                if (missingWorkerTicks > 80) {
+                    detachWorker(true);
+                    return;
+                }
+            }
         }
 
-        BlockPos checkPos = lastKnownWorkerPos != null ? lastKnownWorkerPos : worldPosition;
-        if (level.hasChunkAt(checkPos)) {
-            missingWorkerTicks++;
-            if (missingWorkerTicks > 80) {
-                detachWorker(true);
-            }
+        if (wasResolved != this.workerResolved) {
+            updateGeneratedRotation();
+            notifyUpdate();
         }
     }
 

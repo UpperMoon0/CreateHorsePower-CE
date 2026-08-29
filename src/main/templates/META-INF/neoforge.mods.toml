@@ -1,13 +1,13 @@
 modLoader="javafml"
 loaderVersion="${loader_version_range}"
 license="${mod_license}"
-issueTrackerURL="https://github.com/SteamPunkNation/CreateHorsePower/issues"
+issueTrackerURL="https://github.com/UpperMoon0/CreateHorsePower-CE/issues"
 
 [[mods]]
 modId="${mod_id}"
 version="${mod_version}"
 displayName="${mod_name}"
-displayURL="https://createhorsepower.steampn.net"
+displayURL="https://github.com/UpperMoon0/CreateHorsePower-CE"
 logoFile="createhorsepower-mod-icon.png"
 credits="${mod_credits}"
 authors="${mod_authors}"

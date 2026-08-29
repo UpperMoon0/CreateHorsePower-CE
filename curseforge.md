@@ -1,12 +1,18 @@
-# Create Horse Power: Community Edition
+# Create Horse Power - CE
 
-**Medieval power for Create: harness horses and other mobs to drive your machines — now maintained, fixed, and modernized for NeoForge 1.21.1.**
+**CE stands for Community Edition.**
+
+> **Create Horse Power - CE is an independent, community-maintained fork of [Create Horse Power](https://github.com/SteamPunkNation/CreateHorsePower) by SteamPunkNation. The original concept and project were created by SteamPunkNation; CE continues that work with maintenance, compatibility updates, and bug fixes.**
+>
+> *Create Horse Power - CE intentionally retains the original `createhorsepower` mod ID for seamless world compatibility. Do not install CE and the original mod at the same time.*
+
+Harness horses and other mobs to power Create contraptions — a community-maintained continuation with modern NeoForge support and long-standing lifecycle fixes.
 
 ---
 
 # Overview
 
-**Create Horse Power: Community Edition** adds animal-powered machinery to the Create ecosystem.
+**Create Horse Power - CE** adds animal-powered machinery to the Create ecosystem.
 
 Its centerpiece is the **Horse Crank**: attach a suitable animal, give it a proper walking path, and let it turn your Create contraptions without water wheels, windmills, engines, or electricity.
 
@@ -100,7 +106,7 @@ Instead of placing a passive generator and forgetting about it, your power sourc
 
 # Modpack Friendly
 
-Create Horse Power: Community Edition is designed with modpack authors in mind.
+Create Horse Power - CE is designed with modpack authors in mind.
 
 Worker lists, power values, path materials, and efficiency multipliers can all be adjusted to fit different progression systems.
 
@@ -114,7 +120,7 @@ a real technological progression rather than giving the player every Create powe
 
 # Original Project & Credits
 
-Create Horse Power: Community Edition is a maintained community fork of the original **Create Horse Power** project by **SteamPunkNation**.
+Create Horse Power - CE is a maintained community fork of the original **Create Horse Power** project by **SteamPunkNation**.
 
 The original project, concept, and much of the foundation of this mod come from:
 
