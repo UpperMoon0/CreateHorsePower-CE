@@ -128,11 +128,6 @@ public class PathEvaluator {
             return platformStats;
         }
 
-        Optional<PathStats> builtinStats = BuiltinProfiles.path(block);
-        if (builtinStats.isPresent()) {
-            return builtinStats;
-        }
-
         String blockKey = blockBuiltInKey(block);
         if (CHPApi.config().greatPath().contains(blockKey)) {
             return Optional.of(new PathStats((float) CHPApi.config().greatMultiplier(), 1.10f));

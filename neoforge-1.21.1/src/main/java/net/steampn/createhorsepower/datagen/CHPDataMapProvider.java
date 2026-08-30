@@ -54,12 +54,12 @@ public class CHPDataMapProvider extends DataMapProvider {
 
         var pathBuilder = this.builder(CHPDataMaps.PATH_STATS);
         pathBuilder.add(Blocks.DIRT_PATH.builtInRegistryHolder(), PathStats.NORMAL, false);
-        pathBuilder.add(Blocks.DIRT.builtInRegistryHolder(), PathStats.of(0.70f, 0.90f), false);
-        pathBuilder.add(Blocks.COARSE_DIRT.builtInRegistryHolder(), PathStats.of(0.75f, 0.90f), false);
-        pathBuilder.add(Blocks.GRAVEL.builtInRegistryHolder(), PathStats.of(1.10f, 1.00f), false);
+        pathBuilder.add(Blocks.DIRT.builtInRegistryHolder(), BuiltinProfiles.DIRT, false);
+        pathBuilder.add(Blocks.COARSE_DIRT.builtInRegistryHolder(), BuiltinProfiles.COARSE_DIRT, false);
+        pathBuilder.add(Blocks.GRAVEL.builtInRegistryHolder(), BuiltinProfiles.GRAVEL, false);
         pathBuilder.add(Blocks.STONE_BRICKS.builtInRegistryHolder(), PathStats.GREAT, false);
-        pathBuilder.add(Blocks.MOSSY_STONE_BRICKS.builtInRegistryHolder(), PathStats.of(1.15f, 1.05f), false);
-        pathBuilder.add(Blocks.CRACKED_STONE_BRICKS.builtInRegistryHolder(), PathStats.of(1.10f, 1.00f), false);
+        pathBuilder.add(Blocks.MOSSY_STONE_BRICKS.builtInRegistryHolder(), BuiltinProfiles.MOSSY_STONE_BRICKS, false);
+        pathBuilder.add(Blocks.CRACKED_STONE_BRICKS.builtInRegistryHolder(), BuiltinProfiles.CRACKED_STONE_BRICKS, false);
         pathBuilder.add(Blocks.COBBLESTONE.builtInRegistryHolder(), PathStats.of(1.00f, 1.00f), false);
         pathBuilder.add(Blocks.MOSSY_COBBLESTONE.builtInRegistryHolder(), PathStats.of(1.00f, 1.00f), false);
         pathBuilder.add(Blocks.POLISHED_ANDESITE.builtInRegistryHolder(), PathStats.GREAT, false);

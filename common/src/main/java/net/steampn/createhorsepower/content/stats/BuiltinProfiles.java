@@ -25,6 +25,12 @@ public final class BuiltinProfiles {
     public static final WorkerStats SHEEP = new WorkerStats(3.0f, 180.0f, 2.5f, 0.0f, 0.200f, 0.10f, 8.0f, false, false);
     public static final WorkerStats WOLF = new WorkerStats(4.0f, 150.0f, 2.5f, 0.0f, 0.300f, 0.0f, 20.0f, false, false);
 
+    public static final PathStats DIRT = PathStats.of(0.70f, 0.90f);
+    public static final PathStats COARSE_DIRT = PathStats.of(0.75f, 0.90f);
+    public static final PathStats GRAVEL = PathStats.of(1.10f, 1.00f);
+    public static final PathStats MOSSY_STONE_BRICKS = PathStats.of(1.15f, 1.05f);
+    public static final PathStats CRACKED_STONE_BRICKS = PathStats.of(1.10f, 1.00f);
+
     private static final Map<EntityType<?>, WorkerStats> WORKERS = Map.ofEntries(
             Map.entry(EntityType.HORSE, HORSE), Map.entry(EntityType.DONKEY, DONKEY),
             Map.entry(EntityType.MULE, MULE), Map.entry(EntityType.CAMEL, CAMEL),
@@ -33,10 +39,10 @@ public final class BuiltinProfiles {
             Map.entry(EntityType.SHEEP, SHEEP), Map.entry(EntityType.WOLF, WOLF));
 
     private static final Map<Block, PathStats> PATHS = Map.ofEntries(
-            Map.entry(Blocks.DIRT_PATH, PathStats.NORMAL), Map.entry(Blocks.DIRT, PathStats.of(0.70f, 0.90f)),
-            Map.entry(Blocks.COARSE_DIRT, PathStats.of(0.75f, 0.90f)), Map.entry(Blocks.GRAVEL, PathStats.of(1.10f, 1.00f)),
-            Map.entry(Blocks.STONE_BRICKS, PathStats.GREAT), Map.entry(Blocks.MOSSY_STONE_BRICKS, PathStats.of(1.15f, 1.05f)),
-            Map.entry(Blocks.CRACKED_STONE_BRICKS, PathStats.of(1.10f, 1.00f)), Map.entry(Blocks.COBBLESTONE, PathStats.NORMAL),
+            Map.entry(Blocks.DIRT_PATH, PathStats.NORMAL), Map.entry(Blocks.DIRT, DIRT),
+            Map.entry(Blocks.COARSE_DIRT, COARSE_DIRT), Map.entry(Blocks.GRAVEL, GRAVEL),
+            Map.entry(Blocks.STONE_BRICKS, PathStats.GREAT), Map.entry(Blocks.MOSSY_STONE_BRICKS, MOSSY_STONE_BRICKS),
+            Map.entry(Blocks.CRACKED_STONE_BRICKS, CRACKED_STONE_BRICKS), Map.entry(Blocks.COBBLESTONE, PathStats.NORMAL),
             Map.entry(Blocks.MOSSY_COBBLESTONE, PathStats.NORMAL), Map.entry(Blocks.POLISHED_ANDESITE, PathStats.GREAT),
             Map.entry(Blocks.POLISHED_DIORITE, PathStats.GREAT), Map.entry(Blocks.POLISHED_GRANITE, PathStats.GREAT),
             Map.entry(Blocks.POLISHED_DEEPSLATE, PathStats.GREAT), Map.entry(Blocks.SMOOTH_STONE, PathStats.GREAT));

@@ -47,8 +47,6 @@ def ALLOWED_ADAPTERS = [
         'net/steampn/createhorsepower/config/Config.java',
         'net/steampn/createhorsepower/compat/OptionalIntegrations.java',
         // Registry + registration glue (loader-specific registries)
-        'net/steampn/createhorsepower/registry/BlockRegister.java',
-        'net/steampn/createhorsepower/registry/TileEntityRegister.java',
         'net/steampn/createhorsepower/registry/CHPCreativeTabs.java'
 ] as Set
 def PLATFORM_ONLY_PREFIXES = [

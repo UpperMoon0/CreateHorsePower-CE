@@ -12,6 +12,8 @@ import net.steampn.createhorsepower.content.crank.RedstoneMode;
 import net.steampn.createhorsepower.content.path.PathEvaluationMode;
 import net.steampn.createhorsepower.content.stats.PathStats;
 import net.steampn.createhorsepower.content.stats.WorkerStats;
+import net.steampn.createhorsepower.content.stats.BuiltinProfiles;
+import net.steampn.createhorsepower.utils.CHPTags;
 import net.steampn.createhorsepower.platform.CHPConfig;
 
 public class Config implements CHPConfig {
@@ -215,15 +217,20 @@ public class Config implements CHPConfig {
     @Override public int checkIntervalTicks() { return CHECK_INTERVAL_TICKS.get(); }
     @Override public RedstoneMode defaultRedstoneMode() { return DEFAULT_REDSTONE_MODE.get(); }
 
-    // Forge 1.20.1 has no data maps; stats resolve through tags and config fallbacks,
-    // while KubeJS profiles are consulted inside the shared resolvers.
+    // Forge 1.20.1 has no Data Map API. These lookups emulate the built-in
+    // 1.21.1 Data Maps; legacy tags/config lists remain handled by the common resolver.
     @Override
     public Optional<WorkerStats> lookupWorkerStats(EntityType<?> type) {
+        Optional<WorkerStats> specific = BuiltinProfiles.worker(type);
+        if (specific.isPresent()) return specific;
+        if (type.is(CHPTags.Entities.WORKERS_LARGE)) return Optional.of(BuiltinProfiles.LARGE);
+        if (type.is(CHPTags.Entities.WORKERS_MEDIUM)) return Optional.of(BuiltinProfiles.MEDIUM);
+        if (type.is(CHPTags.Entities.WORKERS_SMALL)) return Optional.of(BuiltinProfiles.SMALL);
         return Optional.empty();
     }
 
     @Override
     public Optional<PathStats> lookupPathStats(Block block) {
-        return Optional.empty();
+        return BuiltinProfiles.path(block);
     }
 }
