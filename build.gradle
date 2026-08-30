@@ -1,0 +1,101 @@
+// Root convention layer: aggregate verification tasks and shared-source parity checks.
+// Platform-specific configuration stays in each subproject's build.gradle.
+
+plugins {
+    id 'base'
+}
+
+// Aggregate tasks mirrored from the OpenUI multi-version layout
+tasks.register('buildAll') {
+    group = 'build'
+    description = 'Builds every platform subproject.'
+    dependsOn ':neoforge-1.21.1:build', ':forge-1.20.1:build'
+}
+
+tasks.register('testAllVersions') {
+    group = 'verification'
+    description = 'Runs the shared tests against every platform.'
+    dependsOn ':neoforge-1.21.1:test', ':forge-1.20.1:test'
+}
+
+tasks.register('cleanAll') {
+    group = 'build'
+    description = 'Cleans every platform subproject.'
+    dependsOn ':neoforge-1.21.1:clean', ':forge-1.20.1:clean'
+}
+
+/**
+ * Fails the build when a Java file exists in both platform trees with
+ * different content. Byte-identical files are fine (they should be moved to
+ * /common), but unexpected drift between 1.20.1 and 1.21.1 copies of the same
+ * class is exactly the kind of bug this check is meant to catch.
+ *
+ * Files that are genuine version adapters (they intentionally differ because
+ * the Minecraft APIs changed between 1.20.1 and 1.21.1) must be listed in
+ * ALLOWED_ADAPTERS below. Anything else that differs fails the build.
+ */
+def PLATFORMS = ['neoforge-1.21.1', 'forge-1.20.1']
+def ALLOWED_ADAPTERS = [
+        // Mod entry points (loader bootstrap differs)
+        'CreateHorsePower.java',
+        // Version adapters for changed Mojang/Create APIs
+        'HorseCrankBlock.java',
+        'HorseCrankTileEntity.java',
+        'CHPCommands.java',
+        'Config.java',
+        'OptionalIntegrations.java',
+        // Registry + registration glue (loader-specific registries)
+        'BlockRegister.java',
+        'TileEntityRegister.java',
+        'CHPCreativeTabs.java'
+]
+
+tasks.register('verifySharedSources') {
+    group = 'verification'
+    description = 'Fails when duplicated platform sources drift from each other.'
+    doLast {
+        def relativeByPlatform = [:]
+        PLATFORMS.each { platform ->
+            def root = file(platform)
+            if (!root.exists()) return
+            def files = []
+            root.eachFileRecurse { f ->
+                if (f.isFile() && f.path.replace('\\', '/').contains('src/main/java') && f.name.endsWith('.java')) {
+                    files << root.toPath().relativize(f.toPath()).toString().replace('\\', '/')
+                }
+            }
+            relativeByPlatform[platform] = files.collectEntries { [(it.split('/').last()): it] }
+        }
+
+        def nf = relativeByPlatform['neoforge-1.21.1']
+        def forge = relativeByPlatform['forge-1.20.1']
+        def shared = nf.keySet().intersect(forge.keySet())
+        def problems = []
+
+        shared.each { name ->
+            def nfFile = file("neoforge-1.21.1/${nf[name]}")
+            def forgeFile = file("forge-1.20.1/${forge[name]}")
+            if (nfFile.bytes != forgeFile.bytes) {
+                if (ALLOWED_ADAPTERS.contains(name)) {
+                    println "verifySharedSources: ${name} is an approved version adapter"
+                } else {
+                    problems << "Duplicated class drifted between platforms: ${name}\n" +
+                            "  neoforge-1.21.1/${nf[name]}\n" +
+                            "  forge-1.20.1/${forge[name]}\n" +
+                            "  Move it to /common or add it to ALLOWED_ADAPTERS if it is a genuine version adapter."
+                }
+            }
+        }
+
+        if (problems) {
+            throw new GradleException(problems.join('\n\n'))
+        }
+        println "verifySharedSources: ${shared.size()} duplicated files checked, no unapproved drift"
+    }
+}
+
+tasks.register('verify') {
+    group = 'verification'
+    description = 'Full aggregate verification: parity check, build and tests for every version.'
+    dependsOn 'verifySharedSources', 'buildAll', 'testAllVersions'
+}

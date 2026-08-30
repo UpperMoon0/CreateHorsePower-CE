@@ -24,6 +24,6 @@ jobs:
       - uses: gradle/actions/setup-gradle@v3
 
       - run: chmod +x ./gradlew
-      # Root build builds every included platform subproject
-      # (neoforge-1.21.1 and forge-1.20.1 share sources from /common).
-      - run: ./gradlew clean build
+      # Aggregate verification: shared-source parity check, both platform builds,
+      # and the shared tests compiled/run against every target.
+      - run: ./gradlew verify

@@ -5,8 +5,7 @@ on:
     branches:
       - main
     paths:
-      - 'neoforge-1.21.1/gradle.properties'
-      - 'forge-1.20.1/gradle.properties'
+      - 'gradle.properties'
     tags:
       - 'v*'
   workflow_dispatch:
@@ -36,9 +35,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          mod_version="$(sed -n 's/^mod_version[[:space:]]*=[[:space:]]*//p' neoforge-1.21.1/gradle.properties | head -n1 | tr -d '\r' | xargs)"
+          mod_version="$(sed -n 's/^mod_version[[:space:]]*=[[:space:]]*//p' gradle.properties | head -n1 | tr -d '\r' | xargs)"
           if [[ -z "$mod_version" ]]; then
-            echo "mod_version is missing from neoforge-1.21.1/gradle.properties" >&2
+            echo "mod_version is missing from gradle.properties" >&2
             exit 1
           fi
           tag="v${mod_version}"
@@ -76,9 +75,11 @@ jobs:
             sed -n "s/^$2[[:space:]]*=[[:space:]]*//p" "$1" | head -n1 | tr -d '\r' | xargs
           }
 
-          nf_version="$(read_prop neoforge-1.21.1/gradle.properties mod_version)"
-          forge_version="$(read_prop forge-1.20.1/gradle.properties mod_version)"
-          for v in "$nf_version" "$forge_version"; do
+          # Artifacts are "<minecraft_version>-<mod_version>"; mod_version lives at the root
+          base_version="$(read_prop gradle.properties mod_version)"
+          nf_version="1.21.1-${base_version}"
+          forge_version="1.20.1-${base_version}"
+          for v in "$base_version" "$nf_version" "$forge_version"; do
             if [[ ! "$v" =~ ^[0-9A-Za-z][0-9A-Za-z._+-]*$ ]]; then
               printf 'Invalid mod_version: %q\n' "$v" >&2
               exit 1
@@ -102,6 +103,7 @@ jobs:
           done
 
           {
+            echo "base_version=$base_version"
             echo "nf_version=$nf_version"
             echo "forge_version=$forge_version"
             echo "nf_jar=$nf_jar"
@@ -120,8 +122,8 @@ jobs:
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.release_file.outputs.nf_version }}
-          name: Create Horse Power - CE v${{ steps.release_file.outputs.nf_version }}
+          tag_name: v${{ steps.release_file.outputs.base_version }}
+          name: Create Horse Power - CE v${{ steps.release_file.outputs.base_version }}
           body: "See changelogs: [NeoForge 1.21.1](./changelog/${{ steps.release_file.outputs.nf_version }}.md), [Forge 1.20.1](./changelog/${{ steps.release_file.outputs.forge_version }}.md)"
           files: |
             ${{ steps.release_file.outputs.nf_jar }}

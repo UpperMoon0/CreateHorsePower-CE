@@ -213,6 +213,7 @@ public class Config implements CHPConfig {
     @Override public PathEvaluationMode pathEvaluationMode() { return PATH_EVALUATION_MODE.get(); }
     @Override public double minimumPathCoverage() { return MINIMUM_PATH_COVERAGE.get(); }
     @Override public int checkIntervalTicks() { return CHECK_INTERVAL_TICKS.get(); }
+    @Override public RedstoneMode defaultRedstoneMode() { return DEFAULT_REDSTONE_MODE.get(); }
 
     // Forge 1.20.1 has no data maps; stats resolve through tags and config fallbacks,
     // while KubeJS profiles are consulted inside the shared resolvers.

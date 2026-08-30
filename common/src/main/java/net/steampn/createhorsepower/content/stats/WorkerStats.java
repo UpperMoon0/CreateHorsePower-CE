@@ -1,6 +1,7 @@
 package net.steampn.createhorsepower.content.stats;
 
 import com.mojang.serialization.Codec;
+import com.mojang.serialization.DataResult;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 
 public record WorkerStats(
@@ -31,21 +32,55 @@ public record WorkerStats(
 
     public static final WorkerStats DEFAULT = new WorkerStats(4.0f, 256.0f, 2.5f, 0.0f, DEFAULT_SPEED_REF, 0.0f, DEFAULT_HEALTH_REF, false, false);
 
-    private static final Codec<Float> NON_NEGATIVE_FLOAT = Codec.floatRange(0.0f, Float.MAX_VALUE);
-    private static final Codec<Float> POSITIVE_FLOAT = Codec.floatRange(0.001f, Float.MAX_VALUE);
-    private static final Codec<Float> RADIUS_FLOAT = Codec.floatRange(MIN_MOVEMENT_RADIUS, MAX_MOVEMENT_RADIUS);
+    /**
+     * Validation lives in flatXmap instead of Codec.floatRange because DFU
+     * versions differ: 1.20.1 silently falls back to optionalFieldOf defaults
+     * on range errors while 1.21.1 propagates them. Explicit validation keeps
+     * both versions byte-for-byte consistent.
+     */
+    private record Raw(
+            float baseRpm,
+            float stressCapacity,
+            float movementRadius,
+            float speedScaling,
+            float speedReference,
+            float healthScaling,
+            float healthReference,
+            boolean requiresTamed,
+            boolean allowBaby
+    ) {}
 
-    public static final Codec<WorkerStats> CODEC = RecordCodecBuilder.create(instance -> instance.group(
-            NON_NEGATIVE_FLOAT.optionalFieldOf("rpm", 4.0f).forGetter(WorkerStats::baseRpm),
-            NON_NEGATIVE_FLOAT.optionalFieldOf("stress", 256.0f).forGetter(WorkerStats::stressCapacity),
-            RADIUS_FLOAT.optionalFieldOf("movement_radius", 2.5f).forGetter(WorkerStats::movementRadius),
-            NON_NEGATIVE_FLOAT.optionalFieldOf("speed_scaling", 0.0f).forGetter(WorkerStats::speedScaling),
-            POSITIVE_FLOAT.optionalFieldOf("speed_reference", DEFAULT_SPEED_REF).forGetter(WorkerStats::speedReference),
-            NON_NEGATIVE_FLOAT.optionalFieldOf("health_scaling", 0.0f).forGetter(WorkerStats::healthScaling),
-            POSITIVE_FLOAT.optionalFieldOf("health_reference", DEFAULT_HEALTH_REF).forGetter(WorkerStats::healthReference),
-            Codec.BOOL.optionalFieldOf("requires_tamed", false).forGetter(WorkerStats::requiresTamed),
-            Codec.BOOL.optionalFieldOf("allow_baby", false).forGetter(WorkerStats::allowBaby)
-    ).apply(instance, WorkerStats::new));
+    private static final Codec<Raw> RAW_CODEC = RecordCodecBuilder.create(instance -> instance.group(
+            Codec.FLOAT.optionalFieldOf("rpm", 4.0f).forGetter(Raw::baseRpm),
+            Codec.FLOAT.optionalFieldOf("stress", 256.0f).forGetter(Raw::stressCapacity),
+            Codec.FLOAT.optionalFieldOf("movement_radius", 2.5f).forGetter(Raw::movementRadius),
+            Codec.FLOAT.optionalFieldOf("speed_scaling", 0.0f).forGetter(Raw::speedScaling),
+            Codec.FLOAT.optionalFieldOf("speed_reference", DEFAULT_SPEED_REF).forGetter(Raw::speedReference),
+            Codec.FLOAT.optionalFieldOf("health_scaling", 0.0f).forGetter(Raw::healthScaling),
+            Codec.FLOAT.optionalFieldOf("health_reference", DEFAULT_HEALTH_REF).forGetter(Raw::healthReference),
+            Codec.BOOL.optionalFieldOf("requires_tamed", false).forGetter(Raw::requiresTamed),
+            Codec.BOOL.optionalFieldOf("allow_baby", false).forGetter(Raw::allowBaby)
+    ).apply(instance, Raw::new));
+
+    private static DataResult<WorkerStats> validate(Raw raw) {
+        try {
+            return DataResult.success(new WorkerStats(
+                    raw.baseRpm(), raw.stressCapacity(), raw.movementRadius(),
+                    raw.speedScaling(), raw.speedReference(), raw.healthScaling(),
+                    raw.healthReference(), raw.requiresTamed(), raw.allowBaby()));
+        } catch (IllegalArgumentException err) {
+            return DataResult.error(err::getMessage);
+        }
+    }
+
+    private static DataResult<Raw> encode(WorkerStats stats) {
+        return DataResult.success(new Raw(
+                stats.baseRpm(), stats.stressCapacity(), stats.movementRadius(),
+                stats.speedScaling(), stats.speedReference(), stats.healthScaling(),
+                stats.healthReference(), stats.requiresTamed(), stats.allowBaby()));
+    }
+
+    public static final Codec<WorkerStats> CODEC = RAW_CODEC.flatXmap(WorkerStats::validate, WorkerStats::encode);
 
     public static float validateNonNegativeFinite(float value, String fieldName) {
         if (!Float.isFinite(value) || value < 0.0f) {

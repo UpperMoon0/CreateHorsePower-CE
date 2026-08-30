@@ -10,7 +10,9 @@ plugins {
     ext[it] = rootProject.property(it)
 }
 
-version = mod_version
+// Semantic mod version lives at the root; artifacts are "<mc>-<mod_version>"
+version = "${project.minecraft_version}-${rootProject.mod_version}"
+ext.mod_version = version
 group = mod_group_id
 
 base {
@@ -28,6 +30,11 @@ sourceSets {
         }
         resources {
             srcDir rootProject.file('common/src/main/resources')
+        }
+    }
+    test {
+        java {
+            srcDir rootProject.file('common/src/test/java')
         }
     }
 }
@@ -101,9 +108,17 @@ dependencies {
     implementation(fg.deobf("com.tterrag.registrate:Registrate:${registrate_version}"))
 
     // compile against the JEI API but do not include it at runtime
-    compileOnly(fg.deobf("mezz.jei:jei-${mc_version}-common-api:${jei_version}"))
-    compileOnly(fg.deobf("mezz.jei:jei-${mc_version}-forge-api:${jei_version}"))
-    runtimeOnly(fg.deobf("mezz.jei:jei-${mc_version}-forge:${jei_version}"))
+    compileOnly(fg.deobf("mezz.jei:jei-${minecraft_version}-common-api:${jei_version}"))
+    compileOnly(fg.deobf("mezz.jei:jei-${minecraft_version}-forge-api:${jei_version}"))
+    runtimeOnly(fg.deobf("mezz.jei:jei-${minecraft_version}-forge:${jei_version}"))
+
+    // Shared behavioral tests run on every target
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform()
 }
 
 tasks.named('processResources', ProcessResources).configure {

@@ -6,6 +6,7 @@ import java.util.Optional;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.level.block.Block;
+import net.steampn.createhorsepower.content.crank.RedstoneMode;
 import net.steampn.createhorsepower.content.path.PathEvaluationMode;
 import net.steampn.createhorsepower.content.stats.PathStats;
 import net.steampn.createhorsepower.content.stats.WorkerStats;
@@ -66,6 +67,8 @@ public interface CHPConfig {
     double minimumPathCoverage();
 
     int checkIntervalTicks();
+
+    RedstoneMode defaultRedstoneMode();
 
     Optional<WorkerStats> lookupWorkerStats(EntityType<?> type);
 

@@ -10,7 +10,9 @@ plugins {
     ext[it] = rootProject.property(it)
 }
 
-version = mod_version
+// Semantic mod version lives at the root; artifacts are "<mc>-<mod_version>"
+version = "${project.minecraft_version}-${rootProject.mod_version}"
+ext.mod_version = version
 group = mod_group_id
 
 repositories {
@@ -130,9 +132,9 @@ dependencies {
     implementation("com.tterrag.registrate:Registrate:${registrate_version}")
 
     // JEI
-    compileOnly("mezz.jei:jei-${mc_version}-common-api:${jei_version}")
-    compileOnly("mezz.jei:jei-${mc_version}-neoforge-api:${jei_version}")
-    localRuntime("mezz.jei:jei-${mc_version}-neoforge:${jei_version}")
+    compileOnly("mezz.jei:jei-${minecraft_version}-common-api:${jei_version}")
+    compileOnly("mezz.jei:jei-${minecraft_version}-neoforge-api:${jei_version}")
+    localRuntime("mezz.jei:jei-${minecraft_version}-neoforge:${jei_version}")
 
     // Jade
     compileOnly("maven.modrinth:jade:15.10.5+neoforge")
