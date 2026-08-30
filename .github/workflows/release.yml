@@ -83,7 +83,9 @@ jobs:
         # Full verification gate: shared source + resource parity checks, both
         # platform builds and the shared test suites. A release must never be
         # able to bypass the checks PR CI runs.
-        run: ./gradlew cleanAll verify --no-daemon
+        run: ./gradlew cleanAll --no-daemon
+      - name: Verify both platform builds
+        run: ./gradlew verify --no-daemon
 
       - name: Read mod versions and locate artifacts
         id: release_file

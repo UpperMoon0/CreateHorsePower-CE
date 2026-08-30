@@ -58,13 +58,13 @@ public class HorseCrankBlock extends AbstractHorseCrankBlock implements IBE<Hors
             return InteractionResult.PASS;
         }
 
-        if (HorseCrankInteractions.hasWorker(level, pos, state)) {
-            HorseCrankInteractions.detachAt(level, pos, state);
-            return InteractionResult.sidedSuccess(level.isClientSide);
-        }
-
         if (stack.is(CHPTags.Items.ATTACHMENT_ITEMS)) {
             return mapUse(HorseCrankInteractions.attachAt(level, pos, state, player));
+        }
+
+        if (stack.isEmpty() && HorseCrankInteractions.hasWorker(level, pos, state)) {
+            HorseCrankInteractions.detachAt(level, pos, state);
+            return InteractionResult.sidedSuccess(level.isClientSide);
         }
 
         return InteractionResult.PASS;

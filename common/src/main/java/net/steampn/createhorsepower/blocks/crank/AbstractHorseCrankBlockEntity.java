@@ -121,8 +121,11 @@ public abstract class AbstractHorseCrankBlockEntity extends GeneratingKineticBlo
     @Override
     public void tick() {
         if (this.level != null && !this.level.isClientSide()) {
-            engine.serverTick();
+            engine.beforeHostTick();
         }
         super.tick();
+        if (this.level != null && !this.level.isClientSide()) {
+            engine.afterHostTick();
+        }
     }
 }

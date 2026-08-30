@@ -51,6 +51,16 @@ def ALLOWED_ADAPTERS = [
         'net/steampn/createhorsepower/registry/TileEntityRegister.java',
         'net/steampn/createhorsepower/registry/CHPCreativeTabs.java'
 ] as Set
+def PLATFORM_ONLY_PREFIXES = [
+        // NeoForge-only integrations and data generation APIs.
+        'net/steampn/createhorsepower/datagen/',
+        'net/steampn/createhorsepower/compat/jade/',
+        'net/steampn/createhorsepower/compat/kubejs/',
+        'net/steampn/createhorsepower/client/ponders/',
+        'net/steampn/createhorsepower/registry/CHPDataMaps.java',
+        'net/steampn/createhorsepower/registry/PonderRegister.java',
+        'net/steampn/createhorsepower/CreateHorsePowerClient.java'
+]
 
 tasks.register('verifySharedSources') {
     group = 'verification'
@@ -65,9 +75,20 @@ tasks.register('verifySharedSources') {
         }
         def nf = relativeJavaFiles(javaRoots['neoforge-1.21.1'])
         def forge = relativeJavaFiles(javaRoots['forge-1.20.1'])
+        def union = (nf + forge).sort()
         def shared = nf.intersect(forge).sort()
         def problems = []
         def approved = 0
+
+        union.each { path ->
+            if (!nf.contains(path) || !forge.contains(path)) {
+                if (!PLATFORM_ONLY_PREFIXES.any { path.startsWith(it) }) {
+                    def platform = nf.contains(path) ? 'NeoForge' : 'Forge'
+                    problems << "Platform-only source is not explicitly allowlisted: ${platform}/${path}\n" +
+                            "  Move loader-neutral code to /common or add a narrowly scoped platform-only entry."
+                }
+            }
+        }
 
         shared.each { path ->
             def nfFile = new File(javaRoots['neoforge-1.21.1'], path)

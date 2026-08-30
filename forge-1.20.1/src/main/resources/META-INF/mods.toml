@@ -1,7 +1,7 @@
 modLoader="javafml"
 loaderVersion="${loader_version_range}"
 license="${mod_license}"
-issueTrackerURL="https://github.com/SteamPunkNation/CreateHorsePower/issues"
+issueTrackerURL="${mod_issue_tracker}"
 
 [[mods]]
 modId="${mod_id}"
@@ -11,7 +11,7 @@ displayName="${mod_name}"
 #    configuredBackground="minecraft:textures/block/hay_block_top.png"
 # A URL to query for updates for this mod. See the JSON update specification https://docs.minecraftforge.net/en/latest/misc/updatechecker/
 #updateJSONURL="https://change.me.example.invalid/updates.json"
-displayURL="https://createhorsepower.steampn.net" #optional
+displayURL="${mod_homepage}" #optional
 logoFile="createhorsepower-mod-icon.png"
 credits="${mod_credits}"
 authors="${mod_authors}"

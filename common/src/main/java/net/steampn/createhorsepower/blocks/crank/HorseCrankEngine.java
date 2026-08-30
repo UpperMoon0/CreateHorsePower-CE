@@ -451,7 +451,8 @@ public class HorseCrankEngine {
     // Tick
     // ==========================================
 
-    public void serverTick() {
+    /** Work that must happen before Create's own kinetic block-entity tick. */
+    public void beforeHostTick() {
         Level level = level();
         if (level == null || level.isClientSide()) {
             return;
@@ -463,6 +464,14 @@ public class HorseCrankEngine {
             suppressGeneration = true;
             host.clearKineticInfo();
             host.requestSpeedUpdate();
+        }
+    }
+
+    /** Work that historically happened after Create's own kinetic tick. */
+    public void afterHostTick() {
+        Level level = level();
+        if (level == null || level.isClientSide()) {
+            return;
         }
 
         // Check redstone transition

@@ -6,6 +6,7 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.steampn.createhorsepower.compat.kubejs.KubeJSProfileRegistry;
 import net.steampn.createhorsepower.content.stats.PathStats;
+import net.steampn.createhorsepower.content.stats.BuiltinProfiles;
 import net.steampn.createhorsepower.platform.CHPApi;
 
 import java.util.Optional;
@@ -125,6 +126,11 @@ public class PathEvaluator {
         Optional<PathStats> platformStats = CHPApi.config().lookupPathStats(block);
         if (platformStats.isPresent()) {
             return platformStats;
+        }
+
+        Optional<PathStats> builtinStats = BuiltinProfiles.path(block);
+        if (builtinStats.isPresent()) {
+            return builtinStats;
         }
 
         String blockKey = blockBuiltInKey(block);

@@ -1,13 +1,13 @@
 modLoader="javafml"
 loaderVersion="${loader_version_range}"
 license="${mod_license}"
-issueTrackerURL="https://github.com/UpperMoon0/CreateHorsePower-CE/issues"
+issueTrackerURL="${mod_issue_tracker}"
 
 [[mods]]
 modId="${mod_id}"
 version="${mod_version}"
 displayName="${mod_name}"
-displayURL="https://github.com/UpperMoon0/CreateHorsePower-CE"
+displayURL="${mod_homepage}"
 logoFile="createhorsepower-mod-icon.png"
 credits="${mod_credits}"
 authors="${mod_authors}"

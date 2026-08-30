@@ -59,6 +59,11 @@ public class WorkerResolver {
             return platformStats;
         }
 
+        Optional<WorkerStats> builtinStats = BuiltinProfiles.worker(type);
+        if (builtinStats.isPresent()) {
+            return builtinStats;
+        }
+
         // Fallback to legacy worker tags with live config values
         if (type.is(CHPTags.Entities.WORKERS_LARGE) || type.is(CHPTags.Entities.LARGE_WORKER_TAG)) {
             return Optional.of(createLegacyProfile(CHPApi.config().largeCreatureStress()));

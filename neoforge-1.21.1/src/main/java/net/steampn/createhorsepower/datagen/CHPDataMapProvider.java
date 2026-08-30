@@ -7,6 +7,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.neoforged.neoforge.common.data.DataMapProvider;
 import net.steampn.createhorsepower.content.stats.PathStats;
 import net.steampn.createhorsepower.content.stats.WorkerStats;
+import net.steampn.createhorsepower.content.stats.BuiltinProfiles;
 import net.steampn.createhorsepower.registry.CHPDataMaps;
 import net.steampn.createhorsepower.utils.CHPTags;
 
@@ -23,33 +24,33 @@ public class CHPDataMapProvider extends DataMapProvider {
 
         // Tier tags
         workerBuilder.add(CHPTags.Entities.WORKERS_SMALL,
-                new WorkerStats(4.0f, 128.0f, 2.5f, 0.0f, 0.225f, 0.0f, 20.0f, false, false), false);
+                BuiltinProfiles.SMALL, false);
         workerBuilder.add(CHPTags.Entities.WORKERS_MEDIUM,
-                new WorkerStats(4.0f, 256.0f, 2.5f, 0.0f, 0.225f, 0.0f, 20.0f, false, false), false);
+                BuiltinProfiles.MEDIUM, false);
         workerBuilder.add(CHPTags.Entities.WORKERS_LARGE,
-                new WorkerStats(4.0f, 512.0f, 2.5f, 0.5f, 0.225f, 0.2f, 20.0f, false, false), false);
+                BuiltinProfiles.LARGE, false);
 
         // Specific entity profiles with individual attribute scaling and reference values
         workerBuilder.add(EntityType.HORSE.builtInRegistryHolder(),
-                new WorkerStats(5.0f, 600.0f, 2.5f, 0.75f, 0.225f, 0.25f, 22.0f, false, false), false);
+                BuiltinProfiles.HORSE, false);
         workerBuilder.add(EntityType.DONKEY.builtInRegistryHolder(),
-                new WorkerStats(4.0f, 650.0f, 2.5f, 0.50f, 0.175f, 0.30f, 20.0f, false, false), false);
+                BuiltinProfiles.DONKEY, false);
         workerBuilder.add(EntityType.MULE.builtInRegistryHolder(),
-                new WorkerStats(4.5f, 700.0f, 2.5f, 0.60f, 0.200f, 0.35f, 24.0f, false, false), false);
+                BuiltinProfiles.MULE, false);
         workerBuilder.add(EntityType.CAMEL.builtInRegistryHolder(),
-                new WorkerStats(4.0f, 750.0f, 2.5f, 0.40f, 0.090f, 0.40f, 32.0f, false, false), false);
+                BuiltinProfiles.CAMEL, false);
         workerBuilder.add(EntityType.LLAMA.builtInRegistryHolder(),
-                new WorkerStats(3.5f, 350.0f, 2.5f, 0.30f, 0.175f, 0.20f, 20.0f, false, false), false);
+                BuiltinProfiles.LLAMA, false);
         workerBuilder.add(EntityType.TRADER_LLAMA.builtInRegistryHolder(),
-                new WorkerStats(3.5f, 350.0f, 2.5f, 0.30f, 0.175f, 0.20f, 20.0f, false, false), false);
+                BuiltinProfiles.LLAMA, false);
         workerBuilder.add(EntityType.COW.builtInRegistryHolder(),
-                new WorkerStats(3.0f, 300.0f, 2.5f, 0.0f, 0.200f, 0.20f, 10.0f, false, false), false);
+                BuiltinProfiles.COW, false);
         workerBuilder.add(EntityType.PIG.builtInRegistryHolder(),
-                new WorkerStats(3.5f, 200.0f, 2.5f, 0.20f, 0.200f, 0.10f, 10.0f, false, false), false);
+                BuiltinProfiles.PIG, false);
         workerBuilder.add(EntityType.SHEEP.builtInRegistryHolder(),
-                new WorkerStats(3.0f, 180.0f, 2.5f, 0.0f, 0.200f, 0.10f, 8.0f, false, false), false);
+                BuiltinProfiles.SHEEP, false);
         workerBuilder.add(EntityType.WOLF.builtInRegistryHolder(),
-                new WorkerStats(4.0f, 150.0f, 2.5f, 0.0f, 0.300f, 0.0f, 20.0f, false, false), false);
+                BuiltinProfiles.WOLF, false);
 
         var pathBuilder = this.builder(CHPDataMaps.PATH_STATS);
         pathBuilder.add(Blocks.DIRT_PATH.builtInRegistryHolder(), PathStats.NORMAL, false);

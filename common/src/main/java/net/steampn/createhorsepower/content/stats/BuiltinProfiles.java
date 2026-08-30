@@ -1,0 +1,51 @@
+package net.steampn.createhorsepower.content.stats;
+
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+
+import java.util.Map;
+import java.util.Optional;
+
+/** Canonical built-in profiles shared by every supported loader. */
+public final class BuiltinProfiles {
+    private BuiltinProfiles() {}
+
+    public static final WorkerStats SMALL = new WorkerStats(4.0f, 128.0f, 2.5f, 0.0f, 0.225f, 0.0f, 20.0f, false, false);
+    public static final WorkerStats MEDIUM = new WorkerStats(4.0f, 256.0f, 2.5f, 0.0f, 0.225f, 0.0f, 20.0f, false, false);
+    public static final WorkerStats LARGE = new WorkerStats(4.0f, 512.0f, 2.5f, 0.5f, 0.225f, 0.2f, 20.0f, false, false);
+
+    public static final WorkerStats HORSE = new WorkerStats(5.0f, 600.0f, 2.5f, 0.75f, 0.225f, 0.25f, 22.0f, false, false);
+    public static final WorkerStats DONKEY = new WorkerStats(4.0f, 650.0f, 2.5f, 0.50f, 0.175f, 0.30f, 20.0f, false, false);
+    public static final WorkerStats MULE = new WorkerStats(4.5f, 700.0f, 2.5f, 0.60f, 0.200f, 0.35f, 24.0f, false, false);
+    public static final WorkerStats CAMEL = new WorkerStats(4.0f, 750.0f, 2.5f, 0.40f, 0.090f, 0.40f, 32.0f, false, false);
+    public static final WorkerStats LLAMA = new WorkerStats(3.5f, 350.0f, 2.5f, 0.30f, 0.175f, 0.20f, 20.0f, false, false);
+    public static final WorkerStats COW = new WorkerStats(3.0f, 300.0f, 2.5f, 0.0f, 0.200f, 0.20f, 10.0f, false, false);
+    public static final WorkerStats PIG = new WorkerStats(3.5f, 200.0f, 2.5f, 0.20f, 0.200f, 0.10f, 10.0f, false, false);
+    public static final WorkerStats SHEEP = new WorkerStats(3.0f, 180.0f, 2.5f, 0.0f, 0.200f, 0.10f, 8.0f, false, false);
+    public static final WorkerStats WOLF = new WorkerStats(4.0f, 150.0f, 2.5f, 0.0f, 0.300f, 0.0f, 20.0f, false, false);
+
+    private static final Map<EntityType<?>, WorkerStats> WORKERS = Map.ofEntries(
+            Map.entry(EntityType.HORSE, HORSE), Map.entry(EntityType.DONKEY, DONKEY),
+            Map.entry(EntityType.MULE, MULE), Map.entry(EntityType.CAMEL, CAMEL),
+            Map.entry(EntityType.LLAMA, LLAMA), Map.entry(EntityType.TRADER_LLAMA, LLAMA),
+            Map.entry(EntityType.COW, COW), Map.entry(EntityType.PIG, PIG),
+            Map.entry(EntityType.SHEEP, SHEEP), Map.entry(EntityType.WOLF, WOLF));
+
+    private static final Map<Block, PathStats> PATHS = Map.ofEntries(
+            Map.entry(Blocks.DIRT_PATH, PathStats.NORMAL), Map.entry(Blocks.DIRT, PathStats.of(0.70f, 0.90f)),
+            Map.entry(Blocks.COARSE_DIRT, PathStats.of(0.75f, 0.90f)), Map.entry(Blocks.GRAVEL, PathStats.of(1.10f, 1.00f)),
+            Map.entry(Blocks.STONE_BRICKS, PathStats.GREAT), Map.entry(Blocks.MOSSY_STONE_BRICKS, PathStats.of(1.15f, 1.05f)),
+            Map.entry(Blocks.CRACKED_STONE_BRICKS, PathStats.of(1.10f, 1.00f)), Map.entry(Blocks.COBBLESTONE, PathStats.NORMAL),
+            Map.entry(Blocks.MOSSY_COBBLESTONE, PathStats.NORMAL), Map.entry(Blocks.POLISHED_ANDESITE, PathStats.GREAT),
+            Map.entry(Blocks.POLISHED_DIORITE, PathStats.GREAT), Map.entry(Blocks.POLISHED_GRANITE, PathStats.GREAT),
+            Map.entry(Blocks.POLISHED_DEEPSLATE, PathStats.GREAT), Map.entry(Blocks.SMOOTH_STONE, PathStats.GREAT));
+
+    public static Optional<WorkerStats> worker(EntityType<?> type) {
+        return Optional.ofNullable(WORKERS.get(type));
+    }
+
+    public static Optional<PathStats> path(Block block) {
+        return Optional.ofNullable(PATHS.get(block));
+    }
+}
