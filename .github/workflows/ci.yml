@@ -24,6 +24,6 @@ jobs:
       - uses: gradle/actions/setup-gradle@v3
 
       - run: chmod +x ./gradlew
-      # Aggregate verification: shared-source parity check, both platform builds,
-      # and the shared tests compiled/run against every target.
+      # Aggregate verification: shared source + resource parity checks, both
+      # platform builds, and the shared tests compiled/run against every target.
       - run: ./gradlew verify

@@ -32,57 +32,55 @@ tasks.register('cleanAll') {
  *
  * Files that are genuine version adapters (they intentionally differ because
  * the Minecraft APIs changed between 1.20.1 and 1.21.1) must be listed in
- * ALLOWED_ADAPTERS below. Anything else that differs fails the build.
+ * ALLOWED_ADAPTERS below by their full source path relative to the platform
+ * directory, so an unrelated same-named class can never inherit an exemption.
+ * Anything else that differs fails the build.
  */
 def PLATFORMS = ['neoforge-1.21.1', 'forge-1.20.1']
 def ALLOWED_ADAPTERS = [
-        // Mod entry points (loader bootstrap differs)
-        'CreateHorsePower.java',
+        // Mod entry point (loader bootstrap differs)
+        'net/steampn/createhorsepower/CreateHorsePower.java',
         // Version adapters for changed Mojang/Create APIs
-        'HorseCrankBlock.java',
-        'HorseCrankTileEntity.java',
-        'CHPCommands.java',
-        'Config.java',
-        'OptionalIntegrations.java',
+        'net/steampn/createhorsepower/blocks/horse_crank/HorseCrankBlock.java',
+        'net/steampn/createhorsepower/blocks/horse_crank/HorseCrankTileEntity.java',
+        'net/steampn/createhorsepower/command/CHPCommands.java',
+        'net/steampn/createhorsepower/config/Config.java',
+        'net/steampn/createhorsepower/compat/OptionalIntegrations.java',
         // Registry + registration glue (loader-specific registries)
-        'BlockRegister.java',
-        'TileEntityRegister.java',
-        'CHPCreativeTabs.java'
-]
+        'net/steampn/createhorsepower/registry/BlockRegister.java',
+        'net/steampn/createhorsepower/registry/TileEntityRegister.java',
+        'net/steampn/createhorsepower/registry/CHPCreativeTabs.java'
+] as Set
 
 tasks.register('verifySharedSources') {
     group = 'verification'
     description = 'Fails when duplicated platform sources drift from each other.'
     doLast {
-        def relativeByPlatform = [:]
-        PLATFORMS.each { platform ->
-            def root = file(platform)
-            if (!root.exists()) return
-            def files = []
-            root.eachFileRecurse { f ->
-                if (f.isFile() && f.path.replace('\\', '/').contains('src/main/java') && f.name.endsWith('.java')) {
-                    files << root.toPath().relativize(f.toPath()).toString().replace('\\', '/')
-                }
-            }
-            relativeByPlatform[platform] = files.collectEntries { [(it.split('/').last()): it] }
+        def javaRoots = PLATFORMS.collectEntries { [(it): file("${it}/src/main/java")] }
+        def relativeJavaFiles = { File root ->
+            if (!root.exists()) return [] as Set
+            fileTree(root).matching { include '**/*.java' }.files.collect {
+                root.toPath().relativize(it.toPath()).toString().replace('\\', '/')
+            } as Set
         }
-
-        def nf = relativeByPlatform['neoforge-1.21.1']
-        def forge = relativeByPlatform['forge-1.20.1']
-        def shared = nf.keySet().intersect(forge.keySet())
+        def nf = relativeJavaFiles(javaRoots['neoforge-1.21.1'])
+        def forge = relativeJavaFiles(javaRoots['forge-1.20.1'])
+        def shared = nf.intersect(forge).sort()
         def problems = []
+        def approved = 0
 
-        shared.each { name ->
-            def nfFile = file("neoforge-1.21.1/${nf[name]}")
-            def forgeFile = file("forge-1.20.1/${forge[name]}")
-            if (nfFile.bytes != forgeFile.bytes) {
-                if (ALLOWED_ADAPTERS.contains(name)) {
-                    println "verifySharedSources: ${name} is an approved version adapter"
+        shared.each { path ->
+            def nfFile = new File(javaRoots['neoforge-1.21.1'], path)
+            def forgeFile = new File(javaRoots['forge-1.20.1'], path)
+            if (!java.util.Arrays.equals(nfFile.bytes, forgeFile.bytes)) {
+                if (ALLOWED_ADAPTERS.contains(path)) {
+                    approved++
+                    println "verifySharedSources: ${path} is an approved version adapter"
                 } else {
-                    problems << "Duplicated class drifted between platforms: ${name}\n" +
-                            "  neoforge-1.21.1/${nf[name]}\n" +
-                            "  forge-1.20.1/${forge[name]}\n" +
-                            "  Move it to /common or add it to ALLOWED_ADAPTERS if it is a genuine version adapter."
+                    problems << "Duplicated class drifted between platforms: ${path}\n" +
+                            "  neoforge-1.21.1/${path}\n" +
+                            "  forge-1.20.1/${path}\n" +
+                            "  Move it to /common or add the full source path to ALLOWED_ADAPTERS if it is a genuine version adapter."
                 }
             }
         }
@@ -90,12 +88,161 @@ tasks.register('verifySharedSources') {
         if (problems) {
             throw new GradleException(problems.join('\n\n'))
         }
-        println "verifySharedSources: ${shared.size()} duplicated files checked, no unapproved drift"
+        println "verifySharedSources: ${shared.size()} duplicated files checked (${approved} approved adapters), no unapproved drift"
+    }
+}
+
+/**
+ * Resource parity gate with two rules:
+ *
+ * 1. common/src/main/resources is the sole source of truth for assets shared
+ *    across versions. A relative path appearing in both common and a platform
+ *    tree means a stale generated or hand-written copy would silently shadow
+ *    (or be shadowed by) the shared asset at jar-packaging time
+ *    (duplicatesStrategy = EXCLUDE picks whichever source wins). Fails the
+ *    build instead.
+ *
+ * 2. The hand-maintained Forge 1.20.1 datapack JSONs are compared against
+ *    their NeoForge 1.21.1 datagen-generated counterparts, after normalizing
+ *    the directory renames between versions (tags/items -> tags/item,
+ *    recipes -> recipe, ...) and the known version-format differences
+ *    (recipe result id/item, criteria items string vs list, requirement
+ *    order, keys that only exist on one version). Semantic drift between the
+ *    two versions fails the build.
+ */
+// Relative data paths allowed to exist in exactly one version's datapack.
+def PLATFORM_RESOURCE_ALLOWLIST = [
+        // 1.21.1-only NeoForge data maps; Forge 1.20.1 resolves stats via tags/config
+        'data/createhorsepower/data_maps/block/path_stats.json',
+        'data/createhorsepower/data_maps/entity_type/worker_stats.json'
+] as Set
+
+tasks.register('verifySharedResources') {
+    group = 'verification'
+    description = 'Fails on duplicated shared assets and on cross-version datapack drift.'
+    doLast {
+        def problems = []
+
+        // Rule 1: common owns every shared asset outright.
+        def commonRoot = file('common/src/main/resources')
+        def commonFiles = commonRoot.exists() ?
+                fileTree(commonRoot).files.collect {
+                    commonRoot.toPath().relativize(it.toPath()).toString().replace('\\', '/')
+                } : []
+        PLATFORMS.each { platform ->
+            ['src/main/resources', 'src/generated/resources'].each { resDir ->
+                def root = file("${platform}/${resDir}")
+                if (!root.exists()) return
+                def platformPaths = fileTree(root).files.collect {
+                    root.toPath().relativize(it.toPath()).toString().replace('\\', '/')
+                } as Set
+                commonFiles.each { path ->
+                    if (platformPaths.contains(path)) {
+                        problems << "Shared asset duplicated outside common: ${path}\n" +
+                                "  Provided by both common/src/main/resources and ${platform}/${resDir}.\n" +
+                                "  Delete the platform copy; common is the sole source of truth."
+                    }
+                }
+            }
+        }
+
+        // Rule 2: hand-written Forge data vs generated NeoForge data.
+        def forgeDataRoot = file('forge-1.20.1/src/main/resources')
+        def nfDataRoot = file('neoforge-1.21.1/src/generated/resources')
+        def relativeDataJson = { File root ->
+            if (!root.exists()) return [] as Set
+            fileTree(root).matching { include 'data/**/*.json' }.files.collect {
+                root.toPath().relativize(it.toPath()).toString().replace('\\', '/')
+            } as Set
+        }
+        def forgeData = relativeDataJson(forgeDataRoot)
+        def nfData = relativeDataJson(nfDataRoot)
+
+        // 1.20.1 registry directory names -> 1.21.1 singular ones. Renames only
+        // apply to the registry directory itself (data/<ns>/<registry>/...) and,
+        // under tags/, to the tag type — e.g. advancement "recipes" sub-paths
+        // (data/<ns>/advancement/recipes/...) keep their plural inner segments.
+        def registryRenames = ['recipes': 'recipe', 'advancements': 'advancement', 'loot_tables': 'loot_table']
+        def tagTypeRenames = ['items': 'item', 'blocks': 'block']
+        def normalizePath = { String path ->
+            def seg = path.split('/')
+            if (seg.length > 3 && seg[0] == 'data') {
+                if (registryRenames.containsKey(seg[2])) seg[2] = registryRenames[seg[2]]
+                if (seg[2] == 'tags' && seg.length > 3 && tagTypeRenames.containsKey(seg[3])) seg[3] = tagTypeRenames[seg[3]]
+                return seg.join('/')
+            }
+            path
+        }
+        def forgeToNf = forgeData.collectEntries { [(normalizePath(it)): it] }
+
+        def slurper = new groovy.json.JsonSlurper()
+        // Keys that exist on only one version and carry no cross-version meaning.
+        def versionNoiseKeys = ['show_notification', 'sends_telemetry_event', 'category'] as Set
+        def normalizeJson
+        normalizeJson = { value ->
+            if (value instanceof Map) {
+                def out = [:]
+                value.each { k, v ->
+                    def key = k.toString()
+                    if (versionNoiseKeys.contains(key)) return
+                    // Recipe result: 1.20.1 {"item": X} vs 1.21.1 {"count": n, "id": X}
+                    if (key == 'result' && v instanceof Map && v.containsKey('id')) {
+                        def result = [item: v.id]
+                        if (v.containsKey('count') && v.count != 1) result.count = v.count
+                        out[key] = result
+                        return
+                    }
+                    // Item predicate: 1.20.1 emits a list, 1.21.1 datagen a bare string
+                    if (key == 'items' && v instanceof CharSequence) {
+                        out[key] = [v.toString()]
+                        return
+                    }
+                    // Advancement requirements: inner order is semantically irrelevant
+                    if (key == 'requirements' && v instanceof List) {
+                        out[key] = v.collect { it instanceof List ? it.sort(false) : it }
+                        return
+                    }
+                    out[key] = normalizeJson(v)
+                }
+                return out
+            }
+            if (value instanceof List) return value.collect { normalizeJson(it) }
+            return value
+        }
+        def parseNormalized = { File f -> normalizeJson(slurper.parse(f)) }
+
+        forgeToNf.each { nfPath, forgePath ->
+            if (!nfData.contains(nfPath)) {
+                if (!PLATFORM_RESOURCE_ALLOWLIST.contains(nfPath)) {
+                    problems << "Forge datapack file has no NeoForge counterpart: ${forgePath}\n" +
+                            "  Expected ${nfPath} under neoforge-1.21.1/src/generated/resources."
+                }
+                return
+            }
+            if (parseNormalized(new File(forgeDataRoot, forgePath)) != parseNormalized(new File(nfDataRoot, nfPath))) {
+                problems << "Cross-version datapack drift: ${forgePath} vs ${nfPath}\n" +
+                        "  Hand-maintained Forge 1.20.1 JSON and NeoForge 1.21.1 datagen output are semantically different.\n" +
+                        "  Reconcile them (update the datagen provider or the hand-written file)."
+            }
+        }
+        nfData.each { nfPath ->
+            if (!forgeToNf.containsKey(nfPath) && !PLATFORM_RESOURCE_ALLOWLIST.contains(nfPath)) {
+                problems << "NeoForge generated data has no Forge counterpart: ${nfPath}\n" +
+                        "  Add the matching hand-written file under forge-1.20.1/src/main/resources or allowlist it in PLATFORM_RESOURCE_ALLOWLIST."
+            }
+        }
+
+        if (problems) {
+            throw new GradleException(problems.join('\n\n'))
+        }
+        println "verifySharedResources: ${commonFiles.size()} shared assets unique to common, ${forgeToNf.size()} datapack files compared across versions, no drift"
     }
 }
 
 tasks.register('verify') {
     group = 'verification'
-    description = 'Full aggregate verification: parity check, build and tests for every version.'
-    dependsOn 'verifySharedSources', 'buildAll', 'testAllVersions'
+    description = 'Full aggregate verification: parity checks, build and tests for every version.'
+    dependsOn 'verifySharedSources', 'verifySharedResources', 'buildAll', 'testAllVersions'
+    // Deterministic ordering for release builds running "cleanAll verify".
+    mustRunAfter 'cleanAll'
 }

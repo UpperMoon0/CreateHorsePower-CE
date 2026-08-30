@@ -79,6 +79,10 @@ public interface HorseCrankAccess {
         return engine().getEffectiveBaseStress();
     }
 
+    default float getGeneratedSpeed() {
+        return engine().generatedSpeed();
+    }
+
     default void attachWorker(net.minecraft.world.entity.Mob worker, WorkerResolver.ResolvedWorker profile) {
         engine().attachWorker(worker, profile);
     }

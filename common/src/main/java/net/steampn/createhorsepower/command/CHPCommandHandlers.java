@@ -12,7 +12,7 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
-import net.steampn.createhorsepower.blocks.crank.AbstractHorseCrankBlockEntity;
+import net.steampn.createhorsepower.blocks.crank.HorseCrankAccess;
 import net.steampn.createhorsepower.content.path.PathEvaluator;
 import net.steampn.createhorsepower.content.stats.PathStats;
 import net.steampn.createhorsepower.content.stats.WorkerResolver;
@@ -46,7 +46,7 @@ public final class CHPCommandHandlers {
         }
 
         BlockPos pos = hit.getBlockPos();
-        if (!(player.level().getBlockEntity(pos) instanceof AbstractHorseCrankBlockEntity crank)) {
+        if (!(player.level().getBlockEntity(pos) instanceof HorseCrankAccess crank)) {
             source.sendFailure(Component.literal("Target block at " + pos.toShortString() + " is not a Horse Crank."));
             return 0;
         }

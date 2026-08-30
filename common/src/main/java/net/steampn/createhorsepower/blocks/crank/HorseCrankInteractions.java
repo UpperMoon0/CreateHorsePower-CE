@@ -5,7 +5,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.LeadItem;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.Level;
@@ -56,7 +55,7 @@ public final class HorseCrankInteractions {
     }
 
     /** Runs the full attach flow for a leashed worker near the player. */
-    public static Outcome attachAt(Level level, BlockPos pos, BlockState state, Player player, ItemStack stack) {
+    public static Outcome attachAt(Level level, BlockPos pos, BlockState state, Player player) {
         if (level.isClientSide()) {
             return Outcome.SUCCESS;
         }

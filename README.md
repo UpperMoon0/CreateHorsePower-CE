@@ -51,7 +51,7 @@ Craft and place a Horse Crank, prepare a complete valid path around it, then att
 
 The full [Packmaker and Modder Guide](docs/PACKMAKERS.md) documents:
 
-- `createhorsepower:worker_stats` and `createhorsepower:path_stats` NeoForge Data Maps (NeoForge 1.21.1; on Forge 1.20.1 the same entries are configured through worker/path tags and config, plus KubeJS where available).
+- `createhorsepower:worker_stats` and `createhorsepower:path_stats` NeoForge Data Maps (NeoForge 1.21.1; on Forge 1.20.1 the same entries are configured through worker/path tags and config).
 - Worker, attachment-item, and leash tags (available on both versions).
 - Server configuration and precedence rules.
 - KubeJS startup registration and server lifecycle events (NeoForge 1.21.1 only for now).

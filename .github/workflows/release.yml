@@ -6,9 +6,10 @@ on:
       - main
     paths:
       - 'gradle.properties'
-    tags:
-      - 'v*'
   workflow_dispatch:
+  # Version changes on main and manual dispatch are the only release triggers.
+  # Do NOT add a tags trigger: this workflow creates v<mod_version> itself and
+  # would re-run (and re-publish) on its own tag push.
 
 concurrency:
   group: release-workflow
@@ -64,7 +65,10 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Build Create Horse Power - CE (all platforms)
-        run: ./gradlew clean build --no-daemon
+        # Full verification gate: shared source + resource parity checks, both
+        # platform builds and the shared test suites. A release must never be
+        # able to bypass the checks PR CI runs.
+        run: ./gradlew cleanAll verify --no-daemon
 
       - name: Read mod versions and locate artifacts
         id: release_file

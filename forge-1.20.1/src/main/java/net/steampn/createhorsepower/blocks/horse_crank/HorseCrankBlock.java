@@ -64,7 +64,7 @@ public class HorseCrankBlock extends AbstractHorseCrankBlock implements IBE<Hors
         }
 
         if (stack.is(CHPTags.Items.ATTACHMENT_ITEMS)) {
-            return mapUse(HorseCrankInteractions.attachAt(level, pos, state, player, stack));
+            return mapUse(HorseCrankInteractions.attachAt(level, pos, state, player));
         }
 
         return InteractionResult.PASS;
