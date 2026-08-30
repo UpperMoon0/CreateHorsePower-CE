@@ -35,6 +35,8 @@ jobs:
       - name: Release guard
         id: guard
         shell: bash
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
         run: |
           set -euo pipefail
           if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
@@ -43,9 +45,13 @@ jobs:
           fi
           if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
             # gradle.properties changes for metadata or JVM settings must not
-            # release; only an actual mod_version bump may.
+            # release; only an actual mod_version bump may. Compare against the
+            # push event's "before" SHA (repository state before the entire
+            # push), not HEAD^: a multi-commit push where gradle.properties
+            # changed in an early commit would otherwise see the bump in both
+            # HEAD and HEAD^ and skip the release.
             current="$(sed -n 's/^mod_version[[:space:]]*=[[:space:]]*//p' gradle.properties | head -n1 | tr -d '\r' | xargs)"
-            previous="$(git show HEAD^:gradle.properties 2>/dev/null | sed -n 's/^mod_version[[:space:]]*=[[:space:]]*//p' | head -n1 | tr -d '\r' | xargs || true)"
+            previous="$(git show "${BEFORE_SHA}:gradle.properties" 2>/dev/null | sed -n 's/^mod_version[[:space:]]*=[[:space:]]*//p' | head -n1 | tr -d '\r' | xargs || true)"
             if [[ -z "$current" ]]; then
               echo "mod_version is missing from gradle.properties" >&2
               exit 1
