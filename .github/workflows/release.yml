@@ -5,7 +5,8 @@ on:
     branches:
       - main
     paths:
-      - 'gradle.properties'
+      - 'neoforge-1.21.1/gradle.properties'
+      - 'forge-1.20.1/gradle.properties'
     tags:
       - 'v*'
   workflow_dispatch:
@@ -20,7 +21,7 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - name: Checkout repository
@@ -35,9 +36,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          mod_version="$(sed -n 's/^mod_version[[:space:]]*=[[:space:]]*//p' gradle.properties | head -n1 | tr -d '\r' | xargs)"
+          mod_version="$(sed -n 's/^mod_version[[:space:]]*=[[:space:]]*//p' neoforge-1.21.1/gradle.properties | head -n1 | tr -d '\r' | xargs)"
           if [[ -z "$mod_version" ]]; then
-            echo "mod_version is missing from gradle.properties" >&2
+            echo "mod_version is missing from neoforge-1.21.1/gradle.properties" >&2
             exit 1
           fi
           tag="v${mod_version}"
@@ -63,56 +64,68 @@ jobs:
       - name: Make Gradle executable
         run: chmod +x ./gradlew
 
-      - name: Build Create Horse Power - CE
+      - name: Build Create Horse Power - CE (all platforms)
         run: ./gradlew clean build --no-daemon
 
-      - name: Read mod version and locate artifacts
+      - name: Read mod versions and locate artifacts
         id: release_file
         shell: bash
         run: |
           set -euo pipefail
+          read_prop() {
+            sed -n "s/^$2[[:space:]]*=[[:space:]]*//p" "$1" | head -n1 | tr -d '\r' | xargs
+          }
 
-          mod_version="$(sed -n 's/^mod_version[[:space:]]*=[[:space:]]*//p' gradle.properties | head -n1 | tr -d '\r' | xargs)"
-          if [[ -z "$mod_version" ]]; then
-            echo "mod_version is missing from gradle.properties" >&2
-            exit 1
-          fi
-          if [[ ! "$mod_version" =~ ^[0-9A-Za-z][0-9A-Za-z._+-]*$ ]]; then
-            printf 'Invalid mod_version: %q\n' "$mod_version" >&2
-            exit 1
-          fi
+          nf_version="$(read_prop neoforge-1.21.1/gradle.properties mod_version)"
+          forge_version="$(read_prop forge-1.20.1/gradle.properties mod_version)"
+          for v in "$nf_version" "$forge_version"; do
+            if [[ ! "$v" =~ ^[0-9A-Za-z][0-9A-Za-z._+-]*$ ]]; then
+              printf 'Invalid mod_version: %q\n' "$v" >&2
+              exit 1
+            fi
+          done
 
-          jar_path="build/libs/createhorsepower-ce-${mod_version}.jar"
-          if [[ ! -f "$jar_path" ]]; then
-            echo "Release jar not found at $jar_path" >&2
-            exit 1
-          fi
+          nf_jar="neoforge-1.21.1/build/libs/createhorsepower-ce-${nf_version}.jar"
+          forge_jar="forge-1.20.1/build/libs/createhorsepower-ce-${forge_version}.jar"
+          for jar in "$nf_jar" "$forge_jar"; do
+            if [[ ! -f "$jar" ]]; then
+              echo "Release jar not found at $jar" >&2
+              exit 1
+            fi
+          done
 
-          changelog_path="changelog/${mod_version}.md"
-          if [[ ! -f "$changelog_path" ]]; then
-            echo "Missing changelog for ${mod_version} at ${changelog_path}" >&2
-            exit 1
-          fi
+          for c in "changelog/${nf_version}.md" "changelog/${forge_version}.md"; do
+            if [[ ! -f "$c" ]]; then
+              echo "Missing changelog for ${c}" >&2
+              exit 1
+            fi
+          done
 
-          echo "mod_version=$mod_version" >> "$GITHUB_OUTPUT"
-          echo "jar_path=$jar_path" >> "$GITHUB_OUTPUT"
-          echo "changelog_path=$changelog_path" >> "$GITHUB_OUTPUT"
+          {
+            echo "nf_version=$nf_version"
+            echo "forge_version=$forge_version"
+            echo "nf_jar=$nf_jar"
+            echo "forge_jar=$forge_jar"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: createhorsepower-ce-neoforge-1.21.1-${{ steps.release_file.outputs.mod_version }}
-          path: ${{ steps.release_file.outputs.jar_path }}
+          name: createhorsepower-ce-${{ steps.release_file.outputs.nf_version }}-${{ steps.release_file.outputs.forge_version }}
+          path: |
+            ${{ steps.release_file.outputs.nf_jar }}
+            ${{ steps.release_file.outputs.forge_jar }}
           if-no-files-found: error
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.release_file.outputs.mod_version }}
-          name: Create Horse Power - CE v${{ steps.release_file.outputs.mod_version }}
-          body_path: ${{ steps.release_file.outputs.changelog_path }}
-          fail_on_unmatched_files: true
-          files: ${{ steps.release_file.outputs.jar_path }}
+          tag_name: v${{ steps.release_file.outputs.nf_version }}
+          name: Create Horse Power - CE v${{ steps.release_file.outputs.nf_version }}
+          body: "See changelogs: [NeoForge 1.21.1](./changelog/${{ steps.release_file.outputs.nf_version }}.md), [Forge 1.20.1](./changelog/${{ steps.release_file.outputs.forge_version }}.md)"
+          files: |
+            ${{ steps.release_file.outputs.nf_jar }}
+            ${{ steps.release_file.outputs.forge_jar }}
           draft: false
           prerelease: false
         env:
@@ -123,12 +136,10 @@ jobs:
         env:
           CURSEFORGE_API_TOKEN: ${{ secrets.CURSEFORGE_API_TOKEN }}
           CURSEFORGE_PROJECT_ID: ${{ vars.CURSEFORGE_PROJECT_ID || '1673003' }}
-          MOD_VERSION: ${{ steps.release_file.outputs.mod_version }}
-          CHANGELOG_PATH: ${{ steps.release_file.outputs.changelog_path }}
-          JAR_PATH: ${{ steps.release_file.outputs.jar_path }}
-          MINECRAFT_VERSION: '1.21.1'
-          LOADER_NAME: 'NeoForge'
-          JAVA_VERSION_NAME: 'Java 21'
+          NF_VERSION: ${{ steps.release_file.outputs.nf_version }}
+          FORGE_VERSION: ${{ steps.release_file.outputs.forge_version }}
+          NF_JAR: ${{ steps.release_file.outputs.nf_jar }}
+          FORGE_JAR: ${{ steps.release_file.outputs.forge_jar }}
         run: |
           set -euo pipefail
           if [[ -z "${CURSEFORGE_API_TOKEN:-}" ]]; then
@@ -136,56 +147,69 @@ jobs:
             exit 1
           fi
 
-          game_version_names="$(jq -cn \
-            --arg minecraftVersion "$MINECRAFT_VERSION" \
-            --arg loaderName "$LOADER_NAME" \
-            --arg javaVersionName "$JAVA_VERSION_NAME" \
-            '[$minecraftVersion, $loaderName, $javaVersionName, "Client", "Server"]')"
+          upload_file() {
+            local jar_path="$1" mod_version="$2" minecraft_version="$3" loader_name="$4" java_version_name="$5" changelog_path="$6"
+            local game_version_names
+            game_version_names="$(jq -cn \
+              --arg minecraftVersion "$minecraft_version" \
+              --arg loaderName "$loader_name" \
+              --arg javaVersionName "$java_version_name" \
+              '[$minecraftVersion, $loaderName, $javaVersionName, "Client", "Server"]')"
 
-          available_versions="$(curl --fail-with-body --silent --show-error \
-            --header "X-Api-Token: ${CURSEFORGE_API_TOKEN}" \
-            'https://minecraft.curseforge.com/api/game/versions')"
-          while IFS= read -r version_name; do
-            if ! jq -e --arg name "$version_name" 'any(.[]; .name == $name)' \
-              <<< "$available_versions" >/dev/null; then
-              echo "CurseForge does not recognize game version tag: ${version_name}" >&2
+            local available_versions
+            available_versions="$(curl --fail-with-body --silent --show-error \
+              --header "X-Api-Token: ${CURSEFORGE_API_TOKEN}" \
+              'https://minecraft.curseforge.com/api/game/versions')"
+            while IFS= read -r version_name; do
+              if ! jq -e --arg name "$version_name" 'any(.[]; .name == $name)' \
+                <<< "$available_versions" >/dev/null; then
+                echo "CurseForge does not recognize game version tag: ${version_name}" >&2
+                exit 1
+              fi
+            done < <(jq -r '.[]' <<< "$game_version_names")
+
+            local changelog
+            changelog="$(<"$changelog_path")"
+            local relations='{"projects":[{"slug":"create","projectID":328085,"type":"requiredDependency"}]}'
+            local metadata
+            metadata="$(jq -cn \
+              --arg changelog "$changelog" \
+              --arg changelogType "markdown" \
+              --arg displayName "Create Horse Power - CE ${mod_version} - ${loader_name} ${minecraft_version}" \
+              --argjson gameVersionNames "$game_version_names" \
+              --argjson relations "$relations" \
+              '{
+                changelog: $changelog,
+                changelogType: $changelogType,
+                displayName: $displayName,
+                gameVersionNames: $gameVersionNames,
+                releaseType: "release",
+                relations: $relations
+              }')"
+
+            local response_file http_status response
+            response_file="$(mktemp)"
+            trap 'rm -f "$response_file"' RETURN
+            http_status="$(curl --silent --show-error \
+              --output "$response_file" \
+              --write-out '%{http_code}' \
+              --request POST \
+              --header "X-Api-Token: ${CURSEFORGE_API_TOKEN}" \
+              --form-string "metadata=${metadata}" \
+              --form "file=@${jar_path}" \
+              "https://minecraft.curseforge.com/api/projects/${CURSEFORGE_PROJECT_ID}/upload-file")"
+            response="$(<"$response_file")"
+            if [[ "$http_status" =~ ^2 ]]; then
+              local file_id
+              file_id="$(jq -er '.id' <<< "$response")"
+              echo "Published ${jar_path} to CurseForge as file ID ${file_id}."
+            elif grep -Eqi 'already|duplicate' <<< "$response"; then
+              echo "CurseForge already has ${jar_path}; treating this retry as successful."
+            else
+              echo "CurseForge upload failed with HTTP ${http_status}: ${response}" >&2
               exit 1
             fi
-          done < <(jq -r '.[]' <<< "$game_version_names")
+          }
 
-          changelog="$(<"$CHANGELOG_PATH")"
-          relations='{"projects":[{"slug":"create","projectID":328085,"type":"requiredDependency"}]}'
-          metadata="$(jq -cn \
-            --arg changelog "$changelog" \
-            --arg displayName "Create Horse Power - CE ${MOD_VERSION} - ${LOADER_NAME} ${MINECRAFT_VERSION}" \
-            --argjson gameVersionNames "$game_version_names" \
-            --argjson relations "$relations" \
-            '{
-              changelog: $changelog,
-              changelogType: "markdown",
-              displayName: $displayName,
-              gameVersionNames: $gameVersionNames,
-              releaseType: "release",
-              relations: $relations
-            }')"
-
-          response_file="$(mktemp)"
-          trap 'rm -f "$response_file"' EXIT
-          http_status="$(curl --silent --show-error \
-            --output "$response_file" \
-            --write-out '%{http_code}' \
-            --request POST \
-            --header "X-Api-Token: ${CURSEFORGE_API_TOKEN}" \
-            --form-string "metadata=${metadata}" \
-            --form "file=@${JAR_PATH}" \
-            "https://minecraft.curseforge.com/api/projects/${CURSEFORGE_PROJECT_ID}/upload-file")"
-          response="$(<"$response_file")"
-          if [[ "$http_status" =~ ^2 ]]; then
-            file_id="$(jq -er '.id' <<< "$response")"
-            echo "Published ${JAR_PATH} to CurseForge as file ID ${file_id}."
-          elif grep -Eqi 'already|duplicate' <<< "$response"; then
-            echo "CurseForge already has ${JAR_PATH}; treating this retry as successful."
-          else
-            echo "CurseForge upload failed with HTTP ${http_status}: ${response}" >&2
-            exit 1
-          fi
+          upload_file "$NF_JAR" "$NF_VERSION" '1.21.1' 'NeoForge' 'Java 21' "changelog/${NF_VERSION}.md"
+          upload_file "$FORGE_JAR" "$FORGE_VERSION" '1.20.1' 'Forge' 'Java 17' "changelog/${FORGE_VERSION}.md"

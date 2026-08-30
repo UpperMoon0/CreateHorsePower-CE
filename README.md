@@ -67,19 +67,29 @@ See the [1.2.0 changelog](changelog/1.21.1-1.2.0-ce.1.md) for the complete relea
 
 ## Building
 
+The repository is a multi-version workspace. Shared logic lives in `common/`
+(single source of truth consumed by both platforms); `neoforge-1.21.1/` and
+`forge-1.20.1/` contain loader-specific glue. No Architectury involved.
+
 On Windows:
 
 ```powershell
-.\gradlew.bat clean build
+.\gradlew.bat clean build          # build every platform
+.\gradlew.bat :neoforge-1.21.1:build
+.\gradlew.bat :forge-1.20.1:build
 ```
 
 On Linux or macOS:
 
 ```bash
 ./gradlew clean build
+./gradlew :neoforge-1.21.1:build
+./gradlew :forge-1.20.1:build
 ```
 
-Generated jars are written to `build/libs`. Report bugs through the [issue tracker](https://github.com/UpperMoon0/CreateHorsePower-CE/issues).
+Generated jars are written to `<platform>/build/libs` (e.g.
+`neoforge-1.21.1/build/libs/createhorsepower-ce-1.21.1-<version>.jar`).
+Report bugs through the [issue tracker](https://github.com/UpperMoon0/CreateHorsePower-CE/issues).
 
 ## Credits and License
 
