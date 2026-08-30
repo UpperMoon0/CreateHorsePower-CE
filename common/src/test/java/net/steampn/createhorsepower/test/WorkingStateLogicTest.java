@@ -39,4 +39,13 @@ public class WorkingStateLogicTest {
         BlockPos[] largeOffsets = HorseCrankEngine.generateOffsetsForRadius(4.0f);
         assertTrue(largeOffsets.length > standardOffsets.length, "Larger radius must generate more track offsets");
     }
+
+    @Test
+    @DisplayName("Missing workers detach immediately when the leash assignment is stale")
+    void staleLoadedWorkerWithoutLeashDetachesImmediately() {
+        assertTrue(HorseCrankEngine.shouldDetachMissingWorker(true, false, 1));
+        assertFalse(HorseCrankEngine.shouldDetachMissingWorker(false, false, 200));
+        assertFalse(HorseCrankEngine.shouldDetachMissingWorker(true, true, 80));
+        assertTrue(HorseCrankEngine.shouldDetachMissingWorker(true, true, 81));
+    }
 }

@@ -639,7 +639,8 @@ public class HorseCrankEngine {
             BlockPos checkPos = lastKnownWorkerPos != null ? lastKnownWorkerPos : host.pos();
             if (level.hasChunkAt(checkPos)) {
                 missingWorkerTicks++;
-                if (missingWorkerTicks > 80) {
+                boolean attachmentPresent = CHPUtils.hasAttachedWorker(level, host.pos());
+                if (shouldDetachMissingWorker(true, attachmentPresent, missingWorkerTicks)) {
                     detachWorker(true);
                     return;
                 }
@@ -650,6 +651,10 @@ public class HorseCrankEngine {
             host.refreshKinetic();
             host.syncToClient();
         }
+    }
+
+    public static boolean shouldDetachMissingWorker(boolean workerLocationLoaded, boolean attachmentPresent, int missingTicks) {
+        return workerLocationLoaded && (!attachmentPresent || missingTicks > 80);
     }
 
     private BlockPos[] offsetsForRadius(float radius) {

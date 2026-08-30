@@ -60,6 +60,13 @@ public final class HorseCrankInteractions {
             return Outcome.SUCCESS;
         }
 
+        // A lead can be removed from the animal directly, leaving the block state and
+        // leash knot behind. Clear that stale assignment before accepting a new worker.
+        if (hasWorker(level, pos, state) && !CHPUtils.hasAttachedWorker(level, pos)) {
+            detachAt(level, pos, state);
+            state = level.getBlockState(pos);
+        }
+
         if (hasWorker(level, pos, state)) {
             player.displayClientMessage(Component.translatable("tooltip.createhorsepower.horse_crank.alreadyHasWorker"), true);
             return Outcome.SUCCESS;

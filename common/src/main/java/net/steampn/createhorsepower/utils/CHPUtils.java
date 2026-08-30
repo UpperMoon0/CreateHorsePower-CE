@@ -60,6 +60,18 @@ public class CHPUtils {
         return Optional.empty();
     }
 
+    /** Returns true only when a living mob is actually leashed to this crank's knot. */
+    public static boolean hasAttachedWorker(Level level, BlockPos pos) {
+        Optional<LeashFenceKnotEntity> knot = getKnot(level, pos);
+        if (knot.isEmpty()) return false;
+
+        return !level.getEntitiesOfClass(
+                Mob.class,
+                new AABB(pos).inflate(WorkerStats.MAX_MOVEMENT_RADIUS + 4.0D),
+                mob -> mob.isAlive() && mob.isLeashed() && mob.getLeashHolder() == knot.get()
+        ).isEmpty();
+    }
+
     public static InteractionResult cleanUpLeash(Level level, BlockPos pos, boolean dropLead) {
         if (level == null || level.isClientSide()) return InteractionResult.PASS;
         getKnot(level, pos).ifPresent(knot -> {
