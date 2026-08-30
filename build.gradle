@@ -163,7 +163,7 @@ tasks.register('verifySharedResources') {
         // under tags/, to the tag type — e.g. advancement "recipes" sub-paths
         // (data/<ns>/advancement/recipes/...) keep their plural inner segments.
         def registryRenames = ['recipes': 'recipe', 'advancements': 'advancement', 'loot_tables': 'loot_table']
-        def tagTypeRenames = ['items': 'item', 'blocks': 'block']
+        def tagTypeRenames = ['items': 'item', 'blocks': 'block', 'entity_types': 'entity_type']
         def normalizePath = { String path ->
             def seg = path.split('/')
             if (seg.length > 3 && seg[0] == 'data') {

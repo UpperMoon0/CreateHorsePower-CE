@@ -13,12 +13,14 @@ import net.minecraftforge.fml.ModLoadingContext;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.config.ModConfig;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
+import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import net.steampn.createhorsepower.compat.OptionalIntegrations;
 import net.steampn.createhorsepower.config.Config;
 import net.steampn.createhorsepower.registry.BlockRegister;
 import net.steampn.createhorsepower.registry.CHPCreativeTabs;
 import net.steampn.createhorsepower.registry.TileEntityRegister;
+import net.steampn.createhorsepower.utils.CHPBlockPartials;
 import org.slf4j.Logger;
 
 @Mod(CreateHorsePower.MODID)
@@ -41,6 +43,7 @@ public class CreateHorsePower {
         BlockRegister.register();
         TileEntityRegister.register();
         modEventBus.addListener(this::commonSetup);
+        modEventBus.addListener(this::clientSetup);
 
         ModLoadingContext.get().registerConfig(ModConfig.Type.SERVER, Config.SPEC);
 
@@ -49,6 +52,10 @@ public class CreateHorsePower {
 
     private void commonSetup(final FMLCommonSetupEvent event) {
         LOGGER.debug("{} is registered!", BlockRegister.HORSE_CRANK.get());
+    }
+
+    private void clientSetup(final FMLClientSetupEvent event) {
+        CHPBlockPartials.load();
     }
 
     @SubscribeEvent
