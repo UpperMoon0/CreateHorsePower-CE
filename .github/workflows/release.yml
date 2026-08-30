@@ -10,6 +10,9 @@ on:
   # Version changes on main and manual dispatch are the only release triggers.
   # Do NOT add a tags trigger: this workflow creates v<mod_version> itself and
   # would re-run (and re-publish) on its own tag push.
+  # The release-guard step additionally enforces: dispatch only from main, and
+  # push events only when mod_version actually changed (gradle.properties also
+  # carries metadata/JVM settings that must not release).
 
 concurrency:
   group: release-workflow
@@ -29,28 +32,34 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Ensure Git tag exists
-        id: ensure_tag
+      - name: Release guard
+        id: guard
         shell: bash
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          mod_version="$(sed -n 's/^mod_version[[:space:]]*=[[:space:]]*//p' gradle.properties | head -n1 | tr -d '\r' | xargs)"
-          if [[ -z "$mod_version" ]]; then
-            echo "mod_version is missing from gradle.properties" >&2
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "Releases may only run from main (got ${GITHUB_REF})." >&2
             exit 1
           fi
-          tag="v${mod_version}"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if git ls-remote --tags origin "$tag" | grep -q .; then
-            echo "Tag $tag already exists."
+          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            # gradle.properties changes for metadata or JVM settings must not
+            # release; only an actual mod_version bump may.
+            current="$(sed -n 's/^mod_version[[:space:]]*=[[:space:]]*//p' gradle.properties | head -n1 | tr -d '\r' | xargs)"
+            previous="$(git show HEAD^:gradle.properties 2>/dev/null | sed -n 's/^mod_version[[:space:]]*=[[:space:]]*//p' | head -n1 | tr -d '\r' | xargs || true)"
+            if [[ -z "$current" ]]; then
+              echo "mod_version is missing from gradle.properties" >&2
+              exit 1
+            fi
+            if [[ "$current" == "$previous" ]]; then
+              echo "mod_version unchanged (${current}); no release."
+              echo "release=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "mod_version changed ${previous:-<none>} -> ${current}; releasing."
           else
-            echo "Creating tag $tag..."
-            git tag -a "$tag" -m "Create Horse Power - CE ${mod_version}"
-            git push origin "$tag"
+            echo "Manual dispatch from main; releasing."
           fi
+          echo "release=true" >> "$GITHUB_OUTPUT"
 
       - name: Setup Java 21
         uses: actions/setup-java@v4
@@ -114,7 +123,45 @@ jobs:
             echo "forge_jar=$forge_jar"
           } >> "$GITHUB_OUTPUT"
 
+      # Tag creation is intentionally the LAST validation: a broken commit must
+      # never get a release-looking tag before the build, parity checks, tests
+      # and artifact validation have all succeeded. The invariant enforced
+      # below is: release tag source == binary source.
+      - name: Ensure release tag points at this commit
+        if: steps.guard.outputs.release == 'true'
+        id: ensure_tag
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mod_version="$(sed -n 's/^mod_version[[:space:]]*=[[:space:]]*//p' gradle.properties | head -n1 | tr -d '\r' | xargs)"
+          if [[ -z "$mod_version" ]]; then
+            echo "mod_version is missing from gradle.properties" >&2
+            exit 1
+          fi
+          tag="v${mod_version}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          direct="$(git ls-remote origin "refs/tags/${tag}" | awk '{print $1}')"
+          if [[ -z "$direct" ]]; then
+            echo "Creating tag ${tag}..."
+            git tag -a "$tag" -m "Create Horse Power - CE ${mod_version}"
+            git push origin "$tag"
+            exit 0
+          fi
+          # Annotated tags resolve to a tag object; peel to the underlying commit.
+          peeled="$(git ls-remote origin "refs/tags/${tag}^{}" | awk '{print $1}')"
+          existing_commit="${peeled:-$direct}"
+          if [[ "$existing_commit" != "$GITHUB_SHA" ]]; then
+            echo "Tag ${tag} exists but points at ${existing_commit}, not this commit (${GITHUB_SHA})." >&2
+            echo "Re-releasing an existing version from a different commit is not allowed; bump mod_version." >&2
+            exit 1
+          fi
+          echo "Tag ${tag} already points at this commit; reusing it."
+
       - name: Upload workflow artifact
+        if: steps.guard.outputs.release == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: createhorsepower-ce-${{ steps.release_file.outputs.nf_version }}-${{ steps.release_file.outputs.forge_version }}
@@ -124,6 +171,7 @@ jobs:
           if-no-files-found: error
 
       - name: Publish GitHub Release
+        if: steps.guard.outputs.release == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.release_file.outputs.base_version }}
@@ -138,6 +186,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish to CurseForge
+        if: steps.guard.outputs.release == 'true'
         shell: bash
         env:
           CURSEFORGE_API_TOKEN: ${{ secrets.CURSEFORGE_API_TOKEN }}
