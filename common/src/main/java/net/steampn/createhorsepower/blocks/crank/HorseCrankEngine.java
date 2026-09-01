@@ -1,5 +1,6 @@
 package net.steampn.createhorsepower.blocks.crank;
 
+import com.mojang.logging.LogUtils;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
@@ -18,6 +19,7 @@ import net.steampn.createhorsepower.content.stats.WorkerStats;
 import net.steampn.createhorsepower.platform.CHPApi;
 import net.steampn.createhorsepower.utils.CHPUtils;
 import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
 
 import java.util.List;
 import java.util.UUID;
@@ -27,6 +29,8 @@ import java.util.UUID;
  * the platform block entities delegate lifecycle + Create wiring to this class.
  */
 public class HorseCrankEngine {
+    private static final Logger LOGGER = LogUtils.getLogger();
+    private static final int MOVEMENT_DEBUG_INTERVAL_TICKS = 20;
 
     /** Bridges the engine to the hosting block entity / world. */
     public interface Host {
@@ -530,9 +534,35 @@ public class HorseCrankEngine {
             host.syncToClient();
         }
 
+        long gameTime = level.getGameTime();
+        boolean logMovement = LOGGER.isDebugEnabled() && gameTime % MOVEMENT_DEBUG_INTERVAL_TICKS == 0;
+        if (logMovement) {
+            LOGGER.debug(
+                    "Horse crank movement state: tick={} crank={} working={} canWork={} workerResolved={} "
+                            + "workerEligible={} pathValid={} scriptVetoed={} worker={} workerPos=({}, {}, {}) "
+                            + "workerRot=({}, {}, {}) velocity={} leashed={} leashHolder={} noAi={} "
+                            + "generatedSpeed={} theoreticalSpeed={} radius={} redstoneMode={} powered={}",
+                    gameTime, host.pos(), isWorking, canWork, workerResolved,
+                    workerEligible, hasValidWorkingBlocks, scriptVetoed,
+                    cachedWorkerMob == null ? "none" : cachedWorkerMob.getUUID(),
+                    cachedWorkerMob == null ? Double.NaN : cachedWorkerMob.getX(),
+                    cachedWorkerMob == null ? Double.NaN : cachedWorkerMob.getY(),
+                    cachedWorkerMob == null ? Double.NaN : cachedWorkerMob.getZ(),
+                    cachedWorkerMob == null ? Float.NaN : cachedWorkerMob.getYRot(),
+                    cachedWorkerMob == null ? Float.NaN : cachedWorkerMob.getYHeadRot(),
+                    cachedWorkerMob == null ? Float.NaN : cachedWorkerMob.yBodyRot,
+                    cachedWorkerMob == null ? "none" : cachedWorkerMob.getDeltaMovement(),
+                    cachedWorkerMob != null && cachedWorkerMob.isLeashed(),
+                    cachedWorkerMob == null || cachedWorkerMob.getLeashHolder() == null
+                            ? "none" : cachedWorkerMob.getLeashHolder().getUUID(),
+                    cachedWorkerMob != null && cachedWorkerMob.isNoAi(),
+                    generatedSpeed(), host.theoreticalSpeed(), workerRadius, redstoneMode,
+                    level.hasNeighborSignal(host.pos()));
+        }
+
         // 4. Move animal along track if active
         if (isWorking && cachedWorkerMob != null) {
-            moveWorkerTo(cachedWorkerMob);
+            moveWorkerTo(cachedWorkerMob, logMovement);
         }
     }
 
@@ -750,7 +780,7 @@ public class HorseCrankEngine {
         return effectiveBaseStress;
     }
 
-    private void moveWorkerTo(Mob mob) {
+    private void moveWorkerTo(Mob mob, boolean logMovement) {
         Level level = level();
         if (level == null || mob == null) return;
 
@@ -764,6 +794,19 @@ public class HorseCrankEngine {
         double direction = Math.signum(speed);
         double angularVelocity = Math.toRadians(Math.abs(speed) * 6.0); // 6 deg/sec per RPM
         double angularDelta = (angularVelocity * direction) / 20.0;
-        WorkerOrbitMovement.move(mob, centerX, centerZ, workerRadius, angularDelta);
+        WorkerOrbitMovement.Snapshot movement = WorkerOrbitMovement.move(
+                mob, centerX, centerZ, workerRadius, angularDelta);
+
+        if (logMovement) {
+            LOGGER.debug(
+                    "Horse crank orbit step: crank={} worker={} center=({}, {}) radius={} speed={} direction={} "
+                            + "angularDelta={} old=({}, {}) target=({}, {}) actual=({}, {}) delta=({}, {}) "
+                            + "angles=({} -> {}) yaw=({} -> {}) headYaw={} bodyYaw={} moved={} eatingSuppressed={}",
+                    host.pos(), mob.getUUID(), centerX, centerZ, workerRadius, speed, direction,
+                    angularDelta, movement.oldX(), movement.oldZ(), movement.targetX(), movement.targetZ(),
+                    movement.actualX(), movement.actualZ(), movement.deltaX(), movement.deltaZ(),
+                    movement.currentAngle(), movement.newAngle(), movement.requestedYaw(), movement.actualYaw(),
+                    mob.getYHeadRot(), mob.yBodyRot, movement.moved(), movement.eatingSuppressed());
+        }
     }
 }
