@@ -7,7 +7,6 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.Mob;
-import net.minecraft.world.entity.WalkAnimationState;
 import net.minecraft.world.entity.decoration.LeashFenceKnotEntity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
@@ -762,33 +761,9 @@ public class HorseCrankEngine {
         double centerX = pos.getX() + 0.5;
         double centerZ = pos.getZ() + 0.5;
 
-        double dx = mob.getX() - centerX;
-        double dz = mob.getZ() - centerZ;
-
-        double currentAngle = Math.atan2(dz, dx);
-
-        float radius = this.workerRadius;
-
         double direction = Math.signum(speed);
         double angularVelocity = Math.toRadians(Math.abs(speed) * 6.0); // 6 deg/sec per RPM
         double angularDelta = (angularVelocity * direction) / 20.0;
-
-        double newAngle = currentAngle + angularDelta;
-
-        double targetX = centerX + radius * Math.cos(newAngle);
-        double targetZ = centerZ + radius * Math.sin(newAngle);
-
-        mob.teleportTo(targetX, mob.getY(), targetZ);
-
-        double tangentAngle = newAngle + (Math.PI / 2.0) * direction;
-        float yaw = (float) Math.toDegrees(tangentAngle);
-
-        mob.setYRot(yaw);
-        mob.setYHeadRot(yaw);
-        mob.setYBodyRot(yaw);
-
-        WalkAnimationState walkState = mob.walkAnimation;
-        walkState.setSpeed(1.0f);
-        walkState.update(1.0f, 0.2f);
+        WorkerOrbitMovement.move(mob, centerX, centerZ, workerRadius, angularDelta);
     }
 }
