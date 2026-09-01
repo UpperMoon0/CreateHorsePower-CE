@@ -1,54 +1,85 @@
 # Create Horse Power CE — Packmaker & Modder Guide
 
-Welcome to the **Create Horse Power — Community Edition 1.2** framework documentation. This guide details how to customize worker stats, path properties, items, redstone, and scripts using NeoForge Data Maps, Item/Entity Tags, Server Configs, and KubeJS events.
+Welcome to the **Create Horse Power — Community Edition 1.2** framework documentation. This guide details how to customize worker stats, path properties, items, redstone, and scripts on both supported mod loaders.
+
+> **Loader availability**
+>
+> Core Horse Crank gameplay, tags, server configuration, Jade,
+> commands, and diagnostics are supported on both NeoForge 1.21.1 and
+> Forge 1.20.1.
+>
+> NeoForge Data Maps, KubeJS integration, and Ponder scenes are
+> NeoForge 1.21.1-only and are not available on Forge 1.20.1.
+
+If a section is not labeled as "NeoForge 1.21.1 only", its content applies to both loaders. Always use the loader-appropriate tag and config file paths described below.
 
 ---
 
 ## Table of Contents
 1. [Architecture Overview](#architecture-overview)
-2. [Data Maps](#data-maps)
-   - [Worker Stats Data Map (`createhorsepower:worker_stats`)](#worker-stats-data-map)
-   - [Path Stats Data Map (`createhorsepower:path_stats`)](#path-stats-data-map)
-3. [Tags](#tags)
-   - [Item Tags](#item-tags)
-   - [Entity Tags](#entity-tags)
-4. [KubeJS Integration](#kubejs-integration)
-   - [Startup Profile Registration](#startup-profile-registration)
-   - [Server Lifecycle Events](#server-lifecycle-events)
-5. [Server Configuration](#server-configuration)
-6. [Precedence Rules](#precedence-rules)
-7. [In-Game Diagnostics & Commands](#in-game-diagnostics--commands)
-8. [Migration from 1.1](#migration-from-11)
+2. [Datapack and config file paths by loader](#datapack-and-config-file-paths-by-loader)
+3. [NeoForge 1.21.1 Data Maps](#neoforge-1211-data-maps)
+   - [Worker Stats Data Map (`createhorsepower:worker_stats`)](#worker-stats-data-map-createhorsepowerworker_stats)
+   - [Path Stats Data Map (`createhorsepower:path_stats`)](#path-stats-data-map-createhorsepowerpath_stats)
+4. [Tags](#tags)
+5. [KubeJS Integration — NeoForge 1.21.1 only](#kubejs-integration--neoforge-1211-only)
+6. [Forge 1.20.1 customization](#forge-1201-customization)
+7. [Server Configuration](#server-configuration)
+8. [Precedence Rules](#precedence-rules)
+9. [In-Game Diagnostics & Commands](#in-game-diagnostics--commands)
+10. [Migration from 1.1](#migration-from-11)
 
 ---
 
 ## Architecture Overview
 
-Create Horse Power CE 1.2 turns the Horse Crank into a fully data-driven animal power framework.
+Create Horse Power CE 1.2 turns the Horse Crank into a data-driven animal power framework.
 
 ```
-Data Layer:
-  KubeJS Profiles → NeoForge Data Maps → Built-in Tier Tags → Legacy Config Lists
-
 Execution Lifecycle:
   Leash Bound (#createhorsepower:attachment_items)
-       ↓
+        ↓
   Worker Resolution & Validation (Alive, Species, Baby rules, Tamed rules, Undead rules)
-       ↓
+        ↓
   Path Scanning (Multi-mode: Weighted Average, Worst Block, Legacy)
-       ↓
+        ↓
   Redstone Evaluation (Ignore, High Stops, High Runs)
-       ↓
-  beforeWorkStart (optional KubeJS hook)
-       ↓
+        ↓
+  beforeWorkStart (optional KubeJS hook on NeoForge)
+        ↓
   Kinetic Rotation & Stress Generation + Orbit Tracking
 ```
 
+Worker and path stats resolution differs by loader — see [Precedence Rules](#precedence-rules).
+
 ---
 
-## Data Maps
+## Datapack and config file paths by loader
 
-### Worker Stats Data Map
+Packmakers must use the directory layout that matches the running mod loader. The two Minecraft versions do not agree on the plural tag sub-directory names.
+
+| Resource | NeoForge 1.21.1 | Forge 1.20.1 |
+|---|---|---|
+| Item tags root | `data/<namespace>/tags/item/` | `data/<namespace>/tags/items/` |
+| Entity type tags root | `data/<namespace>/tags/entity_type/` | `data/<namespace>/tags/entity_types/` |
+| Block tags root | `data/<namespace>/tags/block/` | `data/<namespace>/tags/blocks/` |
+| Data Maps directory | `data/<namespace>/data_maps/entity_type/`, `data/<namespace>/data_maps/block/` | _Not available_ |
+| Server config | `saves/<world>/serverconfig/createhorsepower-server.toml` | `saves/<world>/serverconfig/createhorsepower-server.toml` |
+| KubeJS startup scripts | `kubejs/startup_scripts/` | _Not available_ |
+| KubeJS server scripts | `kubejs/server_scripts/` | _Not available_ |
+
+Copying a NeoForge datapack folder into a Forge 1.20.1 installation without renaming `tags/item` → `tags/items` (and similar) will silently leave tags unread by the Forge path.
+
+---
+
+## NeoForge 1.21.1 Data Maps
+
+> **NeoForge 1.21.1 only.** Forge 1.20.1 does not provide the NeoForge Data
+> Map API. Do not place these files in a Forge pack expecting CHP to read
+> them — use the supported tags and config fallback described in
+> [Forge 1.20.1 customization](#forge-1201-customization) instead.
+
+### Worker Stats Data Map (`createhorsepower:worker_stats`)
 - **Path**: `data/<namespace>/data_maps/entity_type/worker_stats.json`
 - **Target Registry**: `minecraft:entity_type`
 
@@ -83,9 +114,7 @@ Execution Lifecycle:
 | `requires_tamed` | Boolean | `false` | If true, untamed animals cannot generate power. |
 | `allow_baby` | Boolean | `false` | If true, baby animals can be attached and generate power. |
 
----
-
-### Path Stats Data Map
+### Path Stats Data Map (`createhorsepower:path_stats`)
 - **Path**: `data/<namespace>/data_maps/block/path_stats.json`
 - **Target Registry**: `minecraft:block`
 
@@ -114,12 +143,14 @@ Execution Lifecycle:
 
 ## Tags
 
+Tag directory layout is loader-dependent — see the [paths table](#datapack-and-config-file-paths-by-loader).
+
 ### Item Tags
 - `#createhorsepower:attachment_items`: Root tag of items allowed to attach animals to the crank.
   - `#createhorsepower:worker_leashes`: Default member tag containing `minecraft:lead`.
 
 #### Requiring a Custom Harness (Replacing Vanilla Lead)
-Tags in NeoForge merge additively by default. If your modpack wants to **prohibit vanilla leads** and require a custom harness, set `"replace": true` in `data/createhorsepower/tags/item/attachment_items.json`:
+Tags merge additively by default. To prohibit vanilla leads and require a custom harness, set `"replace": true` in the loader-appropriate attachment-items file:
 
 ```json
 {
@@ -146,9 +177,15 @@ To allow additional leash items alongside the vanilla lead without removing it, 
 - `#createhorsepower:workers/medium` (fallback: 4 RPM, medium tier stress)
 - `#createhorsepower:workers/large` (fallback: 4 RPM, large tier stress)
 
+These tier tags are honored by both loaders and act as the canonical non-Data-Map fallback on Forge 1.20.1.
+
 ---
 
-## KubeJS Integration
+## KubeJS Integration — NeoForge 1.21.1 only
+
+> KubeJS event hooks are NeoForge 1.21.1-only. The Forge 1.20.1 platform
+> does not register KubeJS profile or lifecycle events; use tags and
+> server config to customize behavior on Forge.
 
 ### Startup Profile Registration
 Register custom worker and path profiles directly in `kubejs/startup_scripts/horsepower.js`:
@@ -239,12 +276,35 @@ Available server events:
 | `outputCalculated` | No | `worker`, `crankPos`, `level`, `baseRpm`, `baseStress`, `setRpmMultiplier()`, `setStressMultiplier()` |
 | `pathEvaluated` | No | `crankPos`, `level`, `result`, `validBlocks`, `invalidBlocks`, `efficiencyPercent`, `setSpeedMultiplier()`, `setStressMultiplier()` |
 
-KubeJS is optional. Without it, Data Maps, tags, config, attachment, movement, and generation continue to work normally.
+KubeJS is optional. Without it, Data Maps, tags, config, attachment, movement, and generation continue to work normally on NeoForge.
+
+---
+
+## Forge 1.20.1 customization
+
+> **Forge 1.20.1 only.** NeoForge Data Maps and CHP KubeJS profile
+> registration are not available on Forge 1.20.1. The Forge platform
+> layer emulates the canonical CHP profile lookup using a fixed chain
+> of sources instead.
+
+Forge 1.20.1 customization follows a deterministic fallback chain (see [Precedence Rules](#precedence-rules) for details):
+
+1. **Built-in per-species profiles** that ship with the Forge platform layer
+   (same defaults as the NeoForge 1.21.1 Data Maps).
+2. **Canonical worker tier tags** (`#createhorsepower:workers/small|medium|large`).
+3. **Legacy worker tier tags and config fallback** for additional workers
+   (`smallCreatures`, `mediumCreatures`, `largeCreatures`).
+4. **Server config lists** for otherwise unresolved workers.
+5. **Built-in path profiles**, followed by the **legacy path / config
+   fallback** for additional blocks.
+
+There is no per-entity override API beyond tags and config on Forge 1.20.1. If a pack needs arbitrary per-mob tuning on 1.20.1, promote that mob to a KubeJS or Data Map override on NeoForge 1.21.1.
 
 ---
 
 ## Server Configuration
-Located at `saves/<world>/serverconfig/createhorsepower-server.toml`:
+
+Located at `saves/<world>/serverconfig/createhorsepower-server.toml`. The file is identical on both loaders.
 
 ```toml
 # Legacy root keys (preserved for 1.1 backward compatibility)
@@ -291,22 +351,34 @@ largeCreatures = ["minecraft:horse"]
 
 ## Precedence Rules
 
-### Worker Stats Resolution:
+Higher-priority entries replace lower-priority tuning for the same entity or block.
+
+### NeoForge 1.21.1
+
 1. **KubeJS Startup Profile** (`HorsePowerEvents.workerProfiles`)
 2. **NeoForge Data Map** (`createhorsepower:worker_stats`)
 3. **Tier Entity Tag** (`#createhorsepower:workers/*`)
 4. **Config Entity List** (`largeCreatures`, `mediumCreatures`, `smallCreatures`)
 
-### Path Stats Resolution:
-1. **KubeJS Startup Profile** (`HorsePowerEvents.pathProfiles`)
-2. **NeoForge Data Map** (`createhorsepower:path_stats`)
-3. **Config Block List** (`greatPathBlock`, `normalPathBlock`, `poorPathBlock`)
+For path stats: KubeJS → Data Map → tier / config fallback.
 
-Higher-priority entries replace lower-priority tuning for the same entity or block. For example, the built-in `minecraft:dirt` Data Map profile wins over `poorMultiplier`; override that Data Map or register a KubeJS path profile to change dirt specifically.
+### Forge 1.20.1
+
+KubeJS and NeoForge Data Maps are not available. Use the canonical chain:
+
+1. **Built-in per-species profile** (emulated by the Forge platform layer)
+2. **Tier Entity Tag** (`#createhorsepower:workers/*`)
+3. **Legacy tag and config fallback** (`smallCreatures`, `mediumCreatures`, `largeCreatures`, plus any user-supplied tier tags)
+
+For path stats on Forge: built-in path profile → legacy path / config fallback (`greatPathBlock`, `normalPathBlock`, `poorPathBlock`).
+
+Built-in profiles take priority over fallback values for the same mob or block, so the built-in `minecraft:dirt` path profile wins over `poorMultiplier`; override the corresponding Data Map (NeoForge) or use a tag/config entry (Forge) to retune that block.
 
 ---
 
 ## In-Game Diagnostics & Commands
+
+These apply identically on both loaders.
 
 - **Engineer's Goggles**: Look at any Horse Crank to view worker name, status, path efficiency, individual bonuses, and active redstone mode.
 - **Wrench Interaction**: Sneak + Right-Click with Create Wrench cycles Redstone Mode (`HIGH_STOPS` $\to$ `HIGH_RUNS` $\to$ `IGNORE`).
@@ -323,12 +395,16 @@ Higher-priority entries replace lower-priority tuning for the same entity or blo
 - All 1.1 configuration keys (`creatureRPMRange`, `largeCreatureStressRange`, `poorPathBlock`, etc.) remain at the **root** of `createhorsepower-server.toml`.
 - Existing server config files from 1.1 will load seamlessly without reset or missing properties.
 
-### 2. Precedence and Data Map Overrides
+### 2. Precedence and Data Map Overrides (NeoForge 1.21.1)
 - In 1.1, mob stats were solely governed by the 3 config lists (`smallCreatures`, `mediumCreatures`, `largeCreatures`).
 - In 1.2, vanilla mobs (horse, donkey, mule, camel, llama, wolf, cow, pig, sheep) now have dedicated **Data Map profiles** (e.g. Horse defaults to `5 RPM / 600 SU` with individual speed/health scaling).
 - Because Data Maps take precedence over fallback config lists, modifying `largeCreatureStressRange` in config will only affect mobs without a Data Map entry.
 - To customize vanilla mobs in 1.2, override `data/createhorsepower/data_maps/entity_type/worker_stats.json` in a datapack or use `HorsePowerEvents.workerProfiles` in KubeJS.
 - Built-in path Data Maps use the same precedence. Changes to legacy path multipliers do not affect blocks such as dirt, dirt path, or gravel while those blocks have Data Map entries; override `createhorsepower:path_stats` or use a KubeJS path profile instead.
+
+### 2b. Forge 1.20.1 Customization
+- Forge 1.20.1 does not provide Data Maps. The platform emulates the canonical built-in worker and path profiles; customization for additional mobs and blocks must use the supported tags (`#createhorsepower:workers/*`) or the legacy config lists at the root of `createhorsepower-server.toml`.
+- Built-in path profiles ship with the Forge platform layer; legacy `poorPathBlock` / `normalPathBlock` / `greatPathBlock` lists act as the user-facing override path for additional blocks.
 
 ### 3. Existing Horse Cranks and Redstone
 - Pre-1.2 Horse Cranks have no saved redstone mode and migrate to `IGNORE`, preserving their old behavior.
@@ -336,4 +412,6 @@ Higher-priority entries replace lower-priority tuning for the same entity or blo
 
 ### 4. Movement Radius
 - Version 1.2 accepts radii from `0.5` through `6.0` blocks. Values above 6 are rejected because normal Minecraft leads cannot reliably support larger working circles.
-- If a pack used an earlier 1.2 prerelease with a larger radius, change its Data Map or KubeJS profile before updating. Saved block-entity radii are clamped safely, but profile definitions outside the supported range fail validation.
+- On NeoForge 1.21.1, profile values outside the supported range (Data Map or KubeJS) fail validation.
+- On Forge 1.20.1, saved block-entity radii are clamped safely, but profile definitions outside the supported range fail validation.
+- If a pack used an earlier 1.2 prerelease with a larger radius, change its Data Map (NeoForge) or KubeJS profile (NeoForge) before updating.

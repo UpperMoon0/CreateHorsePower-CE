@@ -70,8 +70,6 @@ public interface CHPConfig {
 
     RedstoneMode defaultRedstoneMode();
 
-    boolean debugLogging();
-
     Optional<WorkerStats> lookupWorkerStats(EntityType<?> type);
 
     Optional<PathStats> lookupPathStats(Block block);

@@ -3,13 +3,16 @@ package net.steampn.createhorsepower.gametest;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.animal.Cow;
 import net.minecraft.world.entity.animal.horse.Horse;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraftforge.gametest.GameTestHolder;
 import net.minecraftforge.gametest.PrefixGameTestTemplate;
+import net.steampn.createhorsepower.blocks.crank.AbstractHorseCrankBlockEntity;
 import net.steampn.createhorsepower.blocks.crank.WorkerActivityControl;
 import net.steampn.createhorsepower.blocks.crank.WorkerOrbitMovement;
 import net.steampn.createhorsepower.registry.BlockRegister;
@@ -160,6 +163,203 @@ public final class HorsePowerGameTests {
                 "releaseFromMarker on a clean worker is a no-op");
         helper.assertTrue(!cow.isNoAi(), "Untouched worker stays at NoAI=false");
         helper.succeed();
+    }
+
+    /**
+     * Two consecutive {@link WorkerActivityControl#acquire} calls from the
+     * same crank must preserve the worker's original {@code NoAI} state.
+     * The previous implementation overwrote {@code PreviousNoAi} with the
+     * mob's current {@code NoAI} (which is {@code true} after the first
+     * acquire), losing the original baseline.
+     */
+    @GameTest(template = "empty")
+    public static void sameOwnerReacquirePreservesOriginalNoAi(GameTestHelper helper) {
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(0, 0, 0));
+        helper.assertTrue(!horse.isNoAi(), "Pre-condition: ordinary horse has AI enabled");
+
+        UUID crank = new UUID(0x5555L, 0xEEEEEEEEL);
+        BlockPos pos = new BlockPos(1, 1, 1);
+
+        boolean first = WorkerActivityControl.acquire(horse, pos, crank);
+        helper.assertTrue(first, "First acquire must claim ownership for an AI-enabled horse");
+        helper.assertTrue(horse.isNoAi(), "First acquire must suppress AI");
+        helper.assertFalse(WorkerActivityControl.readPreviousNoAi(horse),
+                "Marker must still record original NoAI=false after first acquire");
+
+        boolean second = WorkerActivityControl.acquire(horse, pos, crank);
+        helper.assertTrue(second, "Second acquire from the same crank must still own the suppression");
+        helper.assertTrue(horse.isNoAi(), "Second acquire must keep the horse NoAI");
+        helper.assertFalse(WorkerActivityControl.readPreviousNoAi(horse),
+                "Marker must STILL record original NoAI=false after second acquire");
+
+        WorkerActivityControl.release(horse, second);
+        helper.assertFalse(horse.isNoAi(), "Final release must return the horse to its original NoAI");
+        helper.succeed();
+    }
+
+    /**
+     * A worker that started out with {@code NoAI=true} must stay that way
+     * after a same-crank reacquire. The crank must not own a pre-existing
+     * NoAI state.
+     */
+    @GameTest(template = "empty")
+    public static void preexistingNoAiSurvivesSameOwnerReacquire(GameTestHelper helper) {
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(0, 0, 0));
+        horse.setNoAi(true);
+
+        UUID crank = new UUID(0x6666L, 0xFFFFFFFEL);
+        BlockPos pos = new BlockPos(2, 1, 2);
+
+        boolean first = WorkerActivityControl.acquire(horse, pos, crank);
+        boolean second = WorkerActivityControl.acquire(horse, pos, crank);
+
+        helper.assertFalse(first, "Crank must not own a pre-existing NoAI state");
+        helper.assertFalse(second, "Same-crank reacquire must not flip ownership either");
+        helper.assertTrue(horse.isNoAi(), "Preexisting NoAI must still hold");
+        helper.assertTrue(WorkerActivityControl.readPreviousNoAi(horse),
+                "Marker must record the original NoAI=true across the reacquire");
+
+        WorkerActivityControl.release(horse, second);
+        helper.assertTrue(horse.isNoAi(), "Final release must leave the horse at its original NoAI=true");
+        helper.succeed();
+    }
+
+    /**
+     * Two different crank UUIDs at the same block position must NOT be
+     * treated as the same owner. The previous position-derived UUID would
+     * have failed this test, allowing a fresh crank to inherit a stale
+     * marker from a predecessor.
+     */
+    @GameTest(template = "empty")
+    public static void replacementCrankAtSamePositionIsForeign(GameTestHelper helper) {
+        Cow cow = helper.spawn(EntityType.COW, new BlockPos(0, 0, 0));
+        helper.assertTrue(!cow.isNoAi(), "Pre-condition: ordinary cow has AI enabled");
+
+        UUID crankA = new UUID(0x7777L, 0xAAAAAAAAAAAAL);
+        UUID crankB = new UUID(0x8888L, 0xBBBBBBBBBBBBL);
+        helper.assertTrue(!crankA.equals(crankB), "Pre-condition: test UUIDs must differ");
+        BlockPos samePos = new BlockPos(3, 1, 3);
+
+        boolean first = WorkerActivityControl.acquire(cow, samePos, crankA);
+        helper.assertTrue(first, "Crank A must own the suppression");
+        helper.assertTrue(cow.isNoAi(), "Crank A suppresses the cow's AI");
+        helper.assertTrue(WorkerActivityControl.hasForeignMarker(cow, crankB),
+                "Crank B at the same position must see crank A's marker as foreign");
+        helper.assertFalse(WorkerActivityControl.hasForeignMarker(cow, crankA),
+                "Crank A's own marker is not foreign to itself");
+
+        WorkerActivityControl.release(cow, first);
+        helper.succeed();
+    }
+
+    /**
+     * When a marked mob loads into a server world and the original crank no
+     * longer exists at the recorded position, the marker must be consumed
+     * and the mob's original {@code NoAI} state restored.
+     */
+    @GameTest(template = "empty")
+    public static void orphanMarkerIsRecoveredOnLoad(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        BlockPos localCrankPos = new BlockPos(0, 1, 0);
+        BlockPos worldCrankPos = helper.absolutePos(localCrankPos);
+        helper.assertTrue(level.getBlockEntity(worldCrankPos) == null,
+                "Pre-condition: no crank at the recorded position");
+
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(3, 0, 3));
+        UUID crankA = new UUID(0x9999L, 0xCCCCCCCCCL);
+        boolean owns = WorkerActivityControl.acquire(horse, worldCrankPos, crankA);
+        helper.assertTrue(owns, "Crank A must own the suppression");
+        helper.assertTrue(horse.isNoAi(), "Crank A suppresses the horse's AI");
+        helper.assertTrue(WorkerActivityControl.hasMarker(horse), "Marker must be present");
+
+        boolean recovered = WorkerActivityControl.recoverIfOrphaned(horse, level);
+        helper.assertTrue(recovered, "recoverIfOrphaned must consume the marker when no live crank exists");
+        helper.assertFalse(horse.isNoAi(), "Recovered horse must return to NoAI=false");
+        helper.assertFalse(WorkerActivityControl.hasMarker(horse), "Marker must be removed after recovery");
+        helper.succeed();
+    }
+
+    /**
+     * When a marked mob loads and the live crank at the recorded position
+     * still has a matching instance UUID and still claims this mob, the
+     * marker must be left alone so the live crank can finish its work.
+     */
+    @GameTest(template = "empty")
+    public static void liveCrankWithMatchingUuidKeepsMarker(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        BlockPos localCrankPos = new BlockPos(0, 1, 0);
+        BlockPos worldCrankPos = helper.absolutePos(localCrankPos);
+        helper.setBlock(localCrankPos, BlockRegister.HORSE_CRANK.get());
+
+        AbstractHorseCrankBlockEntity crank = requireCrank(helper, localCrankPos);
+        UUID liveUuid = new UUID(0xAAAA0L, 0xDDDDDDD0L);
+        crank.engine().setCrankInstanceUuidForTesting(liveUuid);
+
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(3, 0, 3));
+        boolean owns = WorkerActivityControl.acquire(horse, worldCrankPos, liveUuid);
+        helper.assertTrue(owns, "Pre-condition: this acquire must own the suppression");
+
+        crank.engine().setWorkerUuidForTesting(horse.getUUID());
+        helper.assertTrue(crank.engine().isAssignedWorker(horse.getUUID()),
+                "Pre-condition: live crank claims this horse");
+        helper.assertTrue(WorkerActivityControl.markerCrankUuid(horse).equals(liveUuid),
+                "Pre-condition: marker must record the live UUID");
+        helper.assertTrue(WorkerActivityControl.markerCrankPos(horse).equals(worldCrankPos),
+                "Pre-condition: marker must record the live crank position");
+
+        boolean recovered = WorkerActivityControl.recoverIfOrphaned(horse, level);
+        helper.assertFalse(recovered, "recoverIfOrphaned must NOT consume a marker that matches a live crank");
+        helper.assertTrue(WorkerActivityControl.hasMarker(horse), "Marker must remain on the worker");
+        helper.assertTrue(horse.isNoAi(), "Live crank still owns the suppression");
+
+        WorkerActivityControl.release(horse, owns);
+        helper.succeed();
+    }
+
+    /**
+     * When crank A acquires a worker and then disappears, and a brand-new
+     * crank B (different UUID) is placed at the same coordinates, the
+     * worker's marker must be considered orphaned because crank B is not
+     * the recorded owner even though it is at the same block.
+     */
+    @GameTest(template = "empty")
+    public static void foreignReplacementCrankTriggersOrphan(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        BlockPos localCrankPos = new BlockPos(0, 1, 0);
+        BlockPos worldCrankPos = helper.absolutePos(localCrankPos);
+
+        UUID crankA = new UUID(0xCAFE0L, 0x11111111L);
+        UUID crankB = new UUID(0xCAFE0L, 0x22222222L);
+        helper.assertTrue(!crankA.equals(crankB), "Pre-condition: replacement UUIDs must differ");
+
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(3, 0, 3));
+        boolean owns = WorkerActivityControl.acquire(horse, worldCrankPos, crankA);
+        helper.assertTrue(owns, "Crank A must own the suppression initially");
+        helper.assertTrue(horse.isNoAi(), "Crank A suppresses the horse's AI");
+
+        // Crank A vanishes (no block entity at the recorded position).
+        // A new crank B is placed at the same coordinates.
+        helper.setBlock(localCrankPos, BlockRegister.HORSE_CRANK.get());
+        AbstractHorseCrankBlockEntity replacement = requireCrank(helper, localCrankPos);
+        replacement.engine().setCrankInstanceUuidForTesting(crankB);
+        // Crank B does NOT claim the original worker.
+
+        boolean recovered = WorkerActivityControl.recoverIfOrphaned(horse, level);
+        helper.assertTrue(recovered,
+                "Marker must be recovered when the live crank at the recorded position is a different instance");
+        helper.assertFalse(horse.isNoAi(), "Recovered horse must return to NoAI=false");
+        helper.assertFalse(WorkerActivityControl.hasMarker(horse), "Marker must be removed after recovery");
+        helper.succeed();
+    }
+
+    private static AbstractHorseCrankBlockEntity requireCrank(GameTestHelper helper, BlockPos pos) {
+        BlockEntity be = helper.getBlockEntity(pos);
+        if (!(be instanceof AbstractHorseCrankBlockEntity crank)) {
+            throw new AssertionError(
+                    "BlockEntity at " + pos + " must be a " + TileEntityRegister.HORSE_CRANK.getId()
+                            + " but was " + (be == null ? "null" : be.getType().toString()));
+        }
+        return crank;
     }
 
     private static double assertOrbitStep(

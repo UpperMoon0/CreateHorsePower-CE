@@ -4,10 +4,13 @@ import com.mojang.logging.LogUtils;
 import com.simibubi.create.foundation.data.CreateRegistrate;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.item.CreativeModeTab;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.event.RegisterGameTestsEvent;
+import net.minecraftforge.event.entity.EntityJoinLevelEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.ModLoadingContext;
@@ -16,6 +19,7 @@ import net.minecraftforge.fml.config.ModConfig;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
+import net.steampn.createhorsepower.blocks.crank.WorkerActivityControl;
 import net.steampn.createhorsepower.compat.OptionalIntegrations;
 import net.steampn.createhorsepower.config.Config;
 import net.steampn.createhorsepower.gametest.HorsePowerGameTests;
@@ -68,6 +72,27 @@ public class CreateHorsePower {
     @SubscribeEvent
     public void onRegisterCommands(RegisterCommandsEvent event) {
         net.steampn.createhorsepower.command.CHPCommands.register(event.getDispatcher(), event.getBuildContext());
+    }
+
+    /**
+     * When a mob with a CHP AI-suppression marker loads into a server level,
+     * recover it if the owning crank has actually disappeared. The recovery
+     * is conservative: it never force-loads chunks, never recovers a marker
+     * that still belongs to a live crank, and never treats a different
+     * crank at the same coordinates as the same owner.
+     */
+    @SubscribeEvent
+    public void onEntityJoinLevel(EntityJoinLevelEvent event) {
+        if (event.getLevel().isClientSide()) {
+            return;
+        }
+        if (!(event.getEntity() instanceof Mob mob)) {
+            return;
+        }
+        if (!(event.getLevel() instanceof ServerLevel serverLevel)) {
+            return;
+        }
+        WorkerActivityControl.recoverIfOrphaned(mob, serverLevel);
     }
 
     public static ResourceLocation asResource(String path) {

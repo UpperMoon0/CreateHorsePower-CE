@@ -92,15 +92,6 @@ public abstract class AbstractHorseCrankBlockEntity extends GeneratingKineticBlo
         this.lastCapacityProvided = capacity;
     }
 
-    @Override
-    public @Nullable java.util.UUID hostUuid() {
-        // GeneratingKineticBlockEntity ultimately extends BlockEntity, which carries
-        // a UUID since 1.20.5. Forge 1.20.1 still exposes the BE id via getBlockPos()
-        // only, so we hash the position to obtain a stable per-crank identifier
-        // good enough for suppression marker scoping.
-        return new java.util.UUID(this.worldPosition.asLong(), 0L);
-    }
-
     // ==========================================
     // Create lifecycle
     // ==========================================

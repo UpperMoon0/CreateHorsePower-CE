@@ -50,14 +50,6 @@ public class HorseCrankEngine {
         void requestSpeedUpdate();
 
         void setLastCapacityProvided(float capacity);
-
-        /**
-         * Stable identifier for the host block entity. Used to scope worker AI
-         * suppression markers so a stale marker left by a previous crank that
-         * has since been removed is not mistaken for one issued by the current
-         * crank. May be {@code null} in unit tests where no real BE exists.
-         */
-        @Nullable UUID hostUuid();
     }
 
     public static final float DEFAULT_RADIUS = 2.5f;
@@ -107,6 +99,14 @@ public class HorseCrankEngine {
     private boolean ownsWorkerAiSuppression = false;
     @Nullable
     private UUID aiSuppressedWorkerUuid;
+
+    /**
+     * Real, random, persistent identifier for this crank instance. Two
+     * cranks at the same coordinates in succession get distinct UUIDs, and
+     * saving/reloading the world preserves the same UUID for the same crank.
+     * Used to scope worker AI suppression markers.
+     */
+    private UUID crankInstanceUuid = UUID.randomUUID();
 
     public HorseCrankEngine(Host host, RedstoneMode defaultMode) {
         this.host = host;
@@ -257,6 +257,33 @@ public class HorseCrankEngine {
         return workerRadius;
     }
 
+    /** Persistent, real, position-independent identifier for this crank instance. */
+    public UUID crankInstanceUuid() {
+        return crankInstanceUuid;
+    }
+
+    /**
+     * Test-only override for {@link #crankInstanceUuid}. Replaces the random
+     * initial UUID with the supplied one so GameTests can assert the
+     * marker-orphan / marker-foreign behaviour deterministically.
+     */
+    public void setCrankInstanceUuidForTesting(UUID uuid) {
+        this.crankInstanceUuid = uuid;
+    }
+
+    /** {@code true} when this crank currently considers the given mob UUID its worker. */
+    public boolean isAssignedWorker(UUID uuid) {
+        return workerUuid != null && workerUuid.equals(uuid);
+    }
+
+    /**
+     * Test-only override for the worker's UUID, so GameTests can simulate
+     * a live crank that still claims a specific mob.
+     */
+    public void setWorkerUuidForTesting(UUID uuid) {
+        this.workerUuid = uuid;
+    }
+
     // ==========================================
     // NBT (CompoundTag API is identical on 1.20.1 and 1.21.1)
     // ==========================================
@@ -270,6 +297,7 @@ public class HorseCrankEngine {
         compound.putFloat("EffectiveBaseRpm", effectiveBaseRpm);
         compound.putFloat("EffectiveBaseStress", effectiveBaseStress);
         compound.putFloat("WorkerRadius", workerRadius);
+        compound.putUUID("CrankInstanceUUID", crankInstanceUuid);
 
         if (workerUuid != null) {
             compound.putUUID("WorkerUUID", workerUuid);
@@ -329,6 +357,10 @@ public class HorseCrankEngine {
             redstoneMode = RedstoneMode.IGNORE;
         }
 
+        if (compound.hasUUID("CrankInstanceUUID")) {
+            crankInstanceUuid = compound.getUUID("CrankInstanceUUID");
+        }
+
         if (compound.contains("GenerationDirection")) {
             generationDirection = compound.getFloat("GenerationDirection");
             if (generationDirection == 0) generationDirection = 1.0f;
@@ -378,12 +410,14 @@ public class HorseCrankEngine {
 
     public void attachWorker(Mob worker, WorkerResolver.ResolvedWorker profile) {
         restoreWorkerAi();
-        // Defensive cleanup: if a previous crank left a stale marker on this
-        // worker (because the original BE was removed before it could call
-        // release), restore the worker's original AI state before we take
-        // ownership of it. This guarantees that even reassignment after a
-        // vanished crank cannot leave a working mob permanently NoAI.
-        WorkerActivityControl.releaseFromMarker(worker);
+        // Defensive cleanup: only a marker from a *different* crank should be
+        // cleared on attach. If the marker belongs to this exact crank
+        // (instance UUID), the marker is meaningful state and must be left
+        // alone so the next release can still use the recorded previous
+        // NoAI.
+        if (WorkerActivityControl.hasForeignMarker(worker, crankInstanceUuid)) {
+            WorkerActivityControl.releaseFromMarker(worker);
+        }
         this.cachedWorkerMob = worker;
         this.workerUuid = worker.getUUID();
         this.lastKnownWorkerPos = worker.blockPosition();
@@ -476,20 +510,10 @@ public class HorseCrankEngine {
 
     private void clearWorkerReferences() {
         restoreWorkerAi();
-        // Last-resort recovery: if the worker happens to still be in this
-        // world but the local ownership record has already been cleared, the
-        // marker on the mob is the only remaining trace of the crank's
-        // suppression. Always consume it so a stranded worker can never be
-        // left with NoAI=true after its crank disappears.
-        if (workerUuid != null) {
-            Level level = level();
-            if (level instanceof ServerLevel serverLevel) {
-                Entity entity = serverLevel.getEntity(workerUuid);
-                if (entity instanceof Mob mob) {
-                    WorkerActivityControl.releaseFromMarker(mob);
-                }
-            }
-        }
+        // This BE is being detached/destroyed (break, invalid transition,
+        // or `onCrankRemoved`), so it must drop its local ownership record
+        // even if the worker is currently unloaded. The marker is left on the
+        // worker (when present) so the next interaction can still recover it.
         this.cachedWorkerMob = null;
         this.workerUuid = null;
         this.lastKnownWorkerPos = null;
@@ -610,12 +634,24 @@ public class HorseCrankEngine {
 
     private void controlWorkerAi(Mob mob) {
         UUID mobUuid = mob.getUUID();
-        if (ownsWorkerAiSuppression && !mobUuid.equals(aiSuppressedWorkerUuid)) {
+
+        if (ownsWorkerAiSuppression
+                && !mobUuid.equals(aiSuppressedWorkerUuid)) {
             restoreWorkerAi();
         }
 
+        UUID thisCrank = crankInstanceUuid;
+
+        if (WorkerActivityControl.hasForeignMarker(mob, thisCrank)) {
+            WorkerActivityControl.releaseFromMarker(mob);
+        }
+
         if (!ownsWorkerAiSuppression) {
-            ownsWorkerAiSuppression = WorkerActivityControl.acquire(mob, host.pos(), host.hostUuid());
+            ownsWorkerAiSuppression = WorkerActivityControl.acquire(
+                    mob,
+                    host.pos(),
+                    thisCrank
+            );
             aiSuppressedWorkerUuid = ownsWorkerAiSuppression ? mobUuid : null;
         } else {
             WorkerActivityControl.maintain(mob);
@@ -625,9 +661,10 @@ public class HorseCrankEngine {
     /**
      * Restore the worker's original {@code NoAI} state and clear the crank's
      * ownership record. When the worker cannot be resolved (it is unloaded
-     * or in another chunk), the persistent marker left by
-     * {@link WorkerActivityControl#acquire(Mob, BlockPos, UUID)} stays on the
-     * mob, so a future interaction with that mob can still recover it.
+     * or in another chunk), local ownership is preserved: temporarily
+     * dropping the record is exactly what makes the next same-crank
+     * {@link #controlWorkerAi} call treat a normal unload as a foreign-crank
+     * reacquisition, which would corrupt the recorded {@code NoAI} baseline.
      */
     private void restoreWorkerAi() {
         if (!ownsWorkerAiSuppression || aiSuppressedWorkerUuid == null) {
@@ -636,12 +673,8 @@ public class HorseCrankEngine {
 
         Mob controlledWorker = resolveSuppressedWorker();
         if (controlledWorker == null) {
-            // Worker is unloaded; clear our local ownership but leave the
-            // marker on the worker so it can still be recovered when it
-            // next loads (via WorkerActivityControl.releaseFromMarker or
-            // the next acquire that finds a foreign marker).
-            ownsWorkerAiSuppression = false;
-            aiSuppressedWorkerUuid = null;
+            // Worker is temporarily unavailable. KEEP ownership information.
+            // The worker marker also remains intact.
             return;
         }
 

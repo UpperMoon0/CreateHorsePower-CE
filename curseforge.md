@@ -33,7 +33,8 @@ Movement radii are supported from 0.5 to 6.0 blocks. This cap keeps workers with
 ## Reliability Improvements
 
 - Persistent worker identity and recovery across chunk reloads.
-- Safe cleanup when a worker detaches or a crank is removed, including a recoverable AI-suppression marker so a worker whose crank block entity is destroyed mid-cycle still returns to its original AI state.
+- Each crank carries a persistent, real, position-independent instance UUID. Suppression markers are scoped to that UUID, so a replacement crank at the same coordinates never inherits a previous crank's worker ownership.
+- Workers recover their original AI state if a crank disappears mid-cycle: a persistent marker on the worker (NoAI baseline + crank pos + crank UUID) is automatically consumed the next time the worker loads into a server world, and only when the original crank is genuinely gone or has been reassigned.
 - Stable direction handling beside existing Create kinetic networks.
 - Smooth server-authoritative worker movement with correct yaw tracking.
 - Live kinetic refresh when worker attributes change.
