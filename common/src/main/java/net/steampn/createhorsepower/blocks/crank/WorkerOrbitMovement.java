@@ -27,10 +27,20 @@ public final class WorkerOrbitMovement {
     private WorkerOrbitMovement() {}
 
     public static Snapshot move(Mob mob, double centerX, double centerZ, float radius, double angularDelta) {
+        double currentAngle = angleFromPosition(mob.getX(), mob.getZ(), centerX, centerZ);
+        return moveToAngle(mob, centerX, centerZ, radius, currentAngle, currentAngle + angularDelta);
+    }
+
+    public static Snapshot moveToAngle(
+            Mob mob,
+            double centerX,
+            double centerZ,
+            float radius,
+            double currentAngle,
+            double newAngle
+    ) {
         double oldX = mob.getX();
         double oldZ = mob.getZ();
-        double currentAngle = Math.atan2(oldZ - centerZ, oldX - centerX);
-        double newAngle = currentAngle + angularDelta;
         double targetX = centerX + radius * Math.cos(newAngle);
         double targetZ = centerZ + radius * Math.sin(newAngle);
         double deltaX = targetX - oldX;
@@ -62,6 +72,14 @@ public final class WorkerOrbitMovement {
                 requestedYaw, mob.getYRot(),
                 moved, eatingSuppressed
         );
+    }
+
+    public static double angleFromPosition(double x, double z, double centerX, double centerZ) {
+        return Math.atan2(z - centerZ, x - centerX);
+    }
+
+    public static double normalizeAngle(double angle) {
+        return Math.atan2(Math.sin(angle), Math.cos(angle));
     }
 
     public static float yawFromMovement(double deltaX, double deltaZ) {

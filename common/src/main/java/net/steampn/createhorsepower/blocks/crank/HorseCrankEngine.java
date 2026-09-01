@@ -100,6 +100,10 @@ public class HorseCrankEngine {
     private int statRefreshTimer = 0;
     private long nextWorkStartRetryTick = 0;
     private long nextFallbackWorkerSearchTick = 0;
+    private double workerOrbitAngle = Double.NaN;
+    private boolean ownsWorkerAiSuppression = false;
+    @Nullable
+    private UUID aiSuppressedWorkerUuid;
 
     public HorseCrankEngine(Host host, RedstoneMode defaultMode) {
         this.host = host;
@@ -270,6 +274,18 @@ public class HorseCrankEngine {
         if (lastKnownWorkerPos != null) {
             compound.putLong("WorkerPos", lastKnownWorkerPos.asLong());
         }
+        if (Double.isFinite(workerOrbitAngle)) {
+            compound.putDouble("WorkerOrbitAngle", workerOrbitAngle);
+        } else {
+            compound.remove("WorkerOrbitAngle");
+        }
+        if (ownsWorkerAiSuppression && aiSuppressedWorkerUuid != null) {
+            compound.putBoolean("OwnsWorkerAiSuppression", true);
+            compound.putUUID("AiSuppressedWorkerUUID", aiSuppressedWorkerUuid);
+        } else {
+            compound.remove("OwnsWorkerAiSuppression");
+            compound.remove("AiSuppressedWorkerUUID");
+        }
 
         if (clientPacket) {
             compound.putBoolean("WorkerResolved", workerResolved);
@@ -323,6 +339,17 @@ public class HorseCrankEngine {
         if (compound.contains("WorkerPos")) {
             lastKnownWorkerPos = BlockPos.of(compound.getLong("WorkerPos"));
         }
+        workerOrbitAngle = compound.contains("WorkerOrbitAngle")
+                ? compound.getDouble("WorkerOrbitAngle")
+                : Double.NaN;
+        if (!Double.isFinite(workerOrbitAngle)) {
+            workerOrbitAngle = Double.NaN;
+        }
+        ownsWorkerAiSuppression = compound.getBoolean("OwnsWorkerAiSuppression")
+                && compound.hasUUID("AiSuppressedWorkerUUID");
+        aiSuppressedWorkerUuid = ownsWorkerAiSuppression
+                ? compound.getUUID("AiSuppressedWorkerUUID")
+                : null;
 
         if (clientPacket) {
             workerResolved = compound.getBoolean("WorkerResolved");
@@ -347,6 +374,7 @@ public class HorseCrankEngine {
     // ==========================================
 
     public void attachWorker(Mob worker, WorkerResolver.ResolvedWorker profile) {
+        restoreWorkerAi();
         this.cachedWorkerMob = worker;
         this.workerUuid = worker.getUUID();
         this.lastKnownWorkerPos = worker.blockPosition();
@@ -357,6 +385,7 @@ public class HorseCrankEngine {
         this.scriptVetoed = false;
         this.workerResolved = true;
         this.workerEligible = profile.isValid();
+        this.workerOrbitAngle = Double.NaN;
 
         applyProfile(worker, profile);
 
@@ -437,6 +466,7 @@ public class HorseCrankEngine {
     }
 
     private void clearWorkerReferences() {
+        restoreWorkerAi();
         this.cachedWorkerMob = null;
         this.workerUuid = null;
         this.lastKnownWorkerPos = null;
@@ -450,6 +480,7 @@ public class HorseCrankEngine {
         this.cachedWorkerName = "";
         this.speedBonusPercent = 0.0f;
         this.healthBonusPercent = 0.0f;
+        this.workerOrbitAngle = Double.NaN;
     }
 
     // ==========================================
@@ -540,7 +571,7 @@ public class HorseCrankEngine {
             LOGGER.debug(
                     "Horse crank movement state: tick={} crank={} working={} canWork={} workerResolved={} "
                             + "workerEligible={} pathValid={} scriptVetoed={} worker={} workerPos=({}, {}, {}) "
-                            + "workerRot=({}, {}, {}) velocity={} leashed={} leashHolder={} noAi={} "
+                            + "workerRot=({}, {}, {}) velocity={} leashed={} leashHolder={} noAi={} aiOwned={} orbitAngle={} "
                             + "generatedSpeed={} theoreticalSpeed={} radius={} redstoneMode={} powered={}",
                     gameTime, host.pos(), isWorking, canWork, workerResolved,
                     workerEligible, hasValidWorkingBlocks, scriptVetoed,
@@ -556,6 +587,7 @@ public class HorseCrankEngine {
                     cachedWorkerMob == null || cachedWorkerMob.getLeashHolder() == null
                             ? "none" : cachedWorkerMob.getLeashHolder().getUUID(),
                     cachedWorkerMob != null && cachedWorkerMob.isNoAi(),
+                    ownsWorkerAiSuppression, workerOrbitAngle,
                     generatedSpeed(), host.theoreticalSpeed(), workerRadius, redstoneMode,
                     level.hasNeighborSignal(host.pos()));
         }
@@ -571,11 +603,54 @@ public class HorseCrankEngine {
         this.isWorking = false;
         this.scriptVetoed = false;
         this.nextWorkStartRetryTick = 0;
+        this.workerOrbitAngle = Double.NaN;
+        restoreWorkerAi();
 
         Level level = level();
         if (wasWorking && level != null && !level.isClientSide()) {
             CHPApi.scripts().fireWorkStopped(host.pos(), level);
         }
+    }
+
+    private void controlWorkerAi(Mob mob) {
+        UUID mobUuid = mob.getUUID();
+        if (ownsWorkerAiSuppression && !mobUuid.equals(aiSuppressedWorkerUuid)) {
+            restoreWorkerAi();
+        }
+
+        if (!ownsWorkerAiSuppression) {
+            ownsWorkerAiSuppression = WorkerActivityControl.acquire(mob);
+            aiSuppressedWorkerUuid = ownsWorkerAiSuppression ? mobUuid : null;
+        } else {
+            WorkerActivityControl.maintain(mob);
+        }
+    }
+
+    private void restoreWorkerAi() {
+        if (!ownsWorkerAiSuppression || aiSuppressedWorkerUuid == null) {
+            return;
+        }
+
+        Mob controlledWorker = null;
+        if (cachedWorkerMob != null && aiSuppressedWorkerUuid.equals(cachedWorkerMob.getUUID())) {
+            controlledWorker = cachedWorkerMob;
+        } else {
+            Level level = level();
+            if (level instanceof ServerLevel serverLevel) {
+                Entity entity = serverLevel.getEntity(aiSuppressedWorkerUuid);
+                if (entity instanceof Mob mob) {
+                    controlledWorker = mob;
+                }
+            }
+        }
+
+        if (controlledWorker == null) {
+            return;
+        }
+
+        WorkerActivityControl.release(controlledWorker, true);
+        ownsWorkerAiSuppression = false;
+        aiSuppressedWorkerUuid = null;
     }
 
     private boolean isWorkerAttachedToThisCrank(Mob mob) {
@@ -794,8 +869,16 @@ public class HorseCrankEngine {
         double direction = Math.signum(speed);
         double angularVelocity = Math.toRadians(Math.abs(speed) * 6.0); // 6 deg/sec per RPM
         double angularDelta = (angularVelocity * direction) / 20.0;
-        WorkerOrbitMovement.Snapshot movement = WorkerOrbitMovement.move(
-                mob, centerX, centerZ, workerRadius, angularDelta);
+        controlWorkerAi(mob);
+        if (!Double.isFinite(workerOrbitAngle)) {
+            workerOrbitAngle = WorkerOrbitMovement.angleFromPosition(
+                    mob.getX(), mob.getZ(), centerX, centerZ);
+        }
+        double currentAngle = workerOrbitAngle;
+        workerOrbitAngle = WorkerOrbitMovement.normalizeAngle(workerOrbitAngle + angularDelta);
+        WorkerOrbitMovement.Snapshot movement = WorkerOrbitMovement.moveToAngle(
+                mob, centerX, centerZ, workerRadius, currentAngle, workerOrbitAngle);
+        WorkerActivityControl.clearHorizontalVelocity(mob);
 
         if (logMovement) {
             LOGGER.debug(

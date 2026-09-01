@@ -15,4 +15,19 @@ public class WorkerOrbitMovementTest {
         assertEquals(90.0F, WorkerOrbitMovement.yawFromMovement(-1.0D, 0.0D), 0.001F);
         assertEquals(-180.0F, WorkerOrbitMovement.yawFromMovement(0.0D, -1.0D), 0.001F);
     }
+
+    @Test
+    @DisplayName("Stored orbit angles advance independently and remain normalized")
+    void orbitAngleProgression() {
+        double angularDelta = 0.013934425314345814D;
+        double angle = -2.431930893039327D;
+        for (int tick = 0; tick < 520; tick++) {
+            angle = WorkerOrbitMovement.normalizeAngle(angle + angularDelta);
+        }
+
+        assertEquals(
+                WorkerOrbitMovement.normalizeAngle(-2.431930893039327D + angularDelta * 520.0D),
+                angle,
+                1.0e-12D);
+    }
 }
