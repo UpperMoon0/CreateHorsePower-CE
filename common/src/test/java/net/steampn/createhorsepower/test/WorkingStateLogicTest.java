@@ -41,11 +41,12 @@ public class WorkingStateLogicTest {
     }
 
     @Test
-    @DisplayName("Missing workers detach immediately when the leash assignment is stale")
-    void staleLoadedWorkerWithoutLeashDetachesImmediately() {
-        assertTrue(HorseCrankEngine.shouldDetachMissingWorker(true, false, 1));
+    @DisplayName("Missing workers use short stale-attachment and long entity-load grace periods")
+    void missingWorkerGracePeriodsProtectWorldReloads() {
         assertFalse(HorseCrankEngine.shouldDetachMissingWorker(false, false, 200));
-        assertFalse(HorseCrankEngine.shouldDetachMissingWorker(true, true, 80));
-        assertTrue(HorseCrankEngine.shouldDetachMissingWorker(true, true, 81));
+        assertFalse(HorseCrankEngine.shouldDetachMissingWorker(true, false, HorseCrankEngine.MISSING_ATTACHMENT_GRACE_TICKS));
+        assertTrue(HorseCrankEngine.shouldDetachMissingWorker(true, false, HorseCrankEngine.MISSING_ATTACHMENT_GRACE_TICKS + 1));
+        assertFalse(HorseCrankEngine.shouldDetachMissingWorker(true, true, HorseCrankEngine.MISSING_WORKER_GRACE_TICKS));
+        assertTrue(HorseCrankEngine.shouldDetachMissingWorker(true, true, HorseCrankEngine.MISSING_WORKER_GRACE_TICKS + 1));
     }
 }

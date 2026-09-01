@@ -16,9 +16,11 @@ import net.neoforged.fml.config.ModConfig;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.RegisterGameTestsEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
 import net.steampn.createhorsepower.client.ponders.HorseCrankPonderPlugin;
 import net.steampn.createhorsepower.config.Config;
+import net.steampn.createhorsepower.gametest.HorsePowerGameTests;
 import net.steampn.createhorsepower.registry.BlockRegister;
 import net.steampn.createhorsepower.registry.TileEntityRegister;
 import net.steampn.createhorsepower.utils.CHPBlockPartials;
@@ -50,6 +52,7 @@ public class CreateHorsePower {
         TileEntityRegister.register();
         modEventBus.addListener(this::commonSetup);
         modEventBus.addListener(net.steampn.createhorsepower.registry.CHPDataMaps::register);
+        modEventBus.addListener(this::registerGameTests);
 
         modContainer.registerConfig(ModConfig.Type.SERVER, Config.SPEC);
 
@@ -58,6 +61,10 @@ public class CreateHorsePower {
 
     private void commonSetup(final FMLCommonSetupEvent event){
         LOGGER.debug("{} is registered!", BlockRegister.HORSE_CRANK.get());
+    }
+
+    private void registerGameTests(final RegisterGameTestsEvent event) {
+        event.register(HorsePowerGameTests.class);
     }
 
     @SubscribeEvent

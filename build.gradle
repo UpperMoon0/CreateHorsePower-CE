@@ -18,6 +18,12 @@ tasks.register('testAllVersions') {
     dependsOn ':neoforge-1.21.1:test', ':forge-1.20.1:test'
 }
 
+tasks.register('runtimeSmokeAll') {
+    group = 'verification'
+    description = 'Boots both loader GameTest servers and runs their required smoke tests.'
+    dependsOn ':neoforge-1.21.1:runGameTestServer', ':forge-1.20.1:runGameTestServer'
+}
+
 tasks.register('cleanAll') {
     group = 'build'
     description = 'Cleans every platform subproject.'
@@ -46,6 +52,7 @@ def ALLOWED_ADAPTERS = [
         'net/steampn/createhorsepower/command/CHPCommands.java',
         'net/steampn/createhorsepower/config/Config.java',
         'net/steampn/createhorsepower/compat/OptionalIntegrations.java',
+        'net/steampn/createhorsepower/gametest/HorsePowerGameTests.java',
         // Registry + registration glue (loader-specific registries)
         'net/steampn/createhorsepower/registry/CHPCreativeTabs.java'
 ] as Set
@@ -260,8 +267,8 @@ tasks.register('verifySharedResources') {
 
 tasks.register('verify') {
     group = 'verification'
-    description = 'Full aggregate verification: parity checks, build and tests for every version.'
-    dependsOn 'verifySharedSources', 'verifySharedResources', 'buildAll', 'testAllVersions'
+    description = 'Full aggregate verification: parity, builds, unit tests, and loader smoke tests for every version.'
+    dependsOn 'verifySharedSources', 'verifySharedResources', 'buildAll', 'testAllVersions', 'runtimeSmokeAll'
     // Deterministic ordering for release builds running "cleanAll verify".
     mustRunAfter 'cleanAll'
 }

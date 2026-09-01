@@ -7,6 +7,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.CreativeModeTab;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.RegisterCommandsEvent;
+import net.minecraftforge.event.RegisterGameTestsEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.ModLoadingContext;
@@ -17,6 +18,7 @@ import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import net.steampn.createhorsepower.compat.OptionalIntegrations;
 import net.steampn.createhorsepower.config.Config;
+import net.steampn.createhorsepower.gametest.HorsePowerGameTests;
 import net.steampn.createhorsepower.registry.BlockRegister;
 import net.steampn.createhorsepower.registry.CHPCreativeTabs;
 import net.steampn.createhorsepower.registry.TileEntityRegister;
@@ -44,6 +46,7 @@ public class CreateHorsePower {
         TileEntityRegister.register();
         modEventBus.addListener(this::commonSetup);
         modEventBus.addListener(this::clientSetup);
+        modEventBus.addListener(this::registerGameTests);
 
         ModLoadingContext.get().registerConfig(ModConfig.Type.SERVER, Config.SPEC);
 
@@ -56,6 +59,10 @@ public class CreateHorsePower {
 
     private void clientSetup(final FMLClientSetupEvent event) {
         CHPBlockPartials.load();
+    }
+
+    private void registerGameTests(final RegisterGameTestsEvent event) {
+        event.register(HorsePowerGameTests.class);
     }
 
     @SubscribeEvent

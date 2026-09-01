@@ -55,6 +55,8 @@ public class HorseCrankEngine {
     }
 
     public static final float DEFAULT_RADIUS = 2.5f;
+    public static final int MISSING_ATTACHMENT_GRACE_TICKS = 10;
+    public static final int MISSING_WORKER_GRACE_TICKS = 80;
 
     private final Host host;
 
@@ -465,6 +467,15 @@ public class HorseCrankEngine {
             host.clearKineticInfo();
             host.requestSpeedUpdate();
         }
+
+        // Preserve the original lifecycle ordering: kinetic/redstone refreshes
+        // happen before Create evaluates this generator in its host tick.
+        boolean currentRedstone = level.hasNeighborSignal(host.pos());
+        if (currentRedstone != lastRedstoneState) {
+            lastRedstoneState = currentRedstone;
+            host.refreshKinetic();
+            host.syncToClient();
+        }
     }
 
     /** Work that historically happened after Create's own kinetic tick. */
@@ -472,14 +483,6 @@ public class HorseCrankEngine {
         Level level = level();
         if (level == null || level.isClientSide()) {
             return;
-        }
-
-        // Check redstone transition
-        boolean currentRedstone = level.hasNeighborSignal(host.pos());
-        if (currentRedstone != lastRedstoneState) {
-            lastRedstoneState = currentRedstone;
-            host.refreshKinetic();
-            host.syncToClient();
         }
 
         if (resolvingLegacyDirection) {
@@ -663,7 +666,10 @@ public class HorseCrankEngine {
     }
 
     public static boolean shouldDetachMissingWorker(boolean workerLocationLoaded, boolean attachmentPresent, int missingTicks) {
-        return workerLocationLoaded && (!attachmentPresent || missingTicks > 80);
+        if (!workerLocationLoaded) return false;
+        return attachmentPresent
+                ? missingTicks > MISSING_WORKER_GRACE_TICKS
+                : missingTicks > MISSING_ATTACHMENT_GRACE_TICKS;
     }
 
     private BlockPos[] offsetsForRadius(float radius) {
