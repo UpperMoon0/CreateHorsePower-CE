@@ -5,6 +5,8 @@ import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.animal.Cow;
 import net.minecraft.world.entity.animal.horse.Horse;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
@@ -23,6 +25,23 @@ public final class HorsePowerGameTests {
     public static void crankRegistrations(GameTestHelper helper) {
         BlockRegister.HORSE_CRANK.get();
         TileEntityRegister.HORSE_CRANK.get();
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void nonHorseWorkerUsesSameOrbitControl(GameTestHelper helper) {
+        Cow cow = helper.spawn(EntityType.COW, new BlockPos(0, 0, 0));
+        double radius = 2.5D;
+        double centerX = cow.getX() - radius;
+        double centerZ = cow.getZ();
+        boolean ownsAiSuppression = WorkerActivityControl.acquire(cow);
+
+        helper.assertTrue(ownsAiSuppression, "Crank must suppress AI for non-horse workers");
+        helper.assertTrue(cow.isNoAi(), "Working non-horse AI must be suppressed");
+        double orbitAngle = WorkerOrbitMovement.angleFromPosition(cow.getX(), cow.getZ(), centerX, centerZ);
+        assertOrbitStep(helper, cow, centerX, centerZ, radius, orbitAngle);
+        WorkerActivityControl.release(cow, ownsAiSuppression);
+        helper.assertTrue(!cow.isNoAi(), "Non-horse AI must be restored after work");
         helper.succeed();
     }
 
@@ -54,21 +73,21 @@ public final class HorsePowerGameTests {
 
     private static double assertOrbitStep(
             GameTestHelper helper,
-            Horse horse,
+            Mob worker,
             double centerX,
             double centerZ,
             double radius,
             double currentAngle
     ) {
-        double oldX = horse.getX();
-        double oldZ = horse.getZ();
+        double oldX = worker.getX();
+        double oldZ = worker.getZ();
         double newAngle = WorkerOrbitMovement.normalizeAngle(currentAngle + Math.toRadians(15.0D));
-        WorkerOrbitMovement.moveToAngle(horse, centerX, centerZ, (float) radius, currentAngle, newAngle);
-        double deltaX = horse.getX() - oldX;
-        double deltaZ = horse.getZ() - oldZ;
-        double radialDistance = Math.hypot(horse.getX() - centerX, horse.getZ() - centerZ);
+        WorkerOrbitMovement.moveToAngle(worker, centerX, centerZ, (float) radius, currentAngle, newAngle);
+        double deltaX = worker.getX() - oldX;
+        double deltaZ = worker.getZ() - oldZ;
+        double radialDistance = Math.hypot(worker.getX() - centerX, worker.getZ() - centerZ);
         float expectedYaw = WorkerOrbitMovement.yawFromMovement(deltaX, deltaZ);
-        float yawError = Math.abs(Mth.wrapDegrees(horse.getYRot() - expectedYaw));
+        float yawError = Math.abs(Mth.wrapDegrees(worker.getYRot() - expectedYaw));
 
         helper.assertTrue(deltaX * deltaX + deltaZ * deltaZ > 1.0e-8D, "Worker must move along its orbit");
         helper.assertTrue(Math.abs(radialDistance - radius) < 0.001D, "Worker must remain on its configured radius");
