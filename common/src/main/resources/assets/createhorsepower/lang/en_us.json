@@ -18,7 +18,7 @@
   "tooltip.createhorsepower.goggles.path_efficiency": "Path efficiency: %s",
   "tooltip.createhorsepower.goggles.speed_bonus": "Speed bonus: %s",
   "tooltip.createhorsepower.goggles.health_bonus": "Health bonus: %s",
-  "tooltip.createhorsepower.goggles.redstone_mode": "Redstone mode: %s",
+  "tooltip.createhorsepower.goggles.redstone_mode": "Redstone behavior: %s",
   "tooltip.createhorsepower.redstone_mode.ignore": "Ignore redstone",
   "tooltip.createhorsepower.redstone_mode.high_stops": "Powered stops",
   "tooltip.createhorsepower.redstone_mode.high_runs": "Powered runs",

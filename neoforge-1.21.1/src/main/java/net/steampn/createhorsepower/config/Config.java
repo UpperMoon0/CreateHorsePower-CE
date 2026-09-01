@@ -65,6 +65,11 @@ public class Config implements CHPConfig {
     // ==========================================
     public static final ModConfigSpec.EnumValue<RedstoneMode> DEFAULT_REDSTONE_MODE;
 
+    // ==========================================
+    // DEBUG
+    // ==========================================
+    public static final ModConfigSpec.BooleanValue DEBUG_LOGGING;
+
     static {
         // --- 1.1 Legacy root keys ---
         BASE_CREATURE_RPM = BUILDER
@@ -173,6 +178,12 @@ public class Config implements CHPConfig {
                 .comment("Default redstone mode for new Horse Cranks: IGNORE, HIGH_STOPS (redstone signal stops crank), HIGH_RUNS (redstone signal required to run).")
                 .defineEnum("defaultRedstoneMode", RedstoneMode.HIGH_STOPS);
         BUILDER.pop();
+
+        BUILDER.push("debug");
+        DEBUG_LOGGING = BUILDER
+                .comment("Enable rate-limited Horse Crank movement diagnostics in debug.log.")
+                .define("enableDebugLogging", false);
+        BUILDER.pop();
     }
 
     public static final ModConfigSpec SPEC = BUILDER.build();
@@ -215,6 +226,7 @@ public class Config implements CHPConfig {
     @Override public double minimumPathCoverage() { return MINIMUM_PATH_COVERAGE.get(); }
     @Override public int checkIntervalTicks() { return CHECK_INTERVAL_TICKS.get(); }
     @Override public RedstoneMode defaultRedstoneMode() { return DEFAULT_REDSTONE_MODE.get(); }
+    @Override public boolean debugLogging() { return DEBUG_LOGGING.get(); }
 
     @Override
     public Optional<WorkerStats> lookupWorkerStats(EntityType<?> type) {

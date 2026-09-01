@@ -107,6 +107,10 @@ repositories {
         name = "ModMaven"
         url = "https://modmaven.dev"
     }
+    maven {
+        name = "Modrinth"
+        url = "https://api.modrinth.com/maven"
+    }
 }
 
 dependencies {
@@ -124,6 +128,10 @@ dependencies {
     compileOnly(fg.deobf("mezz.jei:jei-${minecraft_version}-common-api:${jei_version}"))
     compileOnly(fg.deobf("mezz.jei:jei-${minecraft_version}-forge-api:${jei_version}"))
     runtimeOnly(fg.deobf("mezz.jei:jei-${minecraft_version}-forge:${jei_version}"))
+
+    // Jade is optional for users, but installed in the dev client for HUD integration testing.
+    compileOnly(fg.deobf("maven.modrinth:jade:${jade_version}"))
+    runtimeOnly(fg.deobf("maven.modrinth:jade:${jade_version}"))
 
     // Shared behavioral tests run on every target
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'

@@ -59,7 +59,6 @@ def ALLOWED_ADAPTERS = [
 def PLATFORM_ONLY_PREFIXES = [
         // NeoForge-only integrations and data generation APIs.
         'net/steampn/createhorsepower/datagen/',
-        'net/steampn/createhorsepower/compat/jade/',
         'net/steampn/createhorsepower/compat/kubejs/',
         'net/steampn/createhorsepower/client/ponders/',
         'net/steampn/createhorsepower/registry/CHPDataMaps.java',

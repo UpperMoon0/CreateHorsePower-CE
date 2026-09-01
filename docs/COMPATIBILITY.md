@@ -14,7 +14,7 @@ Enforced and reviewed with every release. "Full" means identical behavior to the
 | Create Goggles tooltips | Full | Full |
 | Shared behavioral tests (JUnit) | Full | Full |
 | Worker/path Data Maps (`createhorsepower:worker_stats`, `path_stats`) | Full | Not available on Forge; use tags or config |
-| Jade HUD integration | Full | Not yet ported |
+| Jade HUD integration | Full | Full |
 | KubeJS startup profiles and lifecycle events | Full | Not yet ported (no Forge KubeJS script entry point; the shared profile registry cannot be populated from scripts) |
 | Ponder scenes | Full | Not yet ported |
 | Datagen (recipes, loot tables, tags, data maps) | Full | Not yet ported (JSONs are hand-maintained under `forge-1.20.1/src/main/resources`) |

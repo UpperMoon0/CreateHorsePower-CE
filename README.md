@@ -13,9 +13,9 @@ This is an independent, community-maintained fork of [SteamPunkNation/CreateHors
 | Create | 6.0.8 up to, but not including, 6.1.0 | 6.0.8 up to, but not including, 6.1.0 |
 | Java | 21 | 17 |
 
-Create and the respective loader are required. The core gameplay — worker profiles, path evaluation, redstone modes, commands, goggles tooltips — is identical on both versions. See the [compatibility matrix](docs/COMPATIBILITY.md) for feature-level differences (Jade, KubeJS, Ponder, data maps).
+Create and the respective loader are required. The core gameplay — worker profiles, path evaluation, redstone modes, commands, goggles tooltips — is identical on both versions. See the [compatibility matrix](docs/COMPATIBILITY.md) for feature-level differences (KubeJS, Ponder, data maps).
 
-On NeoForge, Jade and KubeJS integrations activate automatically when those mods are installed; neither is required.
+On both loaders, Jade integration activates automatically when Jade is installed. NeoForge also supports the optional KubeJS integration; neither mod is required.
 
 ## Highlights
 
@@ -23,9 +23,9 @@ On NeoForge, Jade and KubeJS integrations activate automatically when those mods
 - Data-driven worker profiles with RPM, stress capacity, movement radius, taming/baby rules, and optional movement-speed and max-health scaling.
 - Data-driven path profiles with weighted-average, worst-block, and legacy evaluation modes.
 - Per-crank redstone modes: `HIGH_STOPS`, `HIGH_RUNS`, and `IGNORE`.
-- Create Goggles and optional Jade diagnostics for worker, path, output, and veto state.
+- Create Goggles and optional Jade (both loaders) diagnostics for worker, path, output, and veto state.
 - Datapack tags for worker tiers and custom attachment items.
-- Optional KubeJS startup profiles and lifecycle/output events.
+- NeoForge 1.21.1 only: optional KubeJS startup profiles and lifecycle/output events.
 - Inspection commands for cranks, workers, and path blocks.
 
 Worker movement radii are supported from `0.5` to `6.0` blocks. The upper limit is intentional: larger circles are incompatible with normal Minecraft lead behavior.
@@ -37,7 +37,7 @@ Worker movement radii are supported from `0.5` to `6.0` blocks. The upper limit 
    - Forge 47.x on Minecraft 1.20.1 (Java 17).
 2. Place the Create Horse Power CE jar for your loader/version in the `mods` directory.
 3. Do not keep the original Create Horse Power jar in the same instance.
-4. On NeoForge 1.21.1, optionally install Jade for HUD details or KubeJS for scripted profiles and events.
+4. Optionally install Jade on either loader for HUD details, or KubeJS on NeoForge 1.21.1 for scripted profiles and events.
 
 ## Playing
 
@@ -51,7 +51,7 @@ Craft and place a Horse Crank, prepare a complete valid path around it, then att
 
 The full [Packmaker and Modder Guide](docs/PACKMAKERS.md) documents:
 
-- `createhorsepower:worker_stats` and `createhorsepower:path_stats` NeoForge Data Maps (NeoForge 1.21.1; on Forge 1.20.1 the same entries are configured through worker/path tags and config).
+- `createhorsepower:worker_stats` and `createhorsepower:path_stats` NeoForge Data Maps (NeoForge 1.21.1; on Forge 1.20.1 canonical worker/path behavior is provided by the platform layer and can be extended or tuned through supported tags and server configuration — NeoForge Data Maps and KubeJS profile registration are not available on Forge yet).
 - Worker, attachment-item, and leash tags (available on both versions).
 - Server configuration and precedence rules.
 - KubeJS startup registration and server lifecycle events (NeoForge 1.21.1 only for now).
@@ -67,7 +67,7 @@ Important precedence rule: KubeJS profiles override Data Maps, which override le
 - Update any prerelease worker profile above a 6-block movement radius before loading it in 1.2; out-of-range Data Map or KubeJS values are rejected.
 - Back up important worlds before changing mod versions.
 
-See the [1.2.0 changelog](changelog/1.21.1-1.2.0-ce.1.md) for the complete release notes.
+See the [1.2.0 release notes](changelog/1.21.1-1.2.0-ce.2.md) for NeoForge 1.21.1 and the [Forge 1.20.1 1.2.0 release notes](changelog/1.20.1-1.2.0-ce.2.md) for the Forge port.
 
 ## Building
 
@@ -78,10 +78,12 @@ The repository is a multi-version workspace. Shared logic lives in `common/`
 Root verification tasks (used by CI):
 
 ```text
-./gradlew buildAll             # build every platform
-./gradlew testAllVersions      # run the shared tests against every platform
-./gradlew verifySharedSources  # fail when duplicated platform sources drift
-./gradlew verify               # all of the above
+./gradlew buildAll               # build every platform
+./gradlew testAllVersions        # run the shared tests against every platform
+./gradlew verifySharedSources    # fail when duplicated platform sources drift
+./gradlew verifySharedResources  # fail on duplicated shared assets and on cross-version datapack drift
+./gradlew runtimeSmokeAll        # boot both loader GameTest servers and run their required smoke tests
+./gradlew verify                 # all of the above
 ```
 
 On Windows:
