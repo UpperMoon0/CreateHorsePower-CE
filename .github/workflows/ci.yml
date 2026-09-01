@@ -11,7 +11,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v4
@@ -24,4 +24,6 @@ jobs:
       - uses: gradle/actions/setup-gradle@v3
 
       - run: chmod +x ./gradlew
-      - run: ./gradlew clean build
+      # Aggregate verification: shared source + resource parity checks, both
+      # platform builds, and the shared tests compiled/run against every target.
+      - run: ./gradlew verify

@@ -6,14 +6,16 @@ This is an independent, community-maintained fork of [SteamPunkNation/CreateHors
 
 ## Compatibility
 
-| Component | Supported version |
-|---|---|
-| Minecraft | 1.21.1 |
-| Mod loader | NeoForge 21.1.215 or newer |
-| Create | 6.0.8 up to, but not including, 6.1.0 |
-| Java | 21 |
+| Component | NeoForge | Forge |
+|---|---|---|
+| Minecraft | 1.21.1 | 1.20.1 |
+| Mod loader | NeoForge 21.1.215 or newer | Forge 47.x |
+| Create | 6.0.8 up to, but not including, 6.1.0 | 6.0.8 up to, but not including, 6.1.0 |
+| Java | 21 | 17 |
 
-Create and NeoForge are required. Jade and KubeJS integrations activate automatically when those mods are installed; neither is required.
+Create and the respective loader are required. The core gameplay — worker profiles, path evaluation, redstone modes, commands, goggles tooltips — is identical on both versions. See the [compatibility matrix](docs/COMPATIBILITY.md) for feature-level differences (KubeJS, Ponder, data maps).
+
+On both loaders, Jade integration activates automatically when Jade is installed. NeoForge also supports the optional KubeJS integration; neither mod is required.
 
 ## Highlights
 
@@ -21,19 +23,21 @@ Create and NeoForge are required. Jade and KubeJS integrations activate automati
 - Data-driven worker profiles with RPM, stress capacity, movement radius, taming/baby rules, and optional movement-speed and max-health scaling.
 - Data-driven path profiles with weighted-average, worst-block, and legacy evaluation modes.
 - Per-crank redstone modes: `HIGH_STOPS`, `HIGH_RUNS`, and `IGNORE`.
-- Create Goggles and optional Jade diagnostics for worker, path, output, and veto state.
+- Create Goggles and optional Jade (both loaders) diagnostics for worker, path, output, and veto state.
 - Datapack tags for worker tiers and custom attachment items.
-- Optional KubeJS startup profiles and lifecycle/output events.
+- NeoForge 1.21.1 only: optional KubeJS startup profiles and lifecycle/output events.
 - Inspection commands for cranks, workers, and path blocks.
 
 Worker movement radii are supported from `0.5` to `6.0` blocks. The upper limit is intentional: larger circles are incompatible with normal Minecraft lead behavior.
 
 ## Installation
 
-1. Install Minecraft 1.21.1, NeoForge, and a compatible Create 6.0.x release.
-2. Place the Create Horse Power CE jar in the `mods` directory.
+1. Install your target Minecraft version with the matching loader and a compatible Create 6.0.x release:
+   - NeoForge 21.1.215+ on Minecraft 1.21.1 (Java 21), or
+   - Forge 47.x on Minecraft 1.20.1 (Java 17).
+2. Place the Create Horse Power CE jar for your loader/version in the `mods` directory.
 3. Do not keep the original Create Horse Power jar in the same instance.
-4. Optionally install Jade for HUD details or KubeJS for scripted profiles and events.
+4. Optionally install Jade on either loader for HUD details, or KubeJS on NeoForge 1.21.1 for scripted profiles and events.
 
 ## Playing
 
@@ -47,39 +51,58 @@ Craft and place a Horse Crank, prepare a complete valid path around it, then att
 
 The full [Packmaker and Modder Guide](docs/PACKMAKERS.md) documents:
 
-- `createhorsepower:worker_stats` and `createhorsepower:path_stats` NeoForge Data Maps.
-- Worker, attachment-item, and leash tags.
+- `createhorsepower:worker_stats` and `createhorsepower:path_stats` NeoForge Data Maps (NeoForge 1.21.1; on Forge 1.20.1 canonical worker/path behavior is provided by the platform layer and can be extended or tuned through supported tags and server configuration — NeoForge Data Maps and KubeJS profile registration are not available on Forge yet).
+- Worker, attachment-item, and leash tags (available on both versions).
 - Server configuration and precedence rules.
-- KubeJS startup registration and server lifecycle events.
+- KubeJS startup registration and server lifecycle events (NeoForge 1.21.1 only for now).
 - Migration behavior from CE 1.1.
 
-Important precedence rule: KubeJS profiles override Data Maps, which override legacy tags/config lists. Built-in vanilla worker and path Data Maps therefore take priority over old tier and path tuning for the same entries.
+On NeoForge 1.21.1, KubeJS profiles override Data Maps, which override legacy tags/config lists. Built-in vanilla worker and path Data Maps therefore take priority over old tier and path tuning for the same entries.
 
 ## Migrating from CE 1.1
 
 - Existing 1.1 server-config keys remain at the TOML root.
 - Existing Horse Cranks without a saved redstone mode migrate to `IGNORE`; new cranks use `defaultRedstoneMode`.
-- Built-in worker and path Data Maps override legacy config fallback values. Override the relevant Data Map or use KubeJS when customizing those built-in entries.
+- Built-in worker and path Data Maps override legacy config fallback values. On NeoForge 1.21.1, override the relevant Data Map or use KubeJS when customizing those built-in entries; on Forge 1.20.1 the built-in per-species and per-block profiles cannot be overridden by legacy tags/config (tags can still add new workers or paths).
 - Update any prerelease worker profile above a 6-block movement radius before loading it in 1.2; out-of-range Data Map or KubeJS values are rejected.
 - Back up important worlds before changing mod versions.
 
-See the [1.2.0 changelog](changelog/1.21.1-1.2.0-ce.1.md) for the complete release notes.
+See the [1.2.0 release notes](changelog/1.21.1-1.2.0-ce.2.md) for NeoForge 1.21.1 and the [Forge 1.20.1 1.2.0 release notes](changelog/1.20.1-1.2.0-ce.2.md) for the Forge port.
 
 ## Building
+
+The repository is a multi-version workspace. Shared logic lives in `common/`
+(single source of truth consumed by both platforms); `neoforge-1.21.1/` and
+`forge-1.20.1/` contain only loader glue and version adapters. No Architectury involved.
+
+Root verification tasks (used by CI):
+
+```text
+./gradlew buildAll               # build every platform
+./gradlew testAllVersions        # run the shared tests against every platform
+./gradlew verifySharedSources    # fail when duplicated platform sources drift
+./gradlew verifySharedResources  # fail on duplicated shared assets and on cross-version datapack drift
+./gradlew runtimeSmokeAll        # boot both loader GameTest servers and run their required smoke tests
+./gradlew verify                 # all of the above
+```
 
 On Windows:
 
 ```powershell
-.\gradlew.bat clean build
+.\gradlew.bat verify
 ```
 
 On Linux or macOS:
 
 ```bash
-./gradlew clean build
+./gradlew verify
 ```
 
-Generated jars are written to `build/libs`. Report bugs through the [issue tracker](https://github.com/UpperMoon0/CreateHorsePower-CE/issues).
+Generated jars are written to `<platform>/build/libs` (e.g.
+`neoforge-1.21.1/build/libs/createhorsepower-ce-1.21.1-<version>.jar`).
+The semantic mod version lives once in the root `gradle.properties`; artifacts are
+versioned as `<minecraft_version>-<mod_version>`.
+Report bugs through the [issue tracker](https://github.com/UpperMoon0/CreateHorsePower-CE/issues).
 
 ## Credits and License
 

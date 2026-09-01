@@ -1,219 +1,273 @@
+// Root convention layer: aggregate verification tasks and shared-source parity checks.
+// Platform-specific configuration stays in each subproject's build.gradle.
+
 plugins {
-    id 'java-library'
-    id 'maven-publish'
-    id 'net.neoforged.moddev' version '2.0.119'
-    id 'idea'
+    id 'base'
 }
 
-tasks.named('wrapper', Wrapper).configure {
-    // Define wrapper values here so as to not have to always do so when updating gradlew.properties.
-    // Switching this to Wrapper.DistributionType.ALL will download the full gradle sources that comes with
-    // documentation attached on cursor hover of gradle classes and methods. However, this comes with increased
-    // file size for Gradle. If you do switch this to ALL, run the Gradle wrapper task twice afterwards.
-    // (Verify by checking gradle/wrapper/gradle-wrapper.properties to see if distributionUrl now points to `-all`)
-    distributionType = Wrapper.DistributionType.BIN
+// Aggregate tasks mirrored from the OpenUI multi-version layout
+tasks.register('buildAll') {
+    group = 'build'
+    description = 'Builds every platform subproject.'
+    dependsOn ':neoforge-1.21.1:build', ':forge-1.20.1:build'
 }
 
-version = mod_version
-group = mod_group_id
-
-repositories {
-    mavenCentral()
-    maven { url = "https://maven.createmod.net" } // Create, Ponder, Flywheel
-    maven { url = "https://maven.ithundxr.dev/snapshots" } // Registrate
-    maven {
-        name = "Jared's maven"
-        url = "https://maven.blamejared.com/"
-    }
-    maven {
-        name = "ModMaven"
-        url = "https://modmaven.dev"
-    }
-    maven {
-        name = "KubeJS"
-        url = "https://maven.latvian.dev/releases"
-    }
-    maven {
-        name = "Modrinth"
-        url = "https://api.modrinth.com/maven"
-    }
-    maven { url = "https://jitpack.io" }
+tasks.register('testAllVersions') {
+    group = 'verification'
+    description = 'Runs the shared tests against every platform.'
+    dependsOn ':neoforge-1.21.1:test', ':forge-1.20.1:test'
 }
 
-base {
-    archivesName = "${mod_id}-ce"
+tasks.register('runtimeSmokeAll') {
+    group = 'verification'
+    description = 'Boots both loader GameTest servers and runs their required smoke tests.'
+    dependsOn ':neoforge-1.21.1:runGameTestServer', ':forge-1.20.1:runGameTestServer'
 }
 
-// Mojang ships Java 21 to end users in 1.21.1, so mods should target Java 21.
-java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+tasks.register('cleanAll') {
+    group = 'build'
+    description = 'Cleans every platform subproject.'
+    dependsOn ':neoforge-1.21.1:clean', ':forge-1.20.1:clean'
+}
 
-neoForge {
-    // Specify the version of NeoForge to use.
-    version = project.neo_version
+/**
+ * Fails the build when a Java file exists in both platform trees with
+ * different content. Byte-identical files are fine (they should be moved to
+ * /common), but unexpected drift between 1.20.1 and 1.21.1 copies of the same
+ * class is exactly the kind of bug this check is meant to catch.
+ *
+ * Files that are genuine version adapters (they intentionally differ because
+ * the Minecraft APIs changed between 1.20.1 and 1.21.1) must be listed in
+ * ALLOWED_ADAPTERS below by their full source path relative to the platform
+ * directory, so an unrelated same-named class can never inherit an exemption.
+ * Anything else that differs fails the build.
+ */
+def PLATFORMS = ['neoforge-1.21.1', 'forge-1.20.1']
+def ALLOWED_ADAPTERS = [
+        // Mod entry point (loader bootstrap differs)
+        'net/steampn/createhorsepower/CreateHorsePower.java',
+        // Version adapters for changed Mojang/Create APIs
+        'net/steampn/createhorsepower/blocks/horse_crank/HorseCrankBlock.java',
+        'net/steampn/createhorsepower/blocks/horse_crank/HorseCrankTileEntity.java',
+        'net/steampn/createhorsepower/command/CHPCommands.java',
+        'net/steampn/createhorsepower/config/Config.java',
+        'net/steampn/createhorsepower/compat/OptionalIntegrations.java',
+        'net/steampn/createhorsepower/gametest/HorsePowerGameTests.java',
+        // Registry + registration glue (loader-specific registries)
+        'net/steampn/createhorsepower/registry/CHPCreativeTabs.java'
+] as Set
+def PLATFORM_ONLY_PREFIXES = [
+        // NeoForge-only integrations and data generation APIs.
+        'net/steampn/createhorsepower/datagen/',
+        'net/steampn/createhorsepower/compat/kubejs/',
+        'net/steampn/createhorsepower/client/ponders/',
+        'net/steampn/createhorsepower/registry/CHPDataMaps.java',
+        'net/steampn/createhorsepower/registry/PonderRegister.java',
+        'net/steampn/createhorsepower/CreateHorsePowerClient.java'
+]
 
-    parchment {
-        mappingsVersion = project.parchment_mappings_version
-        minecraftVersion = project.parchment_minecraft_version
-    }
+tasks.register('verifySharedSources') {
+    group = 'verification'
+    description = 'Fails when duplicated platform sources drift from each other.'
+    doLast {
+        def javaRoots = PLATFORMS.collectEntries { [(it): file("${it}/src/main/java")] }
+        def relativeJavaFiles = { File root ->
+            if (!root.exists()) return [] as Set
+            fileTree(root).matching { include '**/*.java' }.files.collect {
+                root.toPath().relativize(it.toPath()).toString().replace('\\', '/')
+            } as Set
+        }
+        def nf = relativeJavaFiles(javaRoots['neoforge-1.21.1'])
+        def forge = relativeJavaFiles(javaRoots['forge-1.20.1'])
+        def union = (nf + forge).sort()
+        def shared = nf.intersect(forge).sort()
+        def problems = []
+        def approved = 0
 
-    // This line is optional. Access Transformers are automatically detected
-    // accessTransformers = project.files('src/main/resources/META-INF/accesstransformer.cfg')
-
-    // Default run configurations.
-    // These can be tweaked, removed, or duplicated as needed.
-    runs {
-        client {
-            client()
-
-            // Comma-separated list of namespaces to load gametests from. Empty = all namespaces.
-            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+        union.each { path ->
+            if (!nf.contains(path) || !forge.contains(path)) {
+                if (!PLATFORM_ONLY_PREFIXES.any { path.startsWith(it) }) {
+                    def platform = nf.contains(path) ? 'NeoForge' : 'Forge'
+                    problems << "Platform-only source is not explicitly allowlisted: ${platform}/${path}\n" +
+                            "  Move loader-neutral code to /common or add a narrowly scoped platform-only entry."
+                }
+            }
         }
 
-        server {
-            server()
-            programArgument '--nogui'
-            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+        shared.each { path ->
+            def nfFile = new File(javaRoots['neoforge-1.21.1'], path)
+            def forgeFile = new File(javaRoots['forge-1.20.1'], path)
+            if (!java.util.Arrays.equals(nfFile.bytes, forgeFile.bytes)) {
+                if (ALLOWED_ADAPTERS.contains(path)) {
+                    approved++
+                    println "verifySharedSources: ${path} is an approved version adapter"
+                } else {
+                    problems << "Duplicated class drifted between platforms: ${path}\n" +
+                            "  neoforge-1.21.1/${path}\n" +
+                            "  forge-1.20.1/${path}\n" +
+                            "  Move it to /common or add the full source path to ALLOWED_ADAPTERS if it is a genuine version adapter."
+                }
+            }
         }
 
-        // This run config launches GameTestServer and runs all registered gametests, then exits.
-        // By default, the server will crash when no gametests are provided.
-        // The gametest system is also enabled by default for other run configs under the /test command.
-        gameTestServer {
-            type = "gameTestServer"
-            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+        if (problems) {
+            throw new GradleException(problems.join('\n\n'))
         }
-
-        data {
-            data()
-
-            // example of overriding the workingDirectory set in configureEach above, uncomment if you want to use it
-            // gameDirectory = project.file('run-data')
-
-            // Specify the modid for data generation, where to output the resulting resource, and where to look for existing resources.
-            programArguments.addAll '--mod', project.mod_id, '--all', '--output', file('src/generated/resources/').getAbsolutePath(), '--existing', file('src/main/resources/').getAbsolutePath()
-        }
-
-        // applies to all the run configs above
-        configureEach {
-            // Recommended logging data for a userdev environment
-            // The markers can be added/remove as needed separated by commas.
-            // "SCAN": For mods scan.
-            // "REGISTRIES": For firing of registry events.
-            // "REGISTRYDUMP": For getting the contents of all registries.
-            systemProperty 'forge.logging.markers', 'REGISTRIES'
-
-            // Recommended logging level for the console
-            // You can set various levels here.
-            // Please read: https://stackoverflow.com/questions/2031163/when-to-use-the-different-log-levels
-            logLevel = org.slf4j.event.Level.DEBUG
-        }
-    }
-
-    mods {
-        // define mod <-> source bindings
-        // these are used to tell the game which sources are for which mod
-        // multi mod projects should define one per mod
-        "${mod_id}" {
-            sourceSet(sourceSets.main)
-            sourceSet(sourceSets.test)
-        }
+        println "verifySharedSources: ${shared.size()} duplicated files checked (${approved} approved adapters), no unapproved drift"
     }
 }
 
-// Include resources generated by data generators.
-sourceSets.main.resources { srcDir 'src/generated/resources' }
+/**
+ * Resource parity gate with two rules:
+ *
+ * 1. common/src/main/resources is the sole source of truth for assets shared
+ *    across versions. A relative path appearing in both common and a platform
+ *    tree means a stale generated or hand-written copy would silently shadow
+ *    (or be shadowed by) the shared asset at jar-packaging time
+ *    (duplicatesStrategy = EXCLUDE picks whichever source wins). Fails the
+ *    build instead.
+ *
+ * 2. The hand-maintained Forge 1.20.1 datapack JSONs are compared against
+ *    their NeoForge 1.21.1 datagen-generated counterparts, after normalizing
+ *    the directory renames between versions (tags/items -> tags/item,
+ *    recipes -> recipe, ...) and the known version-format differences
+ *    (recipe result id/item, criteria items string vs list, requirement
+ *    order, keys that only exist on one version). Semantic drift between the
+ *    two versions fails the build.
+ */
+// Relative data paths allowed to exist in exactly one version's datapack.
+def PLATFORM_RESOURCE_ALLOWLIST = [
+        // 1.21.1-only NeoForge data maps; Forge 1.20.1 resolves stats via tags/config
+        'data/createhorsepower/data_maps/block/path_stats.json',
+        'data/createhorsepower/data_maps/entity_type/worker_stats.json'
+] as Set
 
-tasks.named('processResources', ProcessResources).configure {
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-}
+tasks.register('verifySharedResources') {
+    group = 'verification'
+    description = 'Fails on duplicated shared assets and on cross-version datapack drift.'
+    doLast {
+        def problems = []
 
-// Sets up a dependency configuration called 'localRuntime'.
-// This configuration should be used instead of 'runtimeOnly' to declare
-// a dependency that will be present for runtime testing but that is
-// "optional", meaning it will not be pulled by dependents of this mod.
-configurations {
-    runtimeClasspath.extendsFrom localRuntime
-    testImplementation.extendsFrom compileClasspath
-}
-
-dependencies {
-    implementation("com.simibubi.create:create-${minecraft_version}:${create_version}:slim") { transitive = false }
-    implementation("net.createmod.ponder:Ponder-NeoForge-${minecraft_version}:${ponder_version}")
-    compileOnly("dev.engine-room.flywheel:flywheel-neoforge-api-${minecraft_version}:${flywheel_version}")
-    runtimeOnly("dev.engine-room.flywheel:flywheel-neoforge-${minecraft_version}:${flywheel_version}")
-    implementation("com.tterrag.registrate:Registrate:${registrate_version}")
-
-    // JEI
-    compileOnly("mezz.jei:jei-${mc_version}-common-api:${jei_version}")
-    compileOnly("mezz.jei:jei-${mc_version}-neoforge-api:${jei_version}")
-    localRuntime("mezz.jei:jei-${mc_version}-neoforge:${jei_version}")
-
-    // Jade
-    compileOnly("maven.modrinth:jade:15.10.5+neoforge")
-    localRuntime("maven.modrinth:jade:15.10.5+neoforge")
-
-    // KubeJS
-    compileOnly("dev.latvian.mods:kubejs-neoforge:2101.7.2-build.368")
-    localRuntime("dev.latvian.mods:kubejs-neoforge:2101.7.2-build.368")
-
-    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
-    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-}
-
-test {
-    useJUnitPlatform()
-}
-
-// This block of code expands all declared replace properties in the specified resource targets.
-// A missing property will result in an error. Properties are expanded using ${} Groovy notation.
-var generateModMetadata = tasks.register("generateModMetadata", ProcessResources) {
-    var replaceProperties = [
-            minecraft_version      : minecraft_version,
-            minecraft_version_range: minecraft_version_range,
-            neo_version            : neo_version,
-            neo_version_range      : neo_version_range,
-            loader_version_range   : loader_version_range,
-            mod_id                 : mod_id,
-            mod_name               : mod_name,
-            mod_license            : mod_license,
-            mod_version            : mod_version,
-            mod_authors            : mod_authors,
-            mod_description        : mod_description,
-            mod_credits            : mod_credits
-    ]
-    inputs.properties replaceProperties
-    expand replaceProperties
-    from "src/main/templates"
-    into "build/generated/sources/modMetadata"
-}
-// Include the output of "generateModMetadata" as an input directory for the build
-// this works with both building through Gradle and the IDE.
-sourceSets.main.resources.srcDir generateModMetadata
-// To avoid having to run "generateModMetadata" manually, make it run on every project reload
-neoForge.ideSyncTask generateModMetadata
-
-// Example configuration to allow publishing using the maven-publish plugin
-publishing {
-    publications {
-        register('mavenJava', MavenPublication) {
-            from components.java
+        // Rule 1: common owns every shared asset outright.
+        def commonRoot = file('common/src/main/resources')
+        def commonFiles = commonRoot.exists() ?
+                fileTree(commonRoot).files.collect {
+                    commonRoot.toPath().relativize(it.toPath()).toString().replace('\\', '/')
+                } : []
+        PLATFORMS.each { platform ->
+            ['src/main/resources', 'src/generated/resources'].each { resDir ->
+                def root = file("${platform}/${resDir}")
+                if (!root.exists()) return
+                def platformPaths = fileTree(root).files.collect {
+                    root.toPath().relativize(it.toPath()).toString().replace('\\', '/')
+                } as Set
+                commonFiles.each { path ->
+                    if (platformPaths.contains(path)) {
+                        problems << "Shared asset duplicated outside common: ${path}\n" +
+                                "  Provided by both common/src/main/resources and ${platform}/${resDir}.\n" +
+                                "  Delete the platform copy; common is the sole source of truth."
+                    }
+                }
+            }
         }
-    }
-    repositories {
-        maven {
-            url "file://${project.projectDir}/repo"
+
+        // Rule 2: hand-written Forge data vs generated NeoForge data.
+        def forgeDataRoot = file('forge-1.20.1/src/main/resources')
+        def nfDataRoot = file('neoforge-1.21.1/src/generated/resources')
+        def relativeDataJson = { File root ->
+            if (!root.exists()) return [] as Set
+            fileTree(root).matching { include 'data/**/*.json' }.files.collect {
+                root.toPath().relativize(it.toPath()).toString().replace('\\', '/')
+            } as Set
         }
+        def forgeData = relativeDataJson(forgeDataRoot)
+        def nfData = relativeDataJson(nfDataRoot)
+
+        // 1.20.1 registry directory names -> 1.21.1 singular ones. Renames only
+        // apply to the registry directory itself (data/<ns>/<registry>/...) and,
+        // under tags/, to the tag type — e.g. advancement "recipes" sub-paths
+        // (data/<ns>/advancement/recipes/...) keep their plural inner segments.
+        def registryRenames = ['recipes': 'recipe', 'advancements': 'advancement', 'loot_tables': 'loot_table']
+        def tagTypeRenames = ['items': 'item', 'blocks': 'block', 'entity_types': 'entity_type']
+        def normalizePath = { String path ->
+            def seg = path.split('/')
+            if (seg.length > 3 && seg[0] == 'data') {
+                if (registryRenames.containsKey(seg[2])) seg[2] = registryRenames[seg[2]]
+                if (seg[2] == 'tags' && seg.length > 3 && tagTypeRenames.containsKey(seg[3])) seg[3] = tagTypeRenames[seg[3]]
+                return seg.join('/')
+            }
+            path
+        }
+        def forgeToNf = forgeData.collectEntries { [(normalizePath(it)): it] }
+
+        def slurper = new groovy.json.JsonSlurper()
+        // Keys that exist on only one version and carry no cross-version meaning.
+        def versionNoiseKeys = ['show_notification', 'sends_telemetry_event', 'category'] as Set
+        def normalizeJson
+        normalizeJson = { value ->
+            if (value instanceof Map) {
+                def out = [:]
+                value.each { k, v ->
+                    def key = k.toString()
+                    if (versionNoiseKeys.contains(key)) return
+                    // Recipe result: 1.20.1 {"item": X} vs 1.21.1 {"count": n, "id": X}
+                    if (key == 'result' && v instanceof Map && v.containsKey('id')) {
+                        def result = [item: v.id]
+                        if (v.containsKey('count') && v.count != 1) result.count = v.count
+                        out[key] = result
+                        return
+                    }
+                    // Item predicate: 1.20.1 emits a list, 1.21.1 datagen a bare string
+                    if (key == 'items' && v instanceof CharSequence) {
+                        out[key] = [v.toString()]
+                        return
+                    }
+                    // Advancement requirements: inner order is semantically irrelevant
+                    if (key == 'requirements' && v instanceof List) {
+                        out[key] = v.collect { it instanceof List ? it.sort(false) : it }
+                        return
+                    }
+                    out[key] = normalizeJson(v)
+                }
+                return out
+            }
+            if (value instanceof List) return value.collect { normalizeJson(it) }
+            return value
+        }
+        def parseNormalized = { File f -> normalizeJson(slurper.parse(f)) }
+
+        forgeToNf.each { nfPath, forgePath ->
+            if (!nfData.contains(nfPath)) {
+                if (!PLATFORM_RESOURCE_ALLOWLIST.contains(nfPath)) {
+                    problems << "Forge datapack file has no NeoForge counterpart: ${forgePath}\n" +
+                            "  Expected ${nfPath} under neoforge-1.21.1/src/generated/resources."
+                }
+                return
+            }
+            if (parseNormalized(new File(forgeDataRoot, forgePath)) != parseNormalized(new File(nfDataRoot, nfPath))) {
+                problems << "Cross-version datapack drift: ${forgePath} vs ${nfPath}\n" +
+                        "  Hand-maintained Forge 1.20.1 JSON and NeoForge 1.21.1 datagen output are semantically different.\n" +
+                        "  Reconcile them (update the datagen provider or the hand-written file)."
+            }
+        }
+        nfData.each { nfPath ->
+            if (!forgeToNf.containsKey(nfPath) && !PLATFORM_RESOURCE_ALLOWLIST.contains(nfPath)) {
+                problems << "NeoForge generated data has no Forge counterpart: ${nfPath}\n" +
+                        "  Add the matching hand-written file under forge-1.20.1/src/main/resources or allowlist it in PLATFORM_RESOURCE_ALLOWLIST."
+            }
+        }
+
+        if (problems) {
+            throw new GradleException(problems.join('\n\n'))
+        }
+        println "verifySharedResources: ${commonFiles.size()} shared assets unique to common, ${forgeToNf.size()} datapack files compared across versions, no drift"
     }
 }
 
-tasks.withType(JavaCompile).configureEach {
-    options.encoding = 'UTF-8' // Use the UTF-8 charset for Java compilation
-}
-
-// IDEA no longer automatically downloads sources/javadoc jars for dependencies, so we need to explicitly enable the behavior.
-idea {
-    module {
-        downloadSources = true
-        downloadJavadoc = true
-    }
+tasks.register('verify') {
+    group = 'verification'
+    description = 'Full aggregate verification: parity, builds, unit tests, and loader smoke tests for every version.'
+    dependsOn 'verifySharedSources', 'verifySharedResources', 'buildAll', 'testAllVersions', 'runtimeSmokeAll'
+    // Deterministic ordering for release builds running "cleanAll verify".
+    mustRunAfter 'cleanAll'
 }
