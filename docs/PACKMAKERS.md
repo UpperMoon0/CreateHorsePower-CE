@@ -372,7 +372,7 @@ KubeJS and NeoForge Data Maps are not available. Use the canonical chain:
 
 For path stats on Forge: built-in path profile → legacy path / config fallback (`greatPathBlock`, `normalPathBlock`, `poorPathBlock`).
 
-Built-in profiles take priority over fallback values for the same mob or block, so the built-in `minecraft:dirt` path profile wins over `poorMultiplier`; override the corresponding Data Map (NeoForge) or use a tag/config entry (Forge) to retune that block.
+Built-in Forge profiles take priority over the legacy tag/config fallback. Legacy config can add or tune otherwise unresolved blocks, but cannot override a built-in per-block path profile in the current Forge 1.20.1 implementation (so the built-in `minecraft:dirt` entry wins over `poorMultiplier`). The same limitation applies to built-in per-species worker profiles.
 
 ---
 

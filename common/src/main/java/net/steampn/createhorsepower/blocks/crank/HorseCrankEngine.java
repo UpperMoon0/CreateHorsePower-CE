@@ -284,6 +284,35 @@ public class HorseCrankEngine {
         this.workerUuid = uuid;
     }
 
+    /** Test-only introspection: whether this crank currently owns worker AI suppression. */
+    public boolean ownsWorkerAiSuppressionForTesting() {
+        return ownsWorkerAiSuppression;
+    }
+
+    /** Test-only introspection: the worker UUID this crank currently suppresses AI for. */
+    @Nullable
+    public UUID aiSuppressedWorkerUuidForTesting() {
+        return aiSuppressedWorkerUuid;
+    }
+
+    /**
+     * Test-only override for the cached worker reference. Simulates the
+     * state after a chunk unload/BE reload, where the engine still owns AI
+     * suppression (restored from NBT) but holds no entity reference.
+     */
+    public void setCachedWorkerMobForTesting(@Nullable Mob mob) {
+        this.cachedWorkerMob = mob;
+    }
+
+    /**
+     * Test-only entry point that runs the same AI-control decision the
+     * working tick performs ({@link #controlWorkerAi}), without requiring a
+     * full kinetic network around the crank.
+     */
+    public void controlWorkerAiForTesting(Mob mob) {
+        controlWorkerAi(mob);
+    }
+
     // ==========================================
     // NBT (CompoundTag API is identical on 1.20.1 and 1.21.1)
     // ==========================================
@@ -510,10 +539,20 @@ public class HorseCrankEngine {
 
     private void clearWorkerReferences() {
         restoreWorkerAi();
+
+        // Permanent detach/removal: if the old worker was unavailable, its
+        // persistent marker remains on that worker for entity-load orphan
+        // recovery, but this BE must no longer claim ownership. Keeping a
+        // stale ownership record here would make the next worker skip its
+        // own acquire (controlWorkerAi would merely maintain it), leaving
+        // it NoAI with no recovery marker of its own. Safe even when
+        // restoreWorkerAi succeeded: those fields are already false/null.
+        this.ownsWorkerAiSuppression = false;
+        this.aiSuppressedWorkerUuid = null;
+
         // This BE is being detached/destroyed (break, invalid transition,
         // or `onCrankRemoved`), so it must drop its local ownership record
-        // even if the worker is currently unloaded. The marker is left on the
-        // worker (when present) so the next interaction can still recover it.
+        // even if the worker is currently unloaded.
         this.cachedWorkerMob = null;
         this.workerUuid = null;
         this.lastKnownWorkerPos = null;
@@ -685,16 +724,19 @@ public class HorseCrankEngine {
 
     @Nullable
     private Mob resolveSuppressedWorker() {
-        if (cachedWorkerMob != null && aiSuppressedWorkerUuid != null
-                && aiSuppressedWorkerUuid.equals(cachedWorkerMob.getUUID())) {
-            return cachedWorkerMob;
-        }
         Level level = level();
-        if (level instanceof ServerLevel serverLevel) {
-            Entity entity = serverLevel.getEntity(aiSuppressedWorkerUuid);
-            if (entity instanceof Mob mob) {
-                return mob;
-            }
+        if (!(level instanceof ServerLevel serverLevel) || aiSuppressedWorkerUuid == null) {
+            return null;
+        }
+
+        // The level's entity index is authoritative: a cached Mob reference
+        // may point at an entity that has since been unloaded or discarded,
+        // and releasing AI state against a stale object would silently do
+        // nothing while the marker machinery believes restoration happened.
+        Entity entity = serverLevel.getEntity(aiSuppressedWorkerUuid);
+        if (entity instanceof Mob mob) {
+            cachedWorkerMob = mob;
+            return mob;
         }
         return null;
     }
@@ -716,7 +758,18 @@ public class HorseCrankEngine {
         if (level == null) return null;
 
         if (cachedWorkerMob != null && isWorkerAttachedToThisCrank(cachedWorkerMob)) {
-            return cachedWorkerMob;
+            // A cached reference is only trustworthy while the entity is
+            // still registered in the server level; an unloaded/discardable
+            // entity can keep its leash data but no longer exist as far as
+            // the world is concerned.
+            if (level instanceof ServerLevel serverLevel) {
+                if (serverLevel.getEntity(cachedWorkerMob.getUUID()) == cachedWorkerMob) {
+                    return cachedWorkerMob;
+                }
+                cachedWorkerMob = null;
+            } else {
+                return cachedWorkerMob;
+            }
         }
 
         if (workerUuid != null && level instanceof ServerLevel serverLevel) {

@@ -57,13 +57,13 @@ The full [Packmaker and Modder Guide](docs/PACKMAKERS.md) documents:
 - KubeJS startup registration and server lifecycle events (NeoForge 1.21.1 only for now).
 - Migration behavior from CE 1.1.
 
-Important precedence rule: KubeJS profiles override Data Maps, which override legacy tags/config lists. Built-in vanilla worker and path Data Maps therefore take priority over old tier and path tuning for the same entries.
+On NeoForge 1.21.1, KubeJS profiles override Data Maps, which override legacy tags/config lists. Built-in vanilla worker and path Data Maps therefore take priority over old tier and path tuning for the same entries.
 
 ## Migrating from CE 1.1
 
 - Existing 1.1 server-config keys remain at the TOML root.
 - Existing Horse Cranks without a saved redstone mode migrate to `IGNORE`; new cranks use `defaultRedstoneMode`.
-- Built-in worker and path Data Maps override legacy config fallback values. Override the relevant Data Map or use KubeJS when customizing those built-in entries.
+- Built-in worker and path Data Maps override legacy config fallback values. On NeoForge 1.21.1, override the relevant Data Map or use KubeJS when customizing those built-in entries; on Forge 1.20.1 the built-in per-species and per-block profiles cannot be overridden by legacy tags/config (tags can still add new workers or paths).
 - Update any prerelease worker profile above a 6-block movement radius before loading it in 1.2; out-of-range Data Map or KubeJS values are rejected.
 - Back up important worlds before changing mod versions.
 

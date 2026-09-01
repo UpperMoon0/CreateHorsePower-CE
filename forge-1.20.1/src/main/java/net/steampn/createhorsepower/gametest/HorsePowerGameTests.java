@@ -13,8 +13,10 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraftforge.gametest.GameTestHolder;
 import net.minecraftforge.gametest.PrefixGameTestTemplate;
 import net.steampn.createhorsepower.blocks.crank.AbstractHorseCrankBlockEntity;
+import net.steampn.createhorsepower.blocks.crank.HorseCrankEngine;
 import net.steampn.createhorsepower.blocks.crank.WorkerActivityControl;
 import net.steampn.createhorsepower.blocks.crank.WorkerOrbitMovement;
+import net.steampn.createhorsepower.content.stats.WorkerResolver;
 import net.steampn.createhorsepower.registry.BlockRegister;
 import net.steampn.createhorsepower.registry.TileEntityRegister;
 
@@ -349,6 +351,79 @@ public final class HorsePowerGameTests {
                 "Marker must be recovered when the live crank at the recorded position is a different instance");
         helper.assertFalse(horse.isNoAi(), "Recovered horse must return to NoAI=false");
         helper.assertFalse(WorkerActivityControl.hasMarker(horse), "Marker must be removed after recovery");
+        helper.succeed();
+    }
+
+    /**
+     * Permanent-detach regression: when the engine owns worker A and A
+     * becomes unresolvable (discarded/unloaded), a permanent detach must
+     * drop the engine-side AI-suppression ownership even though restoration
+     * could not run. Otherwise the ownership record stays stuck on A and
+     * the next worker B is merely maintained ({@code NoAI=true} without a
+     * marker of its own) instead of acquiring its own recoverable marker —
+     * a permanent frozen-animal bug.
+     */
+    @GameTest(template = "empty")
+    public static void permanentClearDropsOwnershipForNextWorker(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        BlockPos localCrankPos = new BlockPos(0, 1, 0);
+        helper.setBlock(localCrankPos, BlockRegister.HORSE_CRANK.get());
+        AbstractHorseCrankBlockEntity crank = requireCrank(helper, localCrankPos);
+        HorseCrankEngine engine = crank.engine();
+
+        // Worker A is acquired by the engine through its normal control path.
+        Horse workerA = helper.spawn(EntityType.HORSE, new BlockPos(2, 0, 2));
+        helper.assertFalse(workerA.isNoAi(), "Pre-condition: horse A has AI enabled");
+        helper.assertFalse(engine.ownsWorkerAiSuppressionForTesting(),
+                "Pre-condition: a fresh crank owns no AI suppression");
+        engine.controlWorkerAiForTesting(workerA);
+        helper.assertTrue(workerA.isNoAi(), "Engine must suppress worker A's AI");
+        helper.assertTrue(engine.ownsWorkerAiSuppressionForTesting(),
+                "Engine must own worker A's suppression");
+        helper.assertTrue(workerA.getUUID().equals(engine.aiSuppressedWorkerUuidForTesting()),
+                "Engine's suppression record must name worker A");
+        helper.assertTrue(WorkerActivityControl.hasMarker(workerA), "Worker A must carry a marker");
+
+        // Worker A becomes unresolvable: discarded, so the level's entity
+        // index no longer contains it. The cached reference is also dropped
+        // to simulate a chunk-unload/BE-reload, where ownership survives in
+        // NBT but no entity reference remains and the level lookup fails.
+        workerA.discard();
+        engine.setCachedWorkerMobForTesting(null);
+        helper.assertTrue(level.getEntity(workerA.getUUID()) == null,
+                "Pre-condition: discarded worker A is unresolved in the level");
+
+        // Permanent detach: restoreWorkerAi cannot resolve A, so the clear
+        // must still abandon the engine-side ownership record.
+        engine.detachWorker(false);
+        helper.assertFalse(engine.ownsWorkerAiSuppressionForTesting(),
+                "Permanent clear must abandon AI suppression ownership");
+        helper.assertTrue(engine.aiSuppressedWorkerUuidForTesting() == null,
+                "Permanent clear must drop the suppressed worker record");
+
+        // Worker B attaches and starts work. It must receive its OWN marker
+        // naming this crank's instance UUID; a stale ownership record would
+        // have left B marker-less and permanently NoAI.
+        Cow workerB = helper.spawn(EntityType.COW, new BlockPos(3, 0, 3));
+        helper.assertFalse(workerB.isNoAi(), "Pre-condition: cow B has AI enabled");
+        engine.attachWorker(workerB, WorkerResolver.resolve(workerB));
+        engine.controlWorkerAiForTesting(workerB);
+        helper.assertTrue(workerB.isNoAi(), "Engine must suppress worker B's AI");
+        helper.assertTrue(WorkerActivityControl.hasMarker(workerB),
+                "Worker B must receive its own recovery marker");
+        UUID crankUuid = engine.crankInstanceUuid();
+        helper.assertTrue(crankUuid.equals(WorkerActivityControl.markerCrankUuid(workerB)),
+                "Worker B's marker must name this crank's instance UUID");
+        helper.assertFalse(WorkerActivityControl.readPreviousNoAi(workerB),
+                "Worker B's marker must record B's original NoAI=false");
+
+        // Detaching B restores it cleanly through its own marker.
+        engine.detachWorker(false);
+        helper.assertFalse(workerB.isNoAi(), "Worker B must return to NoAI=false after detach");
+        helper.assertFalse(WorkerActivityControl.hasMarker(workerB),
+                "Worker B's marker must be removed after detach");
+        helper.assertFalse(engine.ownsWorkerAiSuppressionForTesting(),
+                "Engine must not own any suppression after detaching B");
         helper.succeed();
     }
 
