@@ -827,7 +827,10 @@ public class HorseCrankEngine {
      *
      * <p>When the worker cannot be resolved (it is unloaded or in another
      * chunk), local ownership is preserved so the saved marker baseline is
-     * not overwritten by a later same-crank reacquisition.
+     * not overwritten by a later same-crank reacquisition. If the loaded
+     * worker's marker has already moved to another crank, this stale crank
+     * relinquishes only its local bookkeeping and never mutates the new
+     * owner's marker or NoAI transition.
      */
     private void restoreWorkerAi() {
         if (!ownsWorkerActivityMarker || aiSuppressedWorkerUuid == null) {
@@ -841,11 +844,26 @@ public class HorseCrankEngine {
             return;
         }
 
+        UUID markerOwner = WorkerActivityControl.markerCrankUuid(controlledWorker);
+        if (markerOwnedByDifferentCrank(markerOwner, crankInstanceUuid)) {
+            CHPDiagnostics.event("ai_suppression_ownership_relinquished", controlledWorker.level(), host.pos(),
+                    crankInstanceUuid, controlledWorker, "current_marker_owner=" + markerOwner);
+            ownsWorkerActivityMarker = false;
+            ownsWorkerAiSuppression = false;
+            aiSuppressedWorkerUuid = null;
+            host.markDirty();
+            return;
+        }
+
         WorkerActivityControl.release(controlledWorker, ownsWorkerAiSuppression);
         ownsWorkerActivityMarker = false;
         ownsWorkerAiSuppression = false;
         aiSuppressedWorkerUuid = null;
         host.markDirty();
+    }
+
+    static boolean markerOwnedByDifferentCrank(@Nullable UUID markerOwner, UUID crankUuid) {
+        return markerOwner != null && !crankUuid.equals(markerOwner);
     }
 
     @Nullable
@@ -1125,8 +1143,7 @@ public class HorseCrankEngine {
         visualGroundSpeed = WorkerOrbitMovement.groundSpeedBlocksPerSecond(
                 movementAttribute,
                 CHPApi.config().workerGroundSpeedScale(),
-                CHPApi.config().minWorkerGroundSpeed(),
-                CHPApi.config().maxWorkerGroundSpeed());
+                CHPApi.config().minWorkerGroundSpeed(), CHPApi.config().maxWorkerGroundSpeed());
         double angularDelta = WorkerOrbitMovement.angularDeltaPerTick(
                 visualGroundSpeed, workerRadius, direction);
         controlWorkerAi(mob);
