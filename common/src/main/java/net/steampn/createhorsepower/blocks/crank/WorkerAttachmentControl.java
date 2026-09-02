@@ -248,22 +248,48 @@ public final class WorkerAttachmentControl {
             return;
         }
 
-        if (holder == null && hasPersistedLeashData(mob)) {
-            // Cross-version defensive path: 1.20.1 writes delayed leash data
-            // under "Leash" while 1.21.1 writes "leash". Only fabricate the
-            // temporary non-networked holder when vanilla serialization proves
-            // a leash payload still exists. A stale CHP marker by itself must
-            // never manufacture a lead when the mob is genuinely unleaded.
+        if (holder == null && hasPersistedCrankKnotLeash(mob, crankPos)) {
+            // Vanilla can keep an unresolved entity-UUID leash pending for many
+            // ticks. That leash is foreign to the crank and must survive CHP
+            // recovery. Only synthesize a temporary holder when serialization
+            // proves the pending leash itself is the old crank's exact knot
+            // BlockPos. 1.20.1 stores that as Leash{X,Y,Z}; 1.21.1 stores it as
+            // the lowercase leash int[3] BlockPos representation.
             mob.setLeashedTo(mob, false);
             mob.dropLeash(true, dropLead);
         }
-        // A non-matching live holder belongs to someone/something else; preserve it.
+        // A non-matching live holder or delayed foreign UUID holder belongs to
+        // someone/something else; preserve it.
     }
 
-    private static boolean hasPersistedLeashData(Mob mob) {
+    private static boolean hasPersistedCrankKnotLeash(Mob mob, BlockPos crankPos) {
         CompoundTag snapshot = new CompoundTag();
         mob.saveWithoutId(snapshot);
-        return snapshot.contains("Leash") || snapshot.contains("leash");
+
+        // Minecraft 1.20.1: fence-knot leash is a compound with X/Y/Z, while
+        // entity leashes use a UUID field. Never consume the UUID form here.
+        if (snapshot.contains("Leash")) {
+            CompoundTag leash = snapshot.getCompound("Leash");
+            if (leash.contains("X") && leash.contains("Y") && leash.contains("Z")) {
+                return crankPos.equals(new BlockPos(
+                        leash.getInt("X"),
+                        leash.getInt("Y"),
+                        leash.getInt("Z")
+                ));
+            }
+        }
+
+        // Minecraft 1.21.1: BlockPos leash data is int[3]. Entity UUID leashes
+        // are compounds, so the type check prevents treating them as crank data.
+        if (snapshot.contains("leash", 11)) {
+            int[] leashPos = snapshot.getIntArray("leash");
+            return leashPos.length == 3
+                    && crankPos.getX() == leashPos[0]
+                    && crankPos.getY() == leashPos[1]
+                    && crankPos.getZ() == leashPos[2];
+        }
+
+        return false;
     }
 
     private static boolean hasLoadedMobAttachedToKnot(ServerLevel level, LeashFenceKnotEntity knot) {
