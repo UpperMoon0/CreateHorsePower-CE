@@ -1,7 +1,9 @@
 package net.steampn.createhorsepower.utils;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.decoration.LeashFenceKnotEntity;
@@ -11,6 +13,7 @@ import net.steampn.createhorsepower.content.stats.WorkerStats;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 public class CHPUtils {
 
@@ -73,7 +76,28 @@ public class CHPUtils {
     }
 
     public static InteractionResult cleanUpLeash(Level level, BlockPos pos, boolean dropLead) {
+        return cleanUpLeash(level, pos, null, dropLead);
+    }
+
+    /**
+     * Clears the leash owned by a crank. When a worker UUID is known, resolve
+     * that exact entity through the server index first so cleanup does not
+     * depend on the worker still being inside the crank's fallback search box.
+     *
+     * The direct release is deliberately guarded by the leash holder's anchor
+     * position. A delayed/stale crank cleanup must never detach a worker that
+     * has already been attached to a different crank.
+     */
+    public static InteractionResult cleanUpLeash(Level level, BlockPos pos, UUID workerUuid, boolean dropLead) {
         if (level == null || level.isClientSide()) return InteractionResult.PASS;
+
+        if (workerUuid != null && level instanceof ServerLevel serverLevel) {
+            Entity entity = serverLevel.getEntity(workerUuid);
+            if (entity instanceof Mob mob && isLeashedToKnotAt(mob, pos)) {
+                mob.dropLeash(true, dropLead);
+            }
+        }
+
         getKnot(level, pos).ifPresent(knot -> {
             List<Mob> mobs = level.getEntitiesOfClass(
                     Mob.class,
@@ -86,6 +110,12 @@ public class CHPUtils {
             knot.discard();
         });
         return InteractionResult.SUCCESS;
+    }
+
+    private static boolean isLeashedToKnotAt(Mob mob, BlockPos pos) {
+        if (!mob.isAlive() || !mob.isLeashed()) return false;
+        Entity holder = mob.getLeashHolder();
+        return holder instanceof LeashFenceKnotEntity knot && knot.blockPosition().equals(pos);
     }
 
     public static InteractionResult killLeashEntity(Level level, BlockPos pos) {

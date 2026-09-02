@@ -9,6 +9,7 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.animal.Cow;
 import net.minecraft.world.entity.animal.horse.Horse;
+import net.minecraft.world.entity.decoration.LeashFenceKnotEntity;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraftforge.gametest.GameTestHolder;
 import net.minecraftforge.gametest.PrefixGameTestTemplate;
@@ -351,6 +352,43 @@ public final class HorsePowerGameTests {
                 "Marker must be recovered when the live crank at the recorded position is a different instance");
         helper.assertFalse(horse.isNoAi(), "Recovered horse must return to NoAI=false");
         helper.assertFalse(WorkerActivityControl.hasMarker(horse), "Marker must be removed after recovery");
+        helper.succeed();
+    }
+
+    /**
+     * Leash cleanup must resolve the crank's stored worker UUID instead of
+     * relying only on the nearby-entity fallback. Workers can be pulled or
+     * teleported outside that fallback radius while their leash still points
+     * at the crank knot; detaching in that state used to leave a ghost leash.
+     */
+    @GameTest(template = "empty")
+    public static void detachReleasesAssignedWorkerOutsideCleanupRadius(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        BlockPos localCrankPos = new BlockPos(0, 1, 0);
+        BlockPos worldCrankPos = helper.absolutePos(localCrankPos);
+        helper.setBlock(localCrankPos, BlockRegister.HORSE_CRANK.get());
+        AbstractHorseCrankBlockEntity crank = requireCrank(helper, localCrankPos);
+        HorseCrankEngine engine = crank.engine();
+
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(2, 0, 2));
+        LeashFenceKnotEntity knot = LeashFenceKnotEntity.getOrCreateKnot(level, worldCrankPos);
+        horse.setLeashedTo(knot, false);
+        engine.attachWorker(horse, WorkerResolver.resolve(horse));
+
+        // CHPUtils' fallback scan is capped at MAX_MOVEMENT_RADIUS + 4 (10
+        // blocks). Move the assigned worker well beyond it while keeping the
+        // same leash holder to reproduce the stale-knot failure mode.
+        horse.setPos(worldCrankPos.getX() + 20.5D, worldCrankPos.getY(), worldCrankPos.getZ() + 0.5D);
+        helper.assertTrue(horse.isLeashed(), "Pre-condition: worker is still leashed to the crank knot");
+        helper.assertTrue(horse.getLeashHolder() == knot, "Pre-condition: crank knot is the leash holder");
+
+        engine.detachWorker(false);
+
+        helper.assertFalse(horse.isLeashed(),
+                "Detach must release the assigned worker even outside the fallback search radius");
+        helper.assertTrue(horse.getLeashHolder() == null,
+                "Detached worker must not retain a stale leash-holder reference");
+        helper.assertFalse(knot.isAlive(), "Crank knot must be discarded during detach cleanup");
         helper.succeed();
     }
 

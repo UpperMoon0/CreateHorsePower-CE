@@ -508,6 +508,7 @@ public class HorseCrankEngine {
 
     public void detachWorker(boolean dropLead) {
         Mob worker = cachedWorkerMob;
+        UUID detachedWorkerUuid = workerUuid != null ? workerUuid : worker != null ? worker.getUUID() : null;
         stopWorking();
         clearWorkerReferences();
 
@@ -517,7 +518,7 @@ public class HorseCrankEngine {
             if (state.getValue(CrankProperties.HAS_WORKER)) {
                 host.setBlockState(state.setValue(CrankProperties.HAS_WORKER, false));
             }
-            CHPUtils.cleanUpLeash(level, host.pos(), dropLead);
+            CHPUtils.cleanUpLeash(level, host.pos(), detachedWorkerUuid, dropLead);
             host.refreshKinetic();
             host.syncToClient();
             CHPApi.scripts().fireWorkerDetached(worker, host.pos(), level);
@@ -526,11 +527,12 @@ public class HorseCrankEngine {
 
     public void onCrankRemoved() {
         Mob worker = cachedWorkerMob;
+        UUID detachedWorkerUuid = workerUuid != null ? workerUuid : worker != null ? worker.getUUID() : null;
         stopWorking();
         Level level = level();
         if (level != null && !level.isClientSide()) {
-            CHPUtils.cleanUpLeash(level, host.pos(), true);
-            if (worker != null || workerUuid != null) {
+            CHPUtils.cleanUpLeash(level, host.pos(), detachedWorkerUuid, true);
+            if (worker != null || detachedWorkerUuid != null) {
                 CHPApi.scripts().fireWorkerDetached(worker, host.pos(), level);
             }
         }
