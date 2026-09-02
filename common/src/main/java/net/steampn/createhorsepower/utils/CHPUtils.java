@@ -87,20 +87,37 @@ public class CHPUtils {
      * that exact entity through the server index first so cleanup does not
      * depend on the worker still being inside the crank's fallback search box.
      *
-     * The direct release is deliberately guarded by the leash holder's anchor
-     * position. A delayed/stale crank cleanup must never detach a worker that
-     * has already been attached to a different crank.
+     * <p>The UUID-aware path is intentionally selective: it must never detach
+     * another mob merely because that mob shares the same leash knot. The knot
+     * is discarded only after the assigned worker has been handled and no other
+     * loaded mob still uses it. The legacy UUID-less overload retains bounded
+     * fallback cleanup for migration/corrupt state where exact ownership is not
+     * available.
      */
     public static InteractionResult cleanUpLeash(Level level, BlockPos pos, UUID workerUuid, boolean dropLead) {
         if (level == null || level.isClientSide()) return InteractionResult.PASS;
 
-        if (workerUuid != null && level instanceof ServerLevel serverLevel) {
-            reconcileDurableDetachPolicy(serverLevel, pos, workerUuid, dropLead);
-            Entity entity = serverLevel.getEntity(workerUuid);
-            if (entity instanceof Mob mob && isLeashedToKnotAt(mob, pos)) {
-                CHPDiagnostics.event("leash_cleanup_uuid", level, pos, null, mob, "dropLead=" + dropLead);
-                mob.dropLeash(true, dropLead);
+        if (workerUuid != null) {
+            if (level instanceof ServerLevel serverLevel) {
+                reconcileDurableDetachPolicy(serverLevel, pos, workerUuid, dropLead);
+                Entity entity = serverLevel.getEntity(workerUuid);
+                if (entity instanceof Mob mob && isLeashedToKnotAt(mob, pos)) {
+                    CHPDiagnostics.event("leash_cleanup_uuid", level, pos, null, mob, "dropLead=" + dropLead);
+                    mob.dropLeash(true, dropLead);
+                }
             }
+
+            getKnot(level, pos).ifPresent(knot -> {
+                if (hasLoadedMobAttachedToKnot(level, knot)) {
+                    CHPDiagnostics.event("leash_knot_preserved", level, pos, null, null,
+                            "reason=shared_loaded_user");
+                } else {
+                    CHPDiagnostics.event("leash_knot_discarded", level, pos, null, null,
+                            "reason=no_loaded_users");
+                    knot.discard();
+                }
+            });
+            return InteractionResult.SUCCESS;
         }
 
         getKnot(level, pos).ifPresent(knot -> {
@@ -124,6 +141,14 @@ public class CHPUtils {
         if (!mob.isAlive() || !mob.isLeashed()) return false;
         Entity holder = mob.getLeashHolder();
         return holder instanceof LeashFenceKnotEntity knot && knot.blockPosition().equals(pos);
+    }
+
+    private static boolean hasLoadedMobAttachedToKnot(Level level, LeashFenceKnotEntity knot) {
+        return !level.getEntitiesOfClass(
+                Mob.class,
+                knot.getBoundingBox().inflate(32.0D),
+                mob -> mob.isAlive() && mob.isLeashed() && mob.getLeashHolder() == knot
+        ).isEmpty();
     }
 
     /**
@@ -158,6 +183,17 @@ public class CHPUtils {
                 CHPApi.deferredDetaches().remove(level, workerUuid);
             }
             crank.engine().consumeDeferredDetachPolicy(workerUuid);
+            return;
+        }
+
+        DeferredDetachStore.Entry existing = CHPApi.deferredDetaches().get(level, workerUuid);
+        if (existing != null && !existing.matches(crankPos, crankUuid)) {
+            // A stale/foreign crank must not replace the authoritative detach
+            // intent of the crank that actually owned this unloaded worker.
+            crank.engine().consumeDeferredDetachPolicy(workerUuid);
+            CHPDiagnostics.event("deferred_detach_preserved", level, crankPos, crankUuid, null,
+                    "worker_uuid=" + workerUuid + " existing_crank=" + existing.crankUuid()
+                            + " existing_dropLead=" + existing.dropLead());
             return;
         }
 
