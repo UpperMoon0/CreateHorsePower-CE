@@ -36,6 +36,22 @@ public final class WorkerAttachmentControl {
     }
 
     public static void markAttached(Mob mob, BlockPos crankPos, UUID crankUuid) {
+        // A successful new attachment supersedes every older detach/recovery
+        // intent for this worker. Clear both the durable level record and the
+        // legacy BE-local migration record before writing new ownership.
+        if (mob.level() instanceof ServerLevel serverLevel) {
+            DeferredDetachStore.Entry stale = CHPApi.deferredDetaches().remove(serverLevel, mob.getUUID());
+            if (serverLevel.getBlockEntity(crankPos) instanceof AbstractHorseCrankBlockEntity crank
+                    && crankUuid.equals(crank.engine().crankInstanceUuid())) {
+                crank.engine().consumeDeferredDetachPolicy(mob.getUUID());
+            }
+            WorkerRecoveryQueue.cancelRecovery(mob);
+            if (stale != null) {
+                CHPDiagnostics.event("deferred_detach_superseded", serverLevel, crankPos, crankUuid, mob,
+                        "old_crank=" + stale.crankUuid() + " old_dropLead=" + stale.dropLead());
+            }
+        }
+
         CompoundTag marker = new CompoundTag();
         marker.putLong(CRANK_POS_KEY, crankPos.asLong());
         marker.putUUID(CRANK_UUID_KEY, crankUuid);

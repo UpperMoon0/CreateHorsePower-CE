@@ -35,15 +35,15 @@ public class CHPUtils {
         if (type == null) return WorkerTier.NONE;
         String key = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(type).toString();
         if (type.is(CHPTags.Entities.WORKERS_SMALL) || type.is(CHPTags.Entities.SMALL_WORKER_TAG)
-                || CHPApi.config().smallCreatures().contains(key)) {
+                || net.steampn.createhorsepower.platform.CHPApi.config().smallCreatures().contains(key)) {
             return WorkerTier.SMALL;
         }
         if (type.is(CHPTags.Entities.WORKERS_MEDIUM) || type.is(CHPTags.Entities.MEDIUM_WORKER_TAG)
-                || CHPApi.config().mediumCreatures().contains(key)) {
+                || net.steampn.createhorsepower.platform.CHPApi.config().mediumCreatures().contains(key)) {
             return WorkerTier.MEDIUM;
         }
         if (type.is(CHPTags.Entities.WORKERS_LARGE) || type.is(CHPTags.Entities.LARGE_WORKER_TAG)
-                || CHPApi.config().largeCreatures().contains(key)) {
+                || net.steampn.createhorsepower.platform.CHPApi.config().largeCreatures().contains(key)) {
             return WorkerTier.LARGE;
         }
         return WorkerTier.NONE;
@@ -87,10 +87,6 @@ public class CHPUtils {
      * that exact entity through the server index first so cleanup does not
      * depend on the worker still being inside the crank's fallback search box.
      *
-     * If that worker is unloaded, persist the caller-selected lead-drop policy
-     * in level SavedData before the crank can disappear. This makes API
-     * detach(false) durable across crank destruction/replacement.
-     *
      * The direct release is deliberately guarded by the leash holder's anchor
      * position. A delayed/stale crank cleanup must never detach a worker that
      * has already been attached to a different crank.
@@ -99,23 +95,11 @@ public class CHPUtils {
         if (level == null || level.isClientSide()) return InteractionResult.PASS;
 
         if (workerUuid != null && level instanceof ServerLevel serverLevel) {
+            reconcileDurableDetachPolicy(serverLevel, pos, workerUuid, dropLead);
             Entity entity = serverLevel.getEntity(workerUuid);
-            if (entity instanceof Mob mob) {
-                // A loaded worker no longer needs an out-of-band detach record.
-                CHPApi.deferredDetaches().remove(serverLevel, workerUuid);
-                if (isLeashedToKnotAt(mob, pos)) {
-                    CHPDiagnostics.event("leash_cleanup_uuid", level, pos, null, mob, "dropLead=" + dropLead);
-                    mob.dropLeash(true, dropLead);
-                }
-            } else if (level.getBlockEntity(pos) instanceof AbstractHorseCrankBlockEntity crank) {
-                DeferredDetachStore.Entry entry = new DeferredDetachStore.Entry(
-                        pos.immutable(),
-                        crank.engine().crankInstanceUuid(),
-                        dropLead
-                );
-                CHPApi.deferredDetaches().put(serverLevel, workerUuid, entry);
-                CHPDiagnostics.event("detach_policy_persisted", level, pos, null, null,
-                        "worker=" + workerUuid + " dropLead=" + dropLead);
+            if (entity instanceof Mob mob && isLeashedToKnotAt(mob, pos)) {
+                CHPDiagnostics.event("leash_cleanup_uuid", level, pos, null, mob, "dropLead=" + dropLead);
+                mob.dropLeash(true, dropLead);
             }
         }
 
@@ -135,10 +119,41 @@ public class CHPUtils {
         return InteractionResult.SUCCESS;
     }
 
-    private static boolean isLeashedToKnotAt(Mob mob, BlockPos pos) {
+    /** True only when the loaded mob is currently attached to a knot at {@code pos}. */
+    public static boolean isLeashedToKnotAt(Mob mob, BlockPos pos) {
         if (!mob.isAlive() || !mob.isLeashed()) return false;
         Entity holder = mob.getLeashHolder();
         return holder instanceof LeashFenceKnotEntity knot && knot.blockPosition().equals(pos);
+    }
+
+    /**
+     * Persist unloaded-worker detach semantics at level scope. This runs while
+     * the owning crank chunk is already loaded, so reading the crank instance
+     * UUID here never force-loads anything. A loaded worker is cleaned
+     * immediately instead and any obsolete durable intent is removed.
+     */
+    private static void reconcileDurableDetachPolicy(
+            ServerLevel level,
+            BlockPos crankPos,
+            UUID workerUuid,
+            boolean dropLead
+    ) {
+        Entity loaded = level.getEntity(workerUuid);
+        if (loaded instanceof Mob) {
+            CHPApi.deferredDetaches().remove(level, workerUuid);
+            return;
+        }
+
+        if (level.getBlockEntity(crankPos) instanceof AbstractHorseCrankBlockEntity crank) {
+            UUID crankUuid = crank.engine().crankInstanceUuid();
+            CHPApi.deferredDetaches().put(
+                    level,
+                    workerUuid,
+                    new DeferredDetachStore.Entry(crankPos, crankUuid, dropLead)
+            );
+            CHPDiagnostics.event("deferred_detach_persisted", level, crankPos, crankUuid, null,
+                    "worker_uuid=" + workerUuid + " dropLead=" + dropLead);
+        }
     }
 
     public static InteractionResult killLeashEntity(Level level, BlockPos pos) {

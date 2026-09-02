@@ -53,8 +53,15 @@ def ALLOWED_ADAPTERS = [
         'net/steampn/createhorsepower/config/Config.java',
         'net/steampn/createhorsepower/compat/OptionalIntegrations.java',
         'net/steampn/createhorsepower/gametest/HorsePowerGameTests.java',
+        'net/steampn/createhorsepower/gametest/HorsePowerLifecycleGameTests.java',
         // Registry + registration glue (loader-specific registries)
         'net/steampn/createhorsepower/registry/CHPCreativeTabs.java'
+] as Set
+// Exact one-loader source files. Keep these narrow: broad packages belong in
+// PLATFORM_ONLY_PREFIXES only when the entire integration is loader-specific.
+def PLATFORM_ONLY_SOURCES = [
+        'net/steampn/createhorsepower/platform/ForgeDeferredDetachStore.java',
+        'net/steampn/createhorsepower/platform/NeoForgeDeferredDetachStore.java'
 ] as Set
 def PLATFORM_ONLY_PREFIXES = [
         // NeoForge-only integrations and data generation APIs.
@@ -86,7 +93,8 @@ tasks.register('verifySharedSources') {
 
         union.each { path ->
             if (!nf.contains(path) || !forge.contains(path)) {
-                if (!PLATFORM_ONLY_PREFIXES.any { path.startsWith(it) }) {
+                if (!PLATFORM_ONLY_SOURCES.contains(path)
+                        && !PLATFORM_ONLY_PREFIXES.any { path.startsWith(it) }) {
                     def platform = nf.contains(path) ? 'NeoForge' : 'Forge'
                     problems << "Platform-only source is not explicitly allowlisted: ${platform}/${path}\n" +
                             "  Move loader-neutral code to /common or add a narrowly scoped platform-only entry."

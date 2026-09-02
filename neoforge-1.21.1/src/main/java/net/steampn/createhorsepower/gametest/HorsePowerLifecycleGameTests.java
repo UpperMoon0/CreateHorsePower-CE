@@ -17,13 +17,16 @@ import net.minecraft.world.phys.AABB;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 import net.steampn.createhorsepower.blocks.crank.AbstractHorseCrankBlockEntity;
+import net.steampn.createhorsepower.blocks.crank.CrankProperties;
 import net.steampn.createhorsepower.blocks.crank.HorseCrankEngine;
+import net.steampn.createhorsepower.blocks.crank.HorseCrankInteractions;
 import net.steampn.createhorsepower.blocks.crank.WorkerActivityControl;
 import net.steampn.createhorsepower.blocks.crank.WorkerAttachmentControl;
 import net.steampn.createhorsepower.blocks.crank.WorkerRecoveryQueue;
 import net.steampn.createhorsepower.content.path.PathEvaluator;
 import net.steampn.createhorsepower.content.stats.WorkerResolver;
 import net.steampn.createhorsepower.platform.CHPApi;
+import net.steampn.createhorsepower.platform.DeferredDetachStore;
 import net.steampn.createhorsepower.registry.BlockRegister;
 
 import java.util.UUID;
@@ -122,6 +125,99 @@ public final class HorsePowerLifecycleGameTests {
                     "timed-out recovery must terminate instead of remaining pending forever");
             helper.succeed();
         });
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 20)
+    public static void recoveryTimeoutAgeSurvivesWorkerReload(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(2, 1, 2));
+        BlockPos oldCrankPos = horse.blockPosition().offset(1024, 0, 1024);
+        UUID oldCrankUuid = UUID.randomUUID();
+
+        helper.assertFalse(level.hasChunkAt(oldCrankPos), "old crank chunk must begin unloaded");
+        helper.assertTrue(WorkerActivityControl.acquire(horse, oldCrankPos, oldCrankUuid),
+                "fixture must create CHP-owned NoAI state");
+        WorkerRecoveryQueue.enqueue(horse, level);
+        WorkerRecoveryQueue.advanceRecoveryAgeForTesting(horse, 600L);
+
+        CompoundTag savedWorker = new CompoundTag();
+        horse.saveWithoutId(savedWorker);
+        UUID workerUuid = horse.getUUID();
+        horse.discard();
+
+        Horse reloaded = EntityType.HORSE.create(level);
+        helper.assertTrue(reloaded != null, "horse must be creatable for recovery reload regression");
+        reloaded.load(savedWorker);
+        level.addFreshEntity(reloaded);
+        WorkerRecoveryQueue.enqueue(reloaded, level);
+        helper.assertTrue(WorkerRecoveryQueue.recoveryAgeForTesting(reloaded, level.getGameTime()) >= 600L,
+                "recovery age must survive worker unload/reload instead of resetting to zero");
+        WorkerRecoveryQueue.advanceRecoveryAgeForTesting(reloaded, 600L);
+
+        helper.runAfterDelay(2, () -> {
+            WorkerRecoveryQueue.process(level);
+            helper.assertFalse(level.hasChunkAt(oldCrankPos),
+                    "reload-spanning timeout must not force-load the old crank chunk");
+            helper.assertFalse(WorkerActivityControl.hasMarker(reloaded),
+                    "600 + reload + 600 ticks must expire the CHP activity marker");
+            helper.assertFalse(reloaded.isNoAi(),
+                    "reload-spanning timeout must restore CHP-owned NoAI");
+            helper.assertFalse(WorkerRecoveryQueue.isPendingForTesting(workerUuid),
+                    "reload-spanning timeout must terminate recovery");
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 20)
+    public static void staleLoadedAssignmentCanBeRepairedWithoutStealingForeignLeash(GameTestHelper helper) {
+        BlockPos localCrankPos = new BlockPos(0, 1, 0);
+        helper.setBlock(localCrankPos, BlockRegister.HORSE_CRANK.get());
+        AbstractHorseCrankBlockEntity crank = requireCrank(helper, localCrankPos);
+        ServerLevel level = helper.getLevel();
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(2, 1, 2));
+
+        crank.engine().setWorkerUuidForTesting(horse.getUUID());
+        level.setBlock(crank.getBlockPos(), crank.getBlockState().setValue(CrankProperties.HAS_WORKER, true), 3);
+
+        BlockPos foreignKnotPos = crank.getBlockPos().offset(4, 0, 0);
+        LeashFenceKnotEntity foreignKnot = LeashFenceKnotEntity.getOrCreateKnot(level, foreignKnotPos);
+        horse.setLeashedTo(foreignKnot, true);
+
+        boolean repaired = HorseCrankInteractions.repairStaleAssignmentBeforeAttach(
+                level, crank.getBlockPos(), level.getBlockState(crank.getBlockPos()));
+        helper.assertTrue(repaired,
+                "loaded worker re-leashed away from the crank must be treated as a stale assignment");
+        helper.assertFalse(level.getBlockState(crank.getBlockPos()).getValue(CrankProperties.HAS_WORKER),
+                "stale assignment repair must clear the ghost HAS_WORKER state immediately");
+        helper.assertTrue(horse.getLeashHolder() == foreignKnot && foreignKnot.isAlive(),
+                "stale crank cleanup must preserve the worker's new foreign leash");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 20)
+    public static void newAttachmentSupersedesDurableDetachIntent(GameTestHelper helper) {
+        BlockPos localCrankPos = new BlockPos(0, 1, 0);
+        helper.setBlock(localCrankPos, BlockRegister.HORSE_CRANK.get());
+        AbstractHorseCrankBlockEntity crank = requireCrank(helper, localCrankPos);
+        ServerLevel level = helper.getLevel();
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(2, 1, 2));
+        UUID workerUuid = horse.getUUID();
+        UUID crankUuid = crank.engine().crankInstanceUuid();
+
+        CHPApi.deferredDetaches().put(level, workerUuid,
+                new DeferredDetachStore.Entry(crank.getBlockPos(), crankUuid, false));
+        WorkerActivityControl.acquire(horse, crank.getBlockPos(), crankUuid);
+        WorkerRecoveryQueue.enqueue(horse, level);
+        WorkerAttachmentControl.markAttached(horse, crank.getBlockPos(), crankUuid);
+
+        helper.assertTrue(CHPApi.deferredDetaches().get(level, workerUuid) == null,
+                "successful new attachment must consume obsolete durable detach intent");
+        helper.assertFalse(WorkerRecoveryQueue.isPendingForTesting(workerUuid),
+                "successful new attachment must cancel obsolete queued recovery");
+        helper.assertTrue(WorkerAttachmentControl.hasMarker(horse)
+                        && crankUuid.equals(WorkerAttachmentControl.markerCrankUuid(horse)),
+                "successful new attachment must write fresh current ownership");
+        helper.succeed();
     }
 
     @GameTest(template = "empty")
