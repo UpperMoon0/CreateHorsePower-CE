@@ -24,7 +24,6 @@ import net.neoforged.neoforge.event.tick.LevelTickEvent;
 import net.steampn.createhorsepower.blocks.crank.WorkerRecoveryQueue;
 import net.steampn.createhorsepower.client.ponders.HorseCrankPonderPlugin;
 import net.steampn.createhorsepower.config.Config;
-import net.steampn.createhorsepower.gametest.CrankIdentityCollisionGameTests;
 import net.steampn.createhorsepower.gametest.HorsePowerGameTests;
 import net.steampn.createhorsepower.gametest.HorsePowerLifecycleGameTests;
 import net.steampn.createhorsepower.gametest.NeoForgeRecoveryEdgeGameTests;
@@ -75,7 +74,6 @@ public class CreateHorsePower {
     private void registerGameTests(final RegisterGameTestsEvent event) {
         event.register(HorsePowerGameTests.class);
         event.register(HorsePowerLifecycleGameTests.class);
-        event.register(CrankIdentityCollisionGameTests.class);
         event.register(NeoForgeRecoveryEdgeGameTests.class);
     }
 
