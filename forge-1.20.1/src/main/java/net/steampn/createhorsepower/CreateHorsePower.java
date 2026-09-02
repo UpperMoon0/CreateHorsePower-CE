@@ -25,6 +25,7 @@ import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import net.steampn.createhorsepower.blocks.crank.WorkerRecoveryQueue;
 import net.steampn.createhorsepower.compat.OptionalIntegrations;
 import net.steampn.createhorsepower.config.Config;
+import net.steampn.createhorsepower.gametest.CrankIdentityCollisionGameTests;
 import net.steampn.createhorsepower.gametest.ForgeRecoveryEdgeGameTests;
 import net.steampn.createhorsepower.gametest.HorsePowerGameTests;
 import net.steampn.createhorsepower.gametest.HorsePowerLifecycleGameTests;
@@ -79,6 +80,7 @@ public class CreateHorsePower {
     private void registerGameTests(final RegisterGameTestsEvent event) {
         event.register(HorsePowerGameTests.class);
         event.register(HorsePowerLifecycleGameTests.class);
+        event.register(CrankIdentityCollisionGameTests.class);
         event.register(ForgeRecoveryEdgeGameTests.class);
     }
 
