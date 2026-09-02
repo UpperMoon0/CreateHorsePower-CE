@@ -3,10 +3,13 @@ package net.steampn.createhorsepower.blocks.crank;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.decoration.LeashFenceKnotEntity;
 import net.minecraft.world.phys.Vec3;
 
 import net.steampn.createhorsepower.CHPConstants;
+import net.steampn.createhorsepower.utils.CHPUtils;
 
 import org.jetbrains.annotations.Nullable;
 
@@ -233,22 +236,28 @@ public final class WorkerActivityControl {
             return false;
         }
 
-        if (!(level.getBlockEntity(crankPos) instanceof AbstractHorseCrankBlockEntity crank)) {
-            return releaseFromMarker(mob);
+        AbstractHorseCrankBlockEntity liveCrank =
+                level.getBlockEntity(crankPos) instanceof AbstractHorseCrankBlockEntity crank ? crank : null;
+
+        boolean stillOwned = liveCrank != null
+                && expectedUuid.equals(liveCrank.engine().crankInstanceUuid())
+                && liveCrank.engine().isAssignedWorker(mob.getUUID());
+        if (stillOwned) {
+            return false;
         }
 
-        if (!expectedUuid.equals(crank.engine().crankInstanceUuid())) {
-            return releaseFromMarker(mob);
+        // CE.2 and older workers have no dedicated attachment marker. When
+        // this recovery runs post-tick, the AI marker's crank position is
+        // enough to clean a stale persisted leash without hard-coding TFC.
+        Entity holder = mob.getLeashHolder();
+        if (holder instanceof LeashFenceKnotEntity knot && knot.blockPosition().equals(crankPos)) {
+            mob.dropLeash(true, true);
+            if (knot.isAlive() && !CHPUtils.hasAttachedWorker(level, crankPos)) {
+                knot.discard();
+            }
         }
 
-        // Same real crank still exists; if it claims this exact mob, leave
-        // the marker alone. Otherwise the crank has been reassigned and the
-        // marker is stale.
-        if (!crank.engine().isAssignedWorker(mob.getUUID())) {
-            return releaseFromMarker(mob);
-        }
-
-        return false;
+        return releaseFromMarker(mob);
     }
 
     public static void clearHorizontalVelocity(Mob mob) {

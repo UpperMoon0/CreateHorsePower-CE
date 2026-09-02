@@ -3,6 +3,7 @@ package net.steampn.createhorsepower.gametest;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.EntityType;
@@ -16,10 +17,12 @@ import net.minecraftforge.gametest.PrefixGameTestTemplate;
 import net.steampn.createhorsepower.blocks.crank.AbstractHorseCrankBlockEntity;
 import net.steampn.createhorsepower.blocks.crank.HorseCrankEngine;
 import net.steampn.createhorsepower.blocks.crank.WorkerActivityControl;
+import net.steampn.createhorsepower.blocks.crank.WorkerAttachmentControl;
 import net.steampn.createhorsepower.blocks.crank.WorkerOrbitMovement;
 import net.steampn.createhorsepower.content.stats.WorkerResolver;
 import net.steampn.createhorsepower.registry.BlockRegister;
 import net.steampn.createhorsepower.registry.TileEntityRegister;
+import net.steampn.createhorsepower.utils.CHPUtils;
 
 import java.util.UUID;
 
@@ -390,6 +393,74 @@ public final class HorsePowerGameTests {
                 "Detached worker must not retain a stale leash-holder reference");
         helper.assertFalse(knot.isAlive(), "Crank knot must be discarded during detach cleanup");
         helper.succeed();
+    }
+
+
+    /**
+     * Full persisted-leash regression: save a crank-controlled horse while its
+     * chunk is conceptually unloaded, detach the crank while the entity is
+     * absent, then reload the horse. Vanilla restores the saved BlockPos leash
+     * by recreating a knot; CHP must recover after that restoration and remove
+     * both the stale leash and now-unused knot.
+     */
+    @GameTest(template = "empty")
+    public static void reloadedWorkerDoesNotRecreateGhostCrankLeash(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        BlockPos localCrankPos = new BlockPos(0, 1, 0);
+        BlockPos worldCrankPos = helper.absolutePos(localCrankPos);
+        helper.setBlock(localCrankPos, BlockRegister.HORSE_CRANK.get());
+        AbstractHorseCrankBlockEntity crank = requireCrank(helper, localCrankPos);
+        HorseCrankEngine engine = crank.engine();
+
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(2, 0, 2));
+        LeashFenceKnotEntity knot = LeashFenceKnotEntity.getOrCreateKnot(level, worldCrankPos);
+        horse.setLeashedTo(knot, false);
+        engine.attachWorker(horse, WorkerResolver.resolve(horse));
+        engine.controlWorkerAiForTesting(horse);
+        helper.assertTrue(WorkerAttachmentControl.hasMarker(horse),
+                "Pre-condition: attached worker must carry persistent attachment ownership");
+        helper.assertTrue(WorkerActivityControl.hasMarker(horse),
+                "Pre-condition: controlled worker must also carry the AI marker");
+
+        CompoundTag saved = horse.saveWithoutId(new CompoundTag());
+        UUID workerUuid = horse.getUUID();
+
+        // Simulate the worker chunk being absent when the crank is detached.
+        horse.discard();
+        engine.setCachedWorkerMobForTesting(null);
+        engine.detachWorker(false);
+        helper.assertTrue(CHPUtils.getKnot(level, worldCrankPos).isEmpty(),
+                "Detach clears the currently loaded knot even though the worker is absent");
+
+        Horse reloaded = EntityType.HORSE.create(level);
+        if (reloaded == null) {
+            throw new AssertionError("Failed to recreate saved horse");
+        }
+        reloaded.load(saved);
+        helper.assertTrue(reloaded.getUUID().equals(workerUuid), "Reload must preserve the worker UUID");
+        helper.assertTrue(WorkerAttachmentControl.hasMarker(reloaded),
+                "Reloaded worker must retain attachment ownership before recovery");
+        helper.assertTrue(WorkerActivityControl.hasMarker(reloaded),
+                "Reloaded worker must retain AI ownership before recovery");
+        level.addFreshEntity(reloaded);
+
+        // EntityJoin queues recovery. The first mob tick restores the delayed
+        // leash/knot from NBT; the post-level-tick queue then removes it.
+        helper.runAfterDelay(3, () -> {
+            helper.assertFalse(reloaded.isLeashed(),
+                    "Reloaded orphan worker must not remain leashed to the old crank position");
+            helper.assertTrue(reloaded.getLeashHolder() == null,
+                    "Reloaded orphan worker must have no stale leash holder");
+            helper.assertFalse(WorkerAttachmentControl.hasMarker(reloaded),
+                    "Recovery must consume stale attachment ownership");
+            helper.assertFalse(WorkerActivityControl.hasMarker(reloaded),
+                    "Recovery must consume the stale AI marker");
+            helper.assertFalse(reloaded.isNoAi(),
+                    "Recovery must restore the worker's original NoAI=false state");
+            helper.assertTrue(CHPUtils.getKnot(level, worldCrankPos).isEmpty(),
+                    "Recovery must remove the unused knot recreated from saved leash data");
+            helper.succeed();
+        });
     }
 
     /**

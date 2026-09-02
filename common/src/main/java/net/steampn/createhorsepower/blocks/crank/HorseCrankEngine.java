@@ -447,6 +447,7 @@ public class HorseCrankEngine {
         if (WorkerActivityControl.hasForeignMarker(worker, crankInstanceUuid)) {
             WorkerActivityControl.releaseFromMarker(worker);
         }
+        WorkerAttachmentControl.markAttached(worker, host.pos(), crankInstanceUuid);
         this.cachedWorkerMob = worker;
         this.workerUuid = worker.getUUID();
         this.lastKnownWorkerPos = worker.blockPosition();
@@ -519,6 +520,7 @@ public class HorseCrankEngine {
                 host.setBlockState(state.setValue(CrankProperties.HAS_WORKER, false));
             }
             CHPUtils.cleanUpLeash(level, host.pos(), detachedWorkerUuid, dropLead);
+            clearLoadedAttachmentMarker(level, detachedWorkerUuid, worker);
             host.refreshKinetic();
             host.syncToClient();
             CHPApi.scripts().fireWorkerDetached(worker, host.pos(), level);
@@ -532,11 +534,29 @@ public class HorseCrankEngine {
         Level level = level();
         if (level != null && !level.isClientSide()) {
             CHPUtils.cleanUpLeash(level, host.pos(), detachedWorkerUuid, true);
+            clearLoadedAttachmentMarker(level, detachedWorkerUuid, worker);
             if (worker != null || detachedWorkerUuid != null) {
                 CHPApi.scripts().fireWorkerDetached(worker, host.pos(), level);
             }
         }
         clearWorkerReferences();
+    }
+
+    private void clearLoadedAttachmentMarker(Level level, UUID workerUuid, @Nullable Mob cachedWorker) {
+        Mob loadedWorker = null;
+        if (workerUuid != null && level instanceof ServerLevel serverLevel) {
+            // The server entity index is authoritative; a cached reference may
+            // already represent an entity that was saved and unloaded.
+            Entity entity = serverLevel.getEntity(workerUuid);
+            if (entity instanceof Mob mob) {
+                loadedWorker = mob;
+            }
+        } else if (cachedWorker != null) {
+            loadedWorker = cachedWorker;
+        }
+        if (loadedWorker != null) {
+            WorkerAttachmentControl.clearIfOwnedBy(loadedWorker, crankInstanceUuid);
+        }
     }
 
     private void clearWorkerReferences() {

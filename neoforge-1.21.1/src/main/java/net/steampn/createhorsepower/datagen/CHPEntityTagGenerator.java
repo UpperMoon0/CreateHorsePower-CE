@@ -4,6 +4,7 @@ import net.minecraft.core.HolderLookup;
 import net.minecraft.data.PackOutput;
 import net.minecraft.data.tags.EntityTypeTagsProvider;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.resources.ResourceLocation;
 import net.neoforged.neoforge.common.data.ExistingFileHelper;
 import net.steampn.createhorsepower.utils.CHPTags;
 import org.jetbrains.annotations.Nullable;
@@ -30,7 +31,10 @@ public class CHPEntityTagGenerator extends EntityTypeTagsProvider {
                 .addTag(CHPTags.Entities.WORKERS_MEDIUM);
 
         this.tag(CHPTags.Entities.WORKERS_LARGE)
-                .add(EntityType.HORSE, EntityType.DONKEY, EntityType.MULE, EntityType.CAMEL, EntityType.SKELETON_HORSE, EntityType.ZOMBIE_HORSE);
+                .add(EntityType.HORSE, EntityType.DONKEY, EntityType.MULE, EntityType.CAMEL, EntityType.SKELETON_HORSE, EntityType.ZOMBIE_HORSE)
+                .addOptional(ResourceLocation.fromNamespaceAndPath("tfc", "horse"))
+                .addOptional(ResourceLocation.fromNamespaceAndPath("tfc", "donkey"))
+                .addOptional(ResourceLocation.fromNamespaceAndPath("tfc", "mule"));
         this.tag(CHPTags.Entities.LARGE_WORKER_TAG)
                 .addTag(CHPTags.Entities.WORKERS_LARGE);
     }

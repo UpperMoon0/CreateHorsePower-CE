@@ -10,6 +10,7 @@ import net.minecraft.world.item.CreativeModeTab;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.event.RegisterGameTestsEvent;
+import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.EntityJoinLevelEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -19,7 +20,7 @@ import net.minecraftforge.fml.config.ModConfig;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
-import net.steampn.createhorsepower.blocks.crank.WorkerActivityControl;
+import net.steampn.createhorsepower.blocks.crank.WorkerRecoveryQueue;
 import net.steampn.createhorsepower.compat.OptionalIntegrations;
 import net.steampn.createhorsepower.config.Config;
 import net.steampn.createhorsepower.gametest.HorsePowerGameTests;
@@ -75,24 +76,26 @@ public class CreateHorsePower {
     }
 
     /**
-     * When a mob with a CHP AI-suppression marker loads into a server level,
-     * recover it if the owning crank has actually disappeared. The recovery
-     * is conservative: it never force-loads chunks, never recovers a marker
-     * that still belongs to a live crank, and never treats a different
-     * crank at the same coordinates as the same owner.
+     * Queue marked workers at join time, but do not recover them yet. In
+     * vanilla 1.20.1 a persisted block-position leash is restored later from
+     * Mob.tick(), so join-time leash ownership is not authoritative.
      */
     @SubscribeEvent
     public void onEntityJoinLevel(EntityJoinLevelEvent event) {
         if (event.getLevel().isClientSide()) {
             return;
         }
-        if (!(event.getEntity() instanceof Mob mob)) {
-            return;
+        if (event.getEntity() instanceof Mob mob && event.getLevel() instanceof ServerLevel serverLevel) {
+            WorkerRecoveryQueue.enqueue(mob, serverLevel);
         }
-        if (!(event.getLevel() instanceof ServerLevel serverLevel)) {
-            return;
+    }
+
+    /** Run deferred recovery after all entities in the level have ticked. */
+    @SubscribeEvent
+    public void onLevelTick(TickEvent.LevelTickEvent event) {
+        if (event.phase == TickEvent.Phase.END && event.level instanceof ServerLevel serverLevel) {
+            WorkerRecoveryQueue.process(serverLevel);
         }
-        WorkerActivityControl.recoverIfOrphaned(mob, serverLevel);
     }
 
     public static ResourceLocation asResource(String path) {

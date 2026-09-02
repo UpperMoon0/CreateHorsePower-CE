@@ -21,7 +21,8 @@ import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterGameTestsEvent;
 import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
-import net.steampn.createhorsepower.blocks.crank.WorkerActivityControl;
+import net.neoforged.neoforge.event.tick.LevelTickEvent;
+import net.steampn.createhorsepower.blocks.crank.WorkerRecoveryQueue;
 import net.steampn.createhorsepower.client.ponders.HorseCrankPonderPlugin;
 import net.steampn.createhorsepower.config.Config;
 import net.steampn.createhorsepower.gametest.HorsePowerGameTests;
@@ -77,24 +78,26 @@ public class CreateHorsePower {
     }
 
     /**
-     * When a mob with a CHP AI-suppression marker loads into a server level,
-     * recover it if the owning crank has actually disappeared. The recovery
-     * is conservative: it never force-loads chunks, never recovers a marker
-     * that still belongs to a live crank, and never treats a different
-     * crank at the same coordinates as the same owner.
+     * Queue marked workers at join time. Vanilla 1.21.1 keeps a restored leash
+     * as delayed BlockPos data until Leashable.tickLeash(), so join-time
+     * getLeashHolder() is intentionally not trusted.
      */
     @SubscribeEvent
     public void onEntityJoinLevel(EntityJoinLevelEvent event) {
         if (event.getLevel().isClientSide()) {
             return;
         }
-        if (!(event.getEntity() instanceof Mob mob)) {
-            return;
+        if (event.getEntity() instanceof Mob mob && event.getLevel() instanceof ServerLevel serverLevel) {
+            WorkerRecoveryQueue.enqueue(mob, serverLevel);
         }
-        if (!(event.getLevel() instanceof ServerLevel serverLevel)) {
-            return;
+    }
+
+    /** Run deferred recovery after vanilla has completed the level's entity ticks. */
+    @SubscribeEvent
+    public void onLevelTick(LevelTickEvent.Post event) {
+        if (event.getLevel() instanceof ServerLevel serverLevel) {
+            WorkerRecoveryQueue.process(serverLevel);
         }
-        WorkerActivityControl.recoverIfOrphaned(mob, serverLevel);
     }
 
     @SubscribeEvent
