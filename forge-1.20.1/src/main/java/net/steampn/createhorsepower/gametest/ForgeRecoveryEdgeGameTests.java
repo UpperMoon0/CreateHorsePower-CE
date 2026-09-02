@@ -214,6 +214,47 @@ public final class ForgeRecoveryEdgeGameTests {
         helper.succeed();
     }
 
+    @GameTest(template = "empty", timeoutTicks = 20)
+    public static void attachmentTimeoutPreservesForeignActivityWithClonedUuid(GameTestHelper helper) {
+        BlockPos localCurrentCrank = new BlockPos(0, 1, 0);
+        helper.setBlock(localCurrentCrank, BlockRegister.HORSE_CRANK.get());
+        AbstractHorseCrankBlockEntity currentCrank = requireCrank(helper, localCurrentCrank);
+        ServerLevel level = helper.getLevel();
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(2, 1, 2));
+        UUID clonedUuid = UUID.randomUUID();
+        BlockPos staleAttachmentPos = horse.blockPosition().offset(1024, 0, 1024);
+
+        helper.assertFalse(level.hasChunkAt(staleAttachmentPos),
+                "stale attachment crank chunk must begin unloaded");
+        currentCrank.engine().setCrankInstanceUuidForTesting(clonedUuid);
+        currentCrank.engine().setWorkerUuidForTesting(horse.getUUID());
+        helper.assertTrue(WorkerActivityControl.acquire(horse, currentCrank.getBlockPos(), clonedUuid),
+                "current crank fixture must own the worker's activity suppression");
+        WorkerAttachmentControl.markAttached(horse, staleAttachmentPos, clonedUuid);
+        WorkerRecoveryQueue.enqueue(horse, level);
+        WorkerRecoveryQueue.expireForTesting(horse.getUUID());
+
+        helper.runAfterDelay(3, () -> {
+            WorkerRecoveryQueue.process(level);
+            helper.assertFalse(WorkerAttachmentControl.hasMarker(horse),
+                    "timed-out stale attachment marker must be removed");
+            helper.assertTrue(WorkerActivityControl.isOwnedBy(
+                            horse, currentCrank.getBlockPos(), clonedUuid),
+                    "attachment timeout must preserve a different-position activity owner even with the same UUID");
+            helper.assertTrue(horse.isNoAi(),
+                    "attachment timeout must not restore AI while the current crank still owns suppression");
+            helper.assertFalse(WorkerRecoveryQueue.isPendingForTesting(horse.getUUID()),
+                    "timed-out stale attachment recovery must leave the queue");
+            helper.assertFalse(level.hasChunkAt(staleAttachmentPos),
+                    "timeout must not force-load the stale attachment crank chunk");
+
+            WorkerActivityControl.release(horse, true);
+            helper.assertFalse(horse.isNoAi(),
+                    "explicit current-owner cleanup must still restore the original AI state");
+            helper.succeed();
+        });
+    }
+
     private static AbstractHorseCrankBlockEntity requireCrank(GameTestHelper helper, BlockPos localPos) {
         BlockEntity blockEntity = helper.getBlockEntity(localPos);
         helper.assertTrue(blockEntity instanceof AbstractHorseCrankBlockEntity,
