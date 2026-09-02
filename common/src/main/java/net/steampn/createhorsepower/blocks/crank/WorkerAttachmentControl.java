@@ -94,15 +94,23 @@ public final class WorkerAttachmentControl {
 
         BlockPos crankPos = markerCrankPos(mob);
         UUID crankUuid = markerCrankUuid(mob);
+        DeferredDetachStore.Entry durable = CHPApi.deferredDetaches().get(level, mob.getUUID());
         if (crankPos == null || crankUuid == null) {
             CHPDiagnostics.warnInvariant("malformed_attachment_marker", level, crankPos,
                     "worker=" + mob.getUUID());
+
+            // A level-scoped durable detach has complete ownership/drop policy
+            // even when an old/corrupt worker marker does not. Honor that
+            // stronger record rather than silently losing detach(false).
+            if (durable != null) {
+                releasePersistedCrankLeash(mob, level, durable.crankPos(), durable.dropLead());
+                releaseActivityIfOwnedBy(mob, durable.crankUuid());
+                CHPApi.deferredDetaches().remove(level, mob.getUUID());
+            }
             mob.getPersistentData().remove(MARKER_KEY);
-            CHPApi.deferredDetaches().remove(level, mob.getUUID());
             return RecoveryResult.RECOVERED;
         }
 
-        DeferredDetachStore.Entry durable = CHPApi.deferredDetaches().get(level, mob.getUUID());
         if (durable != null && durable.matches(crankPos, crankUuid)) {
             releasePersistedCrankLeash(mob, level, crankPos, durable.dropLead());
             releaseActivityIfOwnedBy(mob, crankUuid);
@@ -142,7 +150,7 @@ public final class WorkerAttachmentControl {
             AbstractHorseCrankBlockEntity crank = (AbstractHorseCrankBlockEntity) level.getBlockEntity(crankPos);
             crank.engine().consumeDeferredDetachPolicy(mob.getUUID());
         }
-        CHPApi.deferredDetaches().remove(level, mob.getUUID());
+        removeDurableIfOwnedBy(level, mob.getUUID(), crankPos, crankUuid);
         CHPDiagnostics.event("attachment_recovered", level, crankPos, crankUuid, mob,
                 "dropLead=" + dropLead + " legacy_deferred_policy=" + hasLegacyDeferredPolicy);
         mob.getPersistentData().remove(MARKER_KEY);
@@ -157,7 +165,15 @@ public final class WorkerAttachmentControl {
      */
     public static void recoverAfterTimeout(Mob mob, ServerLevel level) {
         if (!hasMarker(mob)) {
-            CHPApi.deferredDetaches().remove(level, mob.getUUID());
+            // Activity-only recovery may coexist with a durable record from a
+            // different crank. Consume it only when the remaining activity
+            // marker proves ownership.
+            removeDurableIfOwnedBy(
+                    level,
+                    mob.getUUID(),
+                    WorkerActivityControl.markerCrankPos(mob),
+                    WorkerActivityControl.markerCrankUuid(mob)
+            );
             return;
         }
 
@@ -169,7 +185,7 @@ public final class WorkerAttachmentControl {
         if (crankUuid != null) {
             releaseActivityIfOwnedBy(mob, crankUuid);
         }
-        CHPApi.deferredDetaches().remove(level, mob.getUUID());
+        removeDurableIfOwnedBy(level, mob.getUUID(), crankPos, crankUuid);
         mob.getPersistentData().remove(MARKER_KEY);
         CHPDiagnostics.event("attachment_recovery_timeout", level, crankPos, crankUuid, mob,
                 "dropLead=true old_chunk_force_loaded=false");
@@ -178,6 +194,21 @@ public final class WorkerAttachmentControl {
     private static void releaseActivityIfOwnedBy(Mob mob, UUID crankUuid) {
         if (crankUuid.equals(WorkerActivityControl.markerCrankUuid(mob))) {
             WorkerActivityControl.releaseFromMarker(mob);
+        }
+    }
+
+    private static void removeDurableIfOwnedBy(
+            ServerLevel level,
+            UUID workerUuid,
+            @Nullable BlockPos crankPos,
+            @Nullable UUID crankUuid
+    ) {
+        if (crankPos == null || crankUuid == null) {
+            return;
+        }
+        DeferredDetachStore.Entry durable = CHPApi.deferredDetaches().get(level, workerUuid);
+        if (durable != null && durable.matches(crankPos, crankUuid)) {
+            CHPApi.deferredDetaches().remove(level, workerUuid);
         }
     }
 
