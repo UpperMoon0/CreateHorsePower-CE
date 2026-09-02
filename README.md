@@ -55,7 +55,7 @@ The full [Packmaker and Modder Guide](docs/PACKMAKERS.md) documents:
 
 - `createhorsepower:worker_stats` and `createhorsepower:path_stats` NeoForge Data Maps (NeoForge 1.21.1; on Forge 1.20.1 canonical worker/path behavior is provided by the platform layer and can be extended or tuned through supported tags and server configuration — NeoForge Data Maps and KubeJS profile registration are not available on Forge yet).
 - Worker, attachment-item, and leash tags (available on both versions).
-- Server configuration, including the CE.3 visual-gait and debug-logging settings.
+- Server configuration, including the 1.2.1 visual-gait and debug-logging settings.
 - Built-in optional TerraFirmaCraft worker/path defaults and precedence behavior.
 - KubeJS startup registration and server lifecycle events (NeoForge 1.21.1 only for now).
 - Migration behavior from CE 1.1.
@@ -70,14 +70,14 @@ On NeoForge 1.21.1, KubeJS profiles override Data Maps, which override built-in 
 - Update any prerelease worker profile above a 6-block movement radius before loading it in 1.2; out-of-range Data Map or KubeJS values are rejected.
 - Back up important worlds before changing mod versions.
 
-### CE 1.2.0-ce.3 maintenance notes
+### 1.2.1 maintenance notes
 
 - Unloaded detach intent and recovery timeout age now persist across save/unload/reload, including `detachWorker(false)` no-drop semantics.
 - Orphan recovery waits for vanilla leash restoration and removes only the stale crank-owned leash/knot; it does not force-load the old crank chunk or steal a worker already attached elsewhere.
 - Visual orbit speed is configured separately from generated RPM through `workers.workerGroundSpeedScale`, `workers.minWorkerGroundSpeed`, and `workers.maxWorkerGroundSpeed`.
 - `diagnostics.debugLogging` is off by default and emits transition-oriented diagnostics rather than per-tick movement spam.
 
-See the [1.2.0-ce.3 release notes](changelog/1.21.1-1.2.0-ce.3.md) for NeoForge 1.21.1 and the [Forge 1.20.1 1.2.0-ce.3 release notes](changelog/1.20.1-1.2.0-ce.3.md) for the Forge port.
+See the [1.2.1 release notes](changelog/1.21.1-1.2.1.md) for NeoForge 1.21.1 and the [Forge 1.20.1 1.2.1 release notes](changelog/1.20.1-1.2.1.md) for the Forge port.
 
 ## Building
 
