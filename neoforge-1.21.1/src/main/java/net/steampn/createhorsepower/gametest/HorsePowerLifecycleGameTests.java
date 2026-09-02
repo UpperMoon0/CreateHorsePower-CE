@@ -280,6 +280,51 @@ public final class HorsePowerLifecycleGameTests {
         helper.succeed();
     }
 
+    @GameTest(template = "empty", timeoutTicks = 20)
+    public static void staleCrankDetachPreservesNewCrankActivityOwnership(GameTestHelper helper) {
+        BlockPos localCrankA = new BlockPos(0, 1, 0);
+        BlockPos localCrankB = new BlockPos(4, 1, 0);
+        helper.setBlock(localCrankA, BlockRegister.HORSE_CRANK.get());
+        helper.setBlock(localCrankB, BlockRegister.HORSE_CRANK.get());
+        HorseCrankEngine engineA = requireCrank(helper, localCrankA).engine();
+        HorseCrankEngine engineB = requireCrank(helper, localCrankB).engine();
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(2, 1, 2));
+
+        engineA.setWorkerUuidForTesting(horse.getUUID());
+        engineA.setCachedWorkerMobForTesting(horse);
+        engineA.controlWorkerAiForTesting(horse);
+        helper.assertTrue(engineA.crankInstanceUuid().equals(WorkerActivityControl.markerCrankUuid(horse)),
+                "fixture crank A must initially own the activity marker");
+        helper.assertTrue(horse.isNoAi(), "fixture crank A must suppress worker AI");
+
+        WorkerActivityControl.releaseFromMarker(horse);
+        engineB.setWorkerUuidForTesting(horse.getUUID());
+        engineB.setCachedWorkerMobForTesting(horse);
+        engineB.controlWorkerAiForTesting(horse);
+        UUID newOwner = engineB.crankInstanceUuid();
+        helper.assertTrue(newOwner.equals(WorkerActivityControl.markerCrankUuid(horse)),
+                "fixture crank B must replace crank A as current activity owner");
+        helper.assertTrue(horse.isNoAi(), "new crank must own the active NoAI transition");
+
+        engineA.detachWorker(false);
+
+        helper.assertTrue(newOwner.equals(WorkerActivityControl.markerCrankUuid(horse)),
+                "stale crank A cleanup must not clear crank B's newer activity marker");
+        helper.assertTrue(horse.isNoAi(),
+                "stale crank A cleanup must not restore NoAI while crank B still owns the transition");
+        helper.assertFalse(engineA.ownsWorkerActivityMarkerForTesting(),
+                "stale crank A must relinquish only its local marker bookkeeping");
+        helper.assertTrue(engineB.ownsWorkerActivityMarkerForTesting(),
+                "current crank B must retain its local ownership bookkeeping");
+
+        engineB.detachWorker(false);
+        helper.assertFalse(WorkerActivityControl.hasMarker(horse),
+                "current crank B cleanup must still release its own marker normally");
+        helper.assertFalse(horse.isNoAi(),
+                "current crank B cleanup must restore the worker's original NoAI=false state");
+        helper.succeed();
+    }
+
     @GameTest(template = "empty")
     public static void tfcHorseAndTerrainHaveBuiltinCompatibility(GameTestHelper helper) {
         EntityType<?> tfcHorse = BuiltInRegistries.ENTITY_TYPE.get(CHPApi.id("tfc", "horse"));
