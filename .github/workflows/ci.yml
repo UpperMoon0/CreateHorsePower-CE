@@ -77,22 +77,15 @@ jobs:
       - name: Make Gradle executable
         run: chmod +x ./gradlew
 
-      # Build already includes this platform's JUnit suite. Keep it separate
-      # from the GameTest invocation so a compile/unit failure never boots a
-      # Minecraft server, while the second invocation reuses the same workspace
-      # outputs and Gradle user-home state.
-      - name: Build and run unit tests
+      # Request build first (including this platform's JUnit suite) and then the
+      # real-game suite in one Gradle invocation. Gradle stops on the first
+      # failure unless --continue is requested, so compile/unit failures still
+      # prevent a Minecraft server boot while avoiding a second configuration.
+      # All GameTests share one server boot for this loader.
+      - name: Build, unit tests and Minecraft GameTests
         env:
           PROJECT: ${{ matrix.project }}
-        run: ./gradlew ":${PROJECT}:build" --stacktrace --no-daemon
-
-      # One real-game boot per supported loader. All lifecycle/integration
-      # scenarios share that single server boot; do not split them into extra
-      # jobs/tests because server bootstrap dominates runtime.
-      - name: Run Minecraft GameTests
-        env:
-          PROJECT: ${{ matrix.project }}
-        run: ./gradlew ":${PROJECT}:runGameTestServer" --stacktrace --no-daemon
+        run: ./gradlew ":${PROJECT}:build" ":${PROJECT}:runGameTestServer" --stacktrace --no-daemon
 
       - name: Upload failure diagnostics
         if: failure()
