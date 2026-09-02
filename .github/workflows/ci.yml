@@ -41,9 +41,10 @@ jobs:
         run: chmod +x ./gradlew
 
       # Fail fast on cheap cross-version drift before paying for either full
-      # Minecraft toolchain/bootstrap. These tasks do not run platform builds.
+      # Minecraft toolchain/bootstrap. Configuration-on-demand keeps this root-
+      # only file comparison from configuring Forge/NeoForge subprojects.
       - name: Verify shared source and resource parity
-        run: ./gradlew verifySharedSources verifySharedResources --stacktrace --no-daemon
+        run: ./gradlew verifySharedSources verifySharedResources --configure-on-demand --stacktrace --no-daemon
 
   platform-runtime:
     name: ${{ matrix.name }} build + GameTests
