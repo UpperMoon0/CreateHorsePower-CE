@@ -51,7 +51,7 @@ Execution Lifecycle:
   Server-authoritative visual orbit gait (independent speed budget)
 ```
 
-Worker/path resolution differs by loader; see [Precedence Rules](#precedence-rules). Since CE.3, visible gait is deliberately independent from generated RPM: path/output multipliers can increase mechanical output without making animals sprint unrealistically fast.
+Worker/path resolution differs by loader; see [Precedence Rules](#precedence-rules). Since 1.2.1, visible gait is deliberately independent from generated RPM: path/output multipliers can increase mechanical output without making animals sprint unrealistically fast.
 
 ---
 
@@ -112,7 +112,7 @@ Copying a NeoForge datapack into Forge 1.20.1 without renaming `tags/item` → `
 | `requires_tamed` | Boolean | `false` | Require a tame worker. |
 | `allow_baby` | Boolean | `false` | Allow baby workers. |
 
-`speed_scaling` affects mechanical output only. CE.3 visual gait uses the separate server settings under `[workers]` documented below.
+`speed_scaling` affects mechanical output only. The 1.2.1 visual gait uses the separate server settings under `[workers]` documented below.
 
 ### Path Stats Data Map (`createhorsepower:path_stats`)
 
@@ -286,7 +286,7 @@ TerraFirmaCraft is **not** a published hard dependency. CE's compatibility is re
 
 ### Workers
 
-CE.3 includes built-in TFC defaults for these IDs when they exist:
+Version 1.2.1 includes built-in TFC defaults for these IDs when they exist:
 
 - `tfc:horse`
 - `tfc:donkey`
@@ -350,7 +350,7 @@ largeCreatures = ["minecraft:horse"]
     requireTamedHorse = false
     allowUndeadWorkers = true
 
-    # CE.3 visual gait controls. These do not change generated RPM.
+    # 1.2.1 visual gait controls. These do not change generated RPM.
     workerGroundSpeedScale = 10.0
     minWorkerGroundSpeed = 0.8
     maxWorkerGroundSpeed = 3.5
@@ -438,7 +438,7 @@ For live incident debugging, enable `diagnostics.debugLogging`, reproduce the at
 
 All 1.1 root keys (`creatureRPMRange`, `largeCreatureStressRange`, `poorPathBlock`, etc.) remain at the root of `createhorsepower-server.toml`. Existing configs load without a reset.
 
-CE.3 adds these non-breaking defaults:
+Version 1.2.1 adds these non-breaking defaults:
 
 - `workers.workerGroundSpeedScale = 10.0`
 - `workers.minWorkerGroundSpeed = 0.8`
@@ -463,6 +463,6 @@ Pre-1.2 Horse Cranks have no saved redstone mode and migrate to `IGNORE`, preser
 
 Version 1.2 accepts radii from `0.5` through `6.0` blocks. Values above 6 are rejected because normal Minecraft leads cannot reliably support larger circles. Update any older prerelease Data Map/KubeJS profile above 6 before loading it.
 
-### 5. CE.3 worker ownership and leash recovery
+### 5. 1.2.1 worker ownership and leash recovery
 
-CE.3 persists attachment ownership separately from temporary AI suppression. If a worker is unloaded when it is detached, the detach policy is stored at level scope and recovered after vanilla restores the worker's persisted leash. Recovery is bounded, does not force-load the old crank chunk, preserves foreign/current leashes, and keeps `detachWorker(false)` no-drop behavior across save/unload/reload.
+Version 1.2.1 persists attachment ownership separately from temporary AI suppression. If a worker is unloaded when it is detached, the detach policy is stored at level scope and recovered after vanilla restores the worker's persisted leash. Recovery is bounded, does not force-load the old crank chunk, preserves foreign/current leashes, and keeps `detachWorker(false)` no-drop behavior across save/unload/reload.
