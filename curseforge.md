@@ -61,13 +61,13 @@ On NeoForge 1.21.1, KubeJS profiles take priority over NeoForge Data Maps, which
 - Existing cranks preserve the old redstone-ignored behavior; newly placed cranks use the configured default mode.
 - Built-in vanilla worker and path Data Maps (NeoForge) take precedence over old tier and path settings. Override those Data Maps or use KubeJS to retune them.
 - Update any prerelease worker profile above a 6-block movement radius before loading it in 1.2; out-of-range Data Map or KubeJS values are rejected.
-- CE.3 adds `workers.workerGroundSpeedScale`, `workers.minWorkerGroundSpeed`, `workers.maxWorkerGroundSpeed`, and `diagnostics.debugLogging`; their defaults are safe for existing worlds.
+- Version 1.2.1 adds `workers.workerGroundSpeedScale`, `workers.minWorkerGroundSpeed`, `workers.maxWorkerGroundSpeed`, and `diagnostics.debugLogging`; their defaults are safe for existing worlds.
 - Back up important worlds before updating.
 
 Full release details:
 
-- NeoForge 1.21.1 — [1.2.0-ce.3 changelog](https://github.com/UpperMoon0/CreateHorsePower-CE/blob/main/changelog/1.21.1-1.2.0-ce.3.md)
-- Forge 1.20.1 — [1.2.0-ce.3 changelog](https://github.com/UpperMoon0/CreateHorsePower-CE/blob/main/changelog/1.20.1-1.2.0-ce.3.md)
+- NeoForge 1.21.1 — [1.2.1 changelog](https://github.com/UpperMoon0/CreateHorsePower-CE/blob/main/changelog/1.21.1-1.2.1.md)
+- Forge 1.20.1 — [1.2.1 changelog](https://github.com/UpperMoon0/CreateHorsePower-CE/blob/main/changelog/1.20.1-1.2.1.md)
 
 ## Credits
 
