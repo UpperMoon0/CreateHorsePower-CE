@@ -7,14 +7,19 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.animal.horse.Horse;
+import net.minecraft.world.entity.decoration.LeashFenceKnotEntity;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.AABB;
 import net.minecraftforge.gametest.GameTestHolder;
 import net.minecraftforge.gametest.PrefixGameTestTemplate;
+import net.steampn.createhorsepower.blocks.crank.AbstractHorseCrankBlockEntity;
+import net.steampn.createhorsepower.blocks.crank.HorseCrankEngine;
 import net.steampn.createhorsepower.blocks.crank.WorkerActivityControl;
 import net.steampn.createhorsepower.blocks.crank.WorkerAttachmentControl;
 import net.steampn.createhorsepower.blocks.crank.WorkerRecoveryQueue;
+import net.steampn.createhorsepower.platform.CHPApi;
+import net.steampn.createhorsepower.registry.BlockRegister;
 
 import java.util.UUID;
 
@@ -58,6 +63,41 @@ public final class ForgeRecoveryEdgeGameTests {
                     "a stale CHP marker without serialized vanilla leash data must not manufacture a lead");
             helper.succeed();
         });
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 20)
+    public static void unloadedDetachKeepsOnlyLevelScopedPolicy(GameTestHelper helper) {
+        BlockPos localCrankPos = new BlockPos(0, 1, 0);
+        helper.setBlock(localCrankPos, BlockRegister.HORSE_CRANK.get());
+        var blockEntity = helper.getBlockEntity(localCrankPos);
+        helper.assertTrue(blockEntity instanceof AbstractHorseCrankBlockEntity,
+                "expected a horse crank block entity for deferred-policy regression");
+        AbstractHorseCrankBlockEntity crank = (AbstractHorseCrankBlockEntity) blockEntity;
+        HorseCrankEngine engine = crank.engine();
+        ServerLevel level = helper.getLevel();
+
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(2, 1, 2));
+        LeashFenceKnotEntity knot = LeashFenceKnotEntity.getOrCreateKnot(level, crank.getBlockPos());
+        horse.setLeashedTo(knot, true);
+        UUID workerUuid = horse.getUUID();
+        engine.setWorkerUuidForTesting(workerUuid);
+        engine.setCachedWorkerMobForTesting(horse);
+        WorkerAttachmentControl.markAttached(horse, crank.getBlockPos(), engine.crankInstanceUuid());
+
+        horse.discard();
+        engine.setCachedWorkerMobForTesting(null);
+        engine.detachWorker(false);
+
+        var durable = CHPApi.deferredDetaches().get(level, workerUuid);
+        helper.assertTrue(durable != null
+                        && durable.matches(crank.getBlockPos(), engine.crankInstanceUuid())
+                        && !durable.dropLead(),
+                "unloaded detach(false) must retain the authoritative level-scoped no-drop policy");
+        helper.assertFalse(engine.hasDeferredDetachPolicy(workerUuid),
+                "new unloaded detaches must not retain a duplicate BE-local legacy policy");
+
+        CHPApi.deferredDetaches().remove(level, workerUuid);
+        helper.succeed();
     }
 
     @GameTest(template = "empty", timeoutTicks = 20, batch = "chp_recovery_shutdown")
