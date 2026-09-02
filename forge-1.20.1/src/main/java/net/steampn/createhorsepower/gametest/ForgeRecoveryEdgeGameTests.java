@@ -60,7 +60,7 @@ public final class ForgeRecoveryEdgeGameTests {
         });
     }
 
-    @GameTest(template = "empty", timeoutTicks = 20)
+    @GameTest(template = "empty", timeoutTicks = 20, batch = "chp_recovery_shutdown")
     public static void transientRecoveryClearDropsPendingReferenceButKeepsClock(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
         Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(2, 1, 2));
