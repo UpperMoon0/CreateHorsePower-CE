@@ -35,6 +35,13 @@ repositories {
         name = "Modrinth"
         url = "https://api.modrinth.com/maven"
     }
+    maven {
+        name = "CurseMaven"
+        url = "https://www.cursemaven.com"
+        content {
+            includeGroup "curse.maven"
+        }
+    }
     maven { url = "https://jitpack.io" }
 }
 
@@ -152,6 +159,11 @@ dependencies {
     // KubeJS
     compileOnly("dev.latvian.mods:kubejs-neoforge:2101.7.2-build.368")
     localRuntime("dev.latvian.mods:kubejs-neoforge:2101.7.2-build.368")
+
+    // TFC is optional for users, but installed in dev runs for compatibility testing.
+    // CurseMaven does not publish transitive metadata, so include TFC's required Patchouli dependency explicitly.
+    localRuntime("curse.maven:terrafirmacraft-302973:8762354") // TFC 1.21.1-4.2.9
+    localRuntime("vazkii.patchouli:Patchouli:1.21.1-92-NEOFORGE")
 
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
