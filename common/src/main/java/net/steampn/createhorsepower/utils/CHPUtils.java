@@ -9,7 +9,10 @@ import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.decoration.LeashFenceKnotEntity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
+import net.steampn.createhorsepower.blocks.crank.AbstractHorseCrankBlockEntity;
 import net.steampn.createhorsepower.content.stats.WorkerStats;
+import net.steampn.createhorsepower.platform.CHPApi;
+import net.steampn.createhorsepower.platform.DeferredDetachStore;
 
 import java.util.List;
 import java.util.Optional;
@@ -32,15 +35,15 @@ public class CHPUtils {
         if (type == null) return WorkerTier.NONE;
         String key = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(type).toString();
         if (type.is(CHPTags.Entities.WORKERS_SMALL) || type.is(CHPTags.Entities.SMALL_WORKER_TAG)
-                || net.steampn.createhorsepower.platform.CHPApi.config().smallCreatures().contains(key)) {
+                || CHPApi.config().smallCreatures().contains(key)) {
             return WorkerTier.SMALL;
         }
         if (type.is(CHPTags.Entities.WORKERS_MEDIUM) || type.is(CHPTags.Entities.MEDIUM_WORKER_TAG)
-                || net.steampn.createhorsepower.platform.CHPApi.config().mediumCreatures().contains(key)) {
+                || CHPApi.config().mediumCreatures().contains(key)) {
             return WorkerTier.MEDIUM;
         }
         if (type.is(CHPTags.Entities.WORKERS_LARGE) || type.is(CHPTags.Entities.LARGE_WORKER_TAG)
-                || net.steampn.createhorsepower.platform.CHPApi.config().largeCreatures().contains(key)) {
+                || CHPApi.config().largeCreatures().contains(key)) {
             return WorkerTier.LARGE;
         }
         return WorkerTier.NONE;
@@ -84,6 +87,10 @@ public class CHPUtils {
      * that exact entity through the server index first so cleanup does not
      * depend on the worker still being inside the crank's fallback search box.
      *
+     * If that worker is unloaded, persist the caller-selected lead-drop policy
+     * in level SavedData before the crank can disappear. This makes API
+     * detach(false) durable across crank destruction/replacement.
+     *
      * The direct release is deliberately guarded by the leash holder's anchor
      * position. A delayed/stale crank cleanup must never detach a worker that
      * has already been attached to a different crank.
@@ -93,9 +100,22 @@ public class CHPUtils {
 
         if (workerUuid != null && level instanceof ServerLevel serverLevel) {
             Entity entity = serverLevel.getEntity(workerUuid);
-            if (entity instanceof Mob mob && isLeashedToKnotAt(mob, pos)) {
-                CHPDiagnostics.event("leash_cleanup_uuid", level, pos, null, mob, "dropLead=" + dropLead);
-                mob.dropLeash(true, dropLead);
+            if (entity instanceof Mob mob) {
+                // A loaded worker no longer needs an out-of-band detach record.
+                CHPApi.deferredDetaches().remove(serverLevel, workerUuid);
+                if (isLeashedToKnotAt(mob, pos)) {
+                    CHPDiagnostics.event("leash_cleanup_uuid", level, pos, null, mob, "dropLead=" + dropLead);
+                    mob.dropLeash(true, dropLead);
+                }
+            } else if (level.getBlockEntity(pos) instanceof AbstractHorseCrankBlockEntity crank) {
+                DeferredDetachStore.Entry entry = new DeferredDetachStore.Entry(
+                        pos.immutable(),
+                        crank.engine().crankInstanceUuid(),
+                        dropLead
+                );
+                CHPApi.deferredDetaches().put(serverLevel, workerUuid, entry);
+                CHPDiagnostics.event("detach_policy_persisted", level, pos, null, null,
+                        "worker=" + workerUuid + " dropLead=" + dropLead);
             }
         }
 

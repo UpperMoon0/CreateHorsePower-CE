@@ -139,7 +139,10 @@ public class PathEvaluator {
             return Optional.of(new PathStats((float) CHPApi.config().poorMultiplier(), 0.90f));
         }
 
-        return Optional.empty();
+        // Canonical built-ins are the final fallback. This is what gives
+        // optional families such as TFC's generated grass/dirt/rock variants
+        // sensible defaults without requiring them in every loader config.
+        return BuiltinProfiles.path(block);
     }
 
     private static String blockBuiltInKey(Block block) {

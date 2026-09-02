@@ -75,6 +75,41 @@ public final class BuiltinProfiles {
     }
 
     public static Optional<PathStats> path(Block block) {
-        return Optional.ofNullable(PATHS.get(block));
+        PathStats exact = PATHS.get(block);
+        if (exact != null) {
+            return Optional.of(exact);
+        }
+        String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(block).toString();
+        return optionalPath(id);
+    }
+
+    /**
+     * TFC generates families of soil/rock blocks under stable registry path
+     * prefixes (for example tfc:grass/alfisol and tfc:rock/gravel/basalt).
+     * Prefix matching covers every rock/soil variant without a compile-time TFC dependency.
+     */
+    static Optional<PathStats> optionalPath(String blockId) {
+        if (blockId == null || !blockId.startsWith("tfc:")) {
+            return Optional.empty();
+        }
+        if (blockId.startsWith("tfc:grass/")
+                || blockId.startsWith("tfc:dirt/")
+                || blockId.startsWith("tfc:clay_grass/")
+                || blockId.startsWith("tfc:clay/")) {
+            return Optional.of(DIRT);
+        }
+        if (blockId.startsWith("tfc:rock/gravel/")) {
+            return Optional.of(GRAVEL);
+        }
+        if (blockId.startsWith("tfc:rock/cobble/")
+                || blockId.startsWith("tfc:rock/mossy_cobble/")) {
+            return Optional.of(PathStats.NORMAL);
+        }
+        if (blockId.startsWith("tfc:rock/smooth/")
+                || blockId.startsWith("tfc:rock/bricks/")
+                || blockId.startsWith("tfc:rock/mossy_bricks/")) {
+            return Optional.of(PathStats.GREAT);
+        }
+        return Optional.empty();
     }
 }

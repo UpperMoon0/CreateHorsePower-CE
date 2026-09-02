@@ -3,11 +3,9 @@ package net.steampn.createhorsepower;
 import com.mojang.logging.LogUtils;
 import com.simibubi.create.foundation.data.CreateRegistrate;
 import net.createmod.ponder.foundation.PonderIndex;
-import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Mob;
-import net.minecraft.world.item.CreativeModeTab;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -26,6 +24,7 @@ import net.steampn.createhorsepower.blocks.crank.WorkerRecoveryQueue;
 import net.steampn.createhorsepower.client.ponders.HorseCrankPonderPlugin;
 import net.steampn.createhorsepower.config.Config;
 import net.steampn.createhorsepower.gametest.HorsePowerGameTests;
+import net.steampn.createhorsepower.gametest.HorsePowerLifecycleGameTests;
 import net.steampn.createhorsepower.registry.BlockRegister;
 import net.steampn.createhorsepower.registry.TileEntityRegister;
 import net.steampn.createhorsepower.utils.CHPBlockPartials;
@@ -43,7 +42,8 @@ public class CreateHorsePower {
     public CreateHorsePower(IEventBus modEventBus, ModContainer modContainer){
         net.steampn.createhorsepower.platform.CHPApi.init(new net.steampn.createhorsepower.config.Config(),
                 net.steampn.createhorsepower.compat.OptionalIntegrations.INSTANCE,
-                ResourceLocation::fromNamespaceAndPath);
+                ResourceLocation::fromNamespaceAndPath,
+                new net.steampn.createhorsepower.platform.NeoForgeDeferredDetachStore());
 
         CREATE_REGISTRATE.addDataGenerator(com.tterrag.registrate.providers.ProviderType.LANG, provider -> {
             PonderIndex.addPlugin(new HorseCrankPonderPlugin());
@@ -70,6 +70,7 @@ public class CreateHorsePower {
 
     private void registerGameTests(final RegisterGameTestsEvent event) {
         event.register(HorsePowerGameTests.class);
+        event.register(HorsePowerLifecycleGameTests.class);
     }
 
     @SubscribeEvent

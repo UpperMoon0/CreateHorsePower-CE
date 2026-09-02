@@ -7,8 +7,10 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.decoration.LeashFenceKnotEntity;
 import net.steampn.createhorsepower.CHPConstants;
-import net.steampn.createhorsepower.utils.CHPUtils;
+import net.steampn.createhorsepower.platform.CHPApi;
+import net.steampn.createhorsepower.platform.DeferredDetachStore;
 import net.steampn.createhorsepower.utils.CHPDiagnostics;
+import net.steampn.createhorsepower.utils.CHPUtils;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.UUID;
@@ -67,9 +69,10 @@ public final class WorkerAttachmentControl {
     }
 
     /**
-     * Recovers a persisted leash after vanilla has restored its delayed knot reference.
-     * Never force-loads the old crank chunk and never drops a leash that now belongs
-     * to a player or a different knot.
+     * Recovers a persisted leash after vanilla has had at least one entity tick
+     * to restore delayed leash data. Explicit unloaded-detach records are level
+     * SavedData and can be resolved without the old crank chunk. Ambiguous
+     * orphan state is deferred so a still-valid owner gets a chance to load.
      */
     public static RecoveryResult recoverIfOrphaned(Mob mob, ServerLevel level) {
         if (!hasMarker(mob)) return RecoveryResult.NONE;
@@ -80,10 +83,22 @@ public final class WorkerAttachmentControl {
             CHPDiagnostics.warnInvariant("malformed_attachment_marker", level, crankPos,
                     "worker=" + mob.getUUID());
             mob.getPersistentData().remove(MARKER_KEY);
+            CHPApi.deferredDetaches().remove(level, mob.getUUID());
             return RecoveryResult.RECOVERED;
         }
 
-        // Never force-load the old crank solely to resolve recovery state.
+        DeferredDetachStore.Entry durable = CHPApi.deferredDetaches().get(level, mob.getUUID());
+        if (durable != null && durable.matches(crankPos, crankUuid)) {
+            releasePersistedCrankLeash(mob, level, crankPos, durable.dropLead(), false);
+            releaseActivityIfOwnedBy(mob, crankUuid);
+            CHPApi.deferredDetaches().remove(level, mob.getUUID());
+            mob.getPersistentData().remove(MARKER_KEY);
+            CHPDiagnostics.event("attachment_recovered", level, crankPos, crankUuid, mob,
+                    "dropLead=" + durable.dropLead() + " durable_policy=true");
+            return RecoveryResult.RECOVERED;
+        }
+
+        // Never force-load the old crank solely to resolve ambiguous recovery state.
         if (!level.hasChunkAt(crankPos)) {
             return RecoveryResult.DEFERRED;
         }
@@ -95,30 +110,86 @@ public final class WorkerAttachmentControl {
             return RecoveryResult.VALID;
         }
 
+        // Backward-compatible migration path for worlds written before the
+        // level SavedData store existed. New detach requests are persisted at level scope.
         boolean dropLead = true;
-        boolean hasDeferredPolicy = level.getBlockEntity(crankPos) instanceof AbstractHorseCrankBlockEntity crank
+        boolean hasLegacyDeferredPolicy = level.getBlockEntity(crankPos) instanceof AbstractHorseCrankBlockEntity crank
                 && crankUuid.equals(crank.engine().crankInstanceUuid())
                 && crank.engine().hasDeferredDetachPolicy(mob.getUUID());
-        if (hasDeferredPolicy) {
+        if (hasLegacyDeferredPolicy) {
             AbstractHorseCrankBlockEntity crank = (AbstractHorseCrankBlockEntity) level.getBlockEntity(crankPos);
             dropLead = crank.engine().deferredDetachDropLead(mob.getUUID());
         }
 
-        Entity holder = mob.getLeashHolder();
-        if (holder instanceof LeashFenceKnotEntity knot && knot.blockPosition().equals(crankPos)) {
-            mob.dropLeash(true, dropLead);
-            if (knot.isAlive() && !CHPUtils.hasAttachedWorker(level, crankPos)) {
-                knot.discard();
-            }
-        }
+        releasePersistedCrankLeash(mob, level, crankPos, dropLead, true);
 
-        if (hasDeferredPolicy) {
+        if (hasLegacyDeferredPolicy) {
             AbstractHorseCrankBlockEntity crank = (AbstractHorseCrankBlockEntity) level.getBlockEntity(crankPos);
             crank.engine().consumeDeferredDetachPolicy(mob.getUUID());
         }
+        CHPApi.deferredDetaches().remove(level, mob.getUUID());
         CHPDiagnostics.event("attachment_recovered", level, crankPos, crankUuid, mob,
-                "dropLead=" + dropLead + " deferred_policy=" + hasDeferredPolicy);
+                "dropLead=" + dropLead + " legacy_deferred_policy=" + hasLegacyDeferredPolicy);
         mob.getPersistentData().remove(MARKER_KEY);
         return RecoveryResult.RECOVERED;
+    }
+
+    /**
+     * Bounded orphan fallback. It deliberately performs no block-entity lookup
+     * and therefore cannot force-load the old crank chunk. A foreign/current
+     * leash is preserved; otherwise CHP's persisted crank leash is relinquished
+     * with the documented orphan default of dropping the lead.
+     */
+    public static void recoverAfterTimeout(Mob mob, ServerLevel level) {
+        if (!hasMarker(mob)) {
+            CHPApi.deferredDetaches().remove(level, mob.getUUID());
+            return;
+        }
+
+        BlockPos crankPos = markerCrankPos(mob);
+        UUID crankUuid = markerCrankUuid(mob);
+        if (crankPos != null) {
+            releasePersistedCrankLeash(mob, level, crankPos, true, false);
+        }
+        if (crankUuid != null) {
+            releaseActivityIfOwnedBy(mob, crankUuid);
+        }
+        CHPApi.deferredDetaches().remove(level, mob.getUUID());
+        mob.getPersistentData().remove(MARKER_KEY);
+        CHPDiagnostics.event("attachment_recovery_timeout", level, crankPos, crankUuid, mob,
+                "dropLead=true old_chunk_force_loaded=false");
+    }
+
+    private static void releaseActivityIfOwnedBy(Mob mob, UUID crankUuid) {
+        if (crankUuid.equals(WorkerActivityControl.markerCrankUuid(mob))) {
+            WorkerActivityControl.releaseFromMarker(mob);
+        }
+    }
+
+    private static void releasePersistedCrankLeash(
+            Mob mob,
+            ServerLevel level,
+            BlockPos crankPos,
+            boolean dropLead,
+            boolean mayInspectOldChunk
+    ) {
+        Entity holder = mob.getLeashHolder();
+        if (holder instanceof LeashFenceKnotEntity knot && knot.blockPosition().equals(crankPos)) {
+            mob.dropLeash(true, dropLead);
+            if (mayInspectOldChunk && knot.isAlive() && !CHPUtils.hasAttachedWorker(level, crankPos)) {
+                knot.discard();
+            }
+            return;
+        }
+
+        if (holder == null) {
+            // In both supported vanilla lines a persisted BlockPos leash can be
+            // present while getLeashHolder() is still null. Replacing it with a
+            // non-networked temporary holder before dropLeash clears that delayed
+            // leash state without resolving or force-loading the old knot chunk.
+            mob.setLeashedTo(mob, false);
+            mob.dropLeash(true, dropLead);
+        }
+        // A non-matching live holder belongs to someone/something else; preserve it.
     }
 }

@@ -12,10 +12,11 @@ import java.util.UUID;
 
 /** Defers worker recovery until vanilla has completed at least one entity tick. */
 public final class WorkerRecoveryQueue {
-    private record Pending(Mob mob, ServerLevel level, int initialTickCount) {}
+    private record Pending(Mob mob, ServerLevel level, int initialTickCount, long enqueuedGameTime) {}
     private static final Map<UUID, Pending> PENDING = new HashMap<>();
     private static final Map<UUID, Long> NEXT_DEFERRED_LOG = new HashMap<>();
     private static final long DEFERRED_REMINDER_TICKS = 1200L;
+    public static final long RECOVERY_TIMEOUT_TICKS = 1200L;
 
     private WorkerRecoveryQueue() {}
 
@@ -27,9 +28,13 @@ public final class WorkerRecoveryQueue {
         return gameTime + DEFERRED_REMINDER_TICKS;
     }
 
+    public static boolean isRecoveryExpired(long enqueuedGameTime, long gameTime) {
+        return gameTime - enqueuedGameTime >= RECOVERY_TIMEOUT_TICKS;
+    }
+
     public static void enqueue(Mob mob, ServerLevel level) {
         if (!WorkerAttachmentControl.hasMarker(mob) && !WorkerActivityControl.hasMarker(mob)) return;
-        PENDING.put(mob.getUUID(), new Pending(mob, level, mob.tickCount));
+        PENDING.put(mob.getUUID(), new Pending(mob, level, mob.tickCount, level.getGameTime()));
         NEXT_DEFERRED_LOG.put(mob.getUUID(), 0L);
         CHPDiagnostics.event("recovery_enqueued", level, WorkerAttachmentControl.markerCrankPos(mob),
                 WorkerAttachmentControl.markerCrankUuid(mob), mob, "tick=" + mob.tickCount);
@@ -66,8 +71,28 @@ public final class WorkerRecoveryQueue {
                     && !level.hasChunkAt(activityCrankPos);
 
             boolean deferred = attachment == WorkerAttachmentControl.RecoveryResult.DEFERRED || activityDeferred;
+            long now = level.getGameTime();
+            if (deferred && isRecoveryExpired(pending.enqueuedGameTime(), now)) {
+                BlockPos recoveryPos = WorkerAttachmentControl.markerCrankPos(mob) != null
+                        ? WorkerAttachmentControl.markerCrankPos(mob)
+                        : activityCrankPos;
+                UUID recoveryCrank = WorkerAttachmentControl.markerCrankUuid(mob) != null
+                        ? WorkerAttachmentControl.markerCrankUuid(mob)
+                        : WorkerActivityControl.markerCrankUuid(mob);
+
+                // No old-crank block/chunk lookup is allowed below this point.
+                WorkerAttachmentControl.recoverAfterTimeout(mob, level);
+                if (WorkerActivityControl.hasMarker(mob)) {
+                    WorkerActivityControl.releaseFromMarker(mob);
+                }
+                CHPDiagnostics.event("recovery_timeout", level, recoveryPos, recoveryCrank, mob,
+                        "age_ticks=" + (now - pending.enqueuedGameTime()) + " old_chunk_force_loaded=false");
+                it.remove();
+                NEXT_DEFERRED_LOG.remove(entry.getKey());
+                continue;
+            }
+
             if (deferred) {
-                long now = level.getGameTime();
                 long next = NEXT_DEFERRED_LOG.getOrDefault(entry.getKey(), 0L);
                 if (shouldLogDeferred(now, next)) {
                     CHPDiagnostics.event("recovery_deferred", level,
@@ -75,7 +100,8 @@ public final class WorkerRecoveryQueue {
                                     ? WorkerAttachmentControl.markerCrankPos(mob)
                                     : activityCrankPos,
                             WorkerAttachmentControl.markerCrankUuid(mob), mob,
-                            "next_reminder_ticks=" + DEFERRED_REMINDER_TICKS);
+                            "next_reminder_ticks=" + DEFERRED_REMINDER_TICKS
+                                    + " timeout_ticks=" + RECOVERY_TIMEOUT_TICKS);
                     NEXT_DEFERRED_LOG.put(entry.getKey(), nextDeferredReminder(now));
                 }
             } else {
@@ -83,6 +109,23 @@ public final class WorkerRecoveryQueue {
                 it.remove();
                 NEXT_DEFERRED_LOG.remove(entry.getKey());
             }
+        }
+    }
+
+    public static boolean isPendingForTesting(UUID workerUuid) {
+        return PENDING.containsKey(workerUuid);
+    }
+
+    /** Moves one queued entry to the timeout boundary without advancing the world clock. */
+    public static void expireForTesting(UUID workerUuid) {
+        Pending pending = PENDING.get(workerUuid);
+        if (pending != null) {
+            PENDING.put(workerUuid, new Pending(
+                    pending.mob(),
+                    pending.level(),
+                    pending.initialTickCount(),
+                    pending.level().getGameTime() - RECOVERY_TIMEOUT_TICKS
+            ));
         }
     }
 }

@@ -25,6 +25,7 @@ import net.steampn.createhorsepower.blocks.crank.WorkerRecoveryQueue;
 import net.steampn.createhorsepower.compat.OptionalIntegrations;
 import net.steampn.createhorsepower.config.Config;
 import net.steampn.createhorsepower.gametest.HorsePowerGameTests;
+import net.steampn.createhorsepower.gametest.HorsePowerLifecycleGameTests;
 import net.steampn.createhorsepower.registry.BlockRegister;
 import net.steampn.createhorsepower.registry.CHPCreativeTabs;
 import net.steampn.createhorsepower.registry.TileEntityRegister;
@@ -43,7 +44,12 @@ public class CreateHorsePower {
     public CreateHorsePower() {
         IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
 
-        net.steampn.createhorsepower.platform.CHPApi.init(new Config(), OptionalIntegrations.INSTANCE, ResourceLocation::new);
+        net.steampn.createhorsepower.platform.CHPApi.init(
+                new Config(),
+                OptionalIntegrations.INSTANCE,
+                ResourceLocation::new,
+                new net.steampn.createhorsepower.platform.ForgeDeferredDetachStore()
+        );
 
         CREATE_REGISTRATE.registerEventListeners(modEventBus);
 
@@ -69,6 +75,7 @@ public class CreateHorsePower {
 
     private void registerGameTests(final RegisterGameTestsEvent event) {
         event.register(HorsePowerGameTests.class);
+        event.register(HorsePowerLifecycleGameTests.class);
     }
 
     @SubscribeEvent
