@@ -112,10 +112,10 @@ public class HorseCrankEngine {
     private final Map<UUID, Boolean> deferredDetachPolicies = new HashMap<>();
 
     /**
-     * Real, random, persistent identifier for this crank instance. Two
-     * cranks at the same coordinates in succession get distinct UUIDs, and
-     * saving/reloading the world preserves the same UUID for the same crank.
-     * Used to scope worker AI suppression markers.
+     * Random, persistent UUID component of this crank's identity. Saving and
+     * reloading preserves it, while replacement at the same coordinates gets a
+     * new value. Ownership always combines it with {@link Host#pos()} because
+     * vanilla /clone and NBT tooling can duplicate persisted block-entity UUIDs.
      */
     private UUID crankInstanceUuid = UUID.randomUUID();
 
@@ -268,7 +268,7 @@ public class HorseCrankEngine {
         return workerRadius;
     }
 
-    /** Persistent, real, position-independent identifier for this crank instance. */
+    /** Persistent UUID component of this crank's composite position + UUID identity. */
     public UUID crankInstanceUuid() {
         return crankInstanceUuid;
     }
@@ -479,11 +479,9 @@ public class HorseCrankEngine {
     public void attachWorker(Mob worker, WorkerResolver.ResolvedWorker profile) {
         restoreWorkerAi();
         // Defensive cleanup: only a marker from a *different* crank should be
-        // cleared on attach. If the marker belongs to this exact crank
-        // (instance UUID), the marker is meaningful state and must be left
-        // alone so the next release can still use the recorded previous
-        // NoAI.
-        if (WorkerActivityControl.hasForeignMarker(worker, crankInstanceUuid)) {
+        // cleared on attach. Position + instance UUID form the identity, so a
+        // copied crank UUID at another position is still foreign.
+        if (WorkerActivityControl.hasForeignMarker(worker, host.pos(), crankInstanceUuid)) {
             WorkerActivityControl.releaseFromMarker(worker);
         }
         WorkerAttachmentControl.markAttached(worker, host.pos(), crankInstanceUuid);
@@ -636,7 +634,7 @@ public class HorseCrankEngine {
             loadedWorker = cachedWorker;
         }
         if (loadedWorker != null) {
-            WorkerAttachmentControl.clearIfOwnedBy(loadedWorker, crankInstanceUuid);
+            WorkerAttachmentControl.clearIfOwnedBy(loadedWorker, host.pos(), crankInstanceUuid);
         }
     }
 
@@ -797,13 +795,13 @@ public class HorseCrankEngine {
 
         UUID thisCrank = crankInstanceUuid;
 
-        if (WorkerActivityControl.hasForeignMarker(mob, thisCrank)) {
+        if (WorkerActivityControl.hasForeignMarker(mob, host.pos(), thisCrank)) {
             WorkerActivityControl.releaseFromMarker(mob);
         }
 
         boolean hasOwnedMarker = ownsWorkerActivityMarker
                 && mobUuid.equals(aiSuppressedWorkerUuid)
-                && thisCrank.equals(WorkerActivityControl.markerCrankUuid(mob));
+                && WorkerActivityControl.isOwnedBy(mob, host.pos(), thisCrank);
 
         if (!hasOwnedMarker) {
             ownsWorkerAiSuppression = WorkerActivityControl.acquire(
@@ -828,8 +826,8 @@ public class HorseCrankEngine {
      * <p>When the worker cannot be resolved (it is unloaded or in another
      * chunk), local ownership is preserved so the saved marker baseline is
      * not overwritten by a later same-crank reacquisition. If the loaded
-     * worker's marker has already moved to another crank, this stale crank
-     * relinquishes only its local bookkeeping and never mutates the new
+     * worker's marker has already moved to another crank identity, this stale
+     * crank relinquishes only its local bookkeeping and never mutates the new
      * owner's marker or NoAI transition.
      */
     private void restoreWorkerAi() {
@@ -844,10 +842,12 @@ public class HorseCrankEngine {
             return;
         }
 
+        BlockPos markerPos = WorkerActivityControl.markerCrankPos(controlledWorker);
         UUID markerOwner = WorkerActivityControl.markerCrankUuid(controlledWorker);
-        if (markerOwnedByDifferentCrank(markerOwner, crankInstanceUuid)) {
+        if (markerOwnedByDifferentCrank(markerPos, markerOwner, host.pos(), crankInstanceUuid)) {
             CHPDiagnostics.event("ai_suppression_ownership_relinquished", controlledWorker.level(), host.pos(),
-                    crankInstanceUuid, controlledWorker, "current_marker_owner=" + markerOwner);
+                    crankInstanceUuid, controlledWorker,
+                    "current_marker_pos=" + markerPos + " current_marker_owner=" + markerOwner);
             ownsWorkerActivityMarker = false;
             ownsWorkerAiSuppression = false;
             aiSuppressedWorkerUuid = null;
@@ -862,8 +862,19 @@ public class HorseCrankEngine {
         host.markDirty();
     }
 
-    static boolean markerOwnedByDifferentCrank(@Nullable UUID markerOwner, UUID crankUuid) {
-        return markerOwner != null && !crankUuid.equals(markerOwner);
+    static boolean markerOwnedByDifferentCrank(
+            @Nullable BlockPos markerPos,
+            @Nullable UUID markerOwner,
+            BlockPos crankPos,
+            UUID crankUuid
+    ) {
+        if (markerOwner == null) {
+            return false;
+        }
+        if (!crankUuid.equals(markerOwner)) {
+            return true;
+        }
+        return markerPos != null && !crankPos.equals(markerPos);
     }
 
     @Nullable
