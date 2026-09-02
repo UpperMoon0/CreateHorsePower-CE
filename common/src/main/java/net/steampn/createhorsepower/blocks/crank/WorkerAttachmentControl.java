@@ -10,7 +10,6 @@ import net.steampn.createhorsepower.CHPConstants;
 import net.steampn.createhorsepower.platform.CHPApi;
 import net.steampn.createhorsepower.platform.DeferredDetachStore;
 import net.steampn.createhorsepower.utils.CHPDiagnostics;
-import net.steampn.createhorsepower.utils.CHPUtils;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.UUID;
@@ -105,7 +104,7 @@ public final class WorkerAttachmentControl {
 
         DeferredDetachStore.Entry durable = CHPApi.deferredDetaches().get(level, mob.getUUID());
         if (durable != null && durable.matches(crankPos, crankUuid)) {
-            releasePersistedCrankLeash(mob, level, crankPos, durable.dropLead(), false);
+            releasePersistedCrankLeash(mob, level, crankPos, durable.dropLead());
             releaseActivityIfOwnedBy(mob, crankUuid);
             CHPApi.deferredDetaches().remove(level, mob.getUUID());
             mob.getPersistentData().remove(MARKER_KEY);
@@ -137,7 +136,7 @@ public final class WorkerAttachmentControl {
             dropLead = crank.engine().deferredDetachDropLead(mob.getUUID());
         }
 
-        releasePersistedCrankLeash(mob, level, crankPos, dropLead, true);
+        releasePersistedCrankLeash(mob, level, crankPos, dropLead);
 
         if (hasLegacyDeferredPolicy) {
             AbstractHorseCrankBlockEntity crank = (AbstractHorseCrankBlockEntity) level.getBlockEntity(crankPos);
@@ -165,7 +164,7 @@ public final class WorkerAttachmentControl {
         BlockPos crankPos = markerCrankPos(mob);
         UUID crankUuid = markerCrankUuid(mob);
         if (crankPos != null) {
-            releasePersistedCrankLeash(mob, level, crankPos, true, false);
+            releasePersistedCrankLeash(mob, level, crankPos, true);
         }
         if (crankUuid != null) {
             releaseActivityIfOwnedBy(mob, crankUuid);
@@ -186,13 +185,19 @@ public final class WorkerAttachmentControl {
             Mob mob,
             ServerLevel level,
             BlockPos crankPos,
-            boolean dropLead,
-            boolean mayInspectOldChunk
+            boolean dropLead
     ) {
         Entity holder = mob.getLeashHolder();
         if (holder instanceof LeashFenceKnotEntity knot && knot.blockPosition().equals(crankPos)) {
             mob.dropLeash(true, dropLead);
-            if (mayInspectOldChunk && knot.isAlive() && !CHPUtils.hasAttachedWorker(level, crankPos)) {
+
+            // Vanilla may have recreated this exact knot from the worker's
+            // persisted BlockPos leash immediately before recovery. The knot
+            // object is already loaded, so checking its loaded leash users and
+            // discarding it when unused does not inspect or force-load the old
+            // crank block/chunk. This closes the final ghost-knot path without
+            // stealing a live knot that another loaded mob still uses.
+            if (knot.isAlive() && !hasLoadedMobAttachedToKnot(level, knot)) {
                 knot.discard();
             }
             return;
@@ -207,5 +212,18 @@ public final class WorkerAttachmentControl {
             mob.dropLeash(true, dropLead);
         }
         // A non-matching live holder belongs to someone/something else; preserve it.
+    }
+
+    private static boolean hasLoadedMobAttachedToKnot(ServerLevel level, LeashFenceKnotEntity knot) {
+        // This query only visits currently loaded entities. The generous radius
+        // is intentionally larger than a normal vanilla leash can remain intact,
+        // while still avoiding any block/chunk lookup at the old crank position.
+        return !level.getEntitiesOfClass(
+                Mob.class,
+                knot.getBoundingBox().inflate(32.0D),
+                candidate -> candidate.isAlive()
+                        && candidate.isLeashed()
+                        && candidate.getLeashHolder() == knot
+        ).isEmpty();
     }
 }
