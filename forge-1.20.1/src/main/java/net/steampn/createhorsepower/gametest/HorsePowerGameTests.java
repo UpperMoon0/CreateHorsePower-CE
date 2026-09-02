@@ -471,6 +471,69 @@ public final class HorsePowerGameTests {
         });
     }
 
+
+    /**
+     * Engine-level regression for workers that already had NoAI=true before
+     * the crank started controlling them. The crank must own/maintain the CHP
+     * activity marker without claiming the NoAI transition, must not rewrite
+     * that marker every working tick, and must clear it on detach while
+     * preserving the worker's original NoAI=true state.
+     */
+    @GameTest(template = "empty")
+    public static void preexistingNoAiEngineMarkerClearsOnDetach(GameTestHelper helper) {
+        BlockPos localCrankPos = new BlockPos(0, 1, 0);
+        helper.setBlock(localCrankPos, BlockRegister.HORSE_CRANK.get());
+        AbstractHorseCrankBlockEntity crank = requireCrank(helper, localCrankPos);
+        HorseCrankEngine engine = crank.engine();
+
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(2, 0, 2));
+        horse.setNoAi(true);
+        engine.setWorkerUuidForTesting(horse.getUUID());
+        engine.setCachedWorkerMobForTesting(horse);
+
+        engine.controlWorkerAiForTesting(horse);
+        helper.assertTrue(engine.ownsWorkerActivityMarkerForTesting(),
+                "Engine must own the CHP activity marker even for pre-existing NoAI");
+        helper.assertFalse(engine.ownsWorkerAiSuppressionForTesting(),
+                "Engine must not claim a pre-existing NoAI transition");
+        helper.assertTrue(WorkerActivityControl.hasMarker(horse),
+                "Pre-existing NoAI worker must carry a recoverable CHP marker");
+        helper.assertTrue(WorkerActivityControl.readPreviousNoAi(horse),
+                "Marker must preserve the original NoAI=true baseline");
+
+        CompoundTag marker = horse.getPersistentData().getCompound(WorkerActivityControl.MARKER_KEY);
+        marker.putBoolean("TestSentinel", true);
+        horse.getPersistentData().put(WorkerActivityControl.MARKER_KEY, marker);
+
+        for (int i = 0; i < 5; i++) {
+            engine.controlWorkerAiForTesting(horse);
+        }
+        helper.assertTrue(horse.getPersistentData()
+                        .getCompound(WorkerActivityControl.MARKER_KEY)
+                        .getBoolean("TestSentinel"),
+                "Repeated control must maintain the same marker instead of reacquiring/rewriting it");
+
+        CompoundTag saved = new CompoundTag();
+        engine.write(saved, false);
+        helper.assertTrue(saved.getBoolean("OwnsWorkerActivityMarker"),
+                "Marker ownership must persist across crank saves");
+        helper.assertFalse(saved.getBoolean("OwnsWorkerAiSuppression"),
+                "Saved state must keep marker ownership separate from NoAI-transition ownership");
+
+        engine.detachWorker(false);
+        helper.assertTrue(horse.isNoAi(),
+                "Detach must preserve the worker's original NoAI=true state");
+        helper.assertFalse(WorkerActivityControl.hasMarker(horse),
+                "Detach must clear this crank's CHP activity marker");
+        helper.assertFalse(engine.ownsWorkerActivityMarkerForTesting(),
+                "Engine must drop marker ownership after detach");
+        helper.assertFalse(engine.ownsWorkerAiSuppressionForTesting(),
+                "Engine must own no NoAI transition after detach");
+        helper.assertTrue(engine.aiSuppressedWorkerUuidForTesting() == null,
+                "Engine must clear the controlled worker UUID after detach");
+        helper.succeed();
+    }
+
     /**
      * Permanent-detach regression: when the engine owns worker A and A
      * becomes unresolvable (discarded/unloaded), a permanent detach must

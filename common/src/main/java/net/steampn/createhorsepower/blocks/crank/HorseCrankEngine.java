@@ -103,6 +103,9 @@ public class HorseCrankEngine {
     private long nextFallbackWorkerSearchTick = 0;
     private double workerOrbitAngle = Double.NaN;
     private double visualGroundSpeed = 0.0D;
+    /** This crank owns the persistent CHP activity marker on the worker. */
+    private boolean ownsWorkerActivityMarker = false;
+    /** This crank changed NoAI from false to true and must restore that transition. */
     private boolean ownsWorkerAiSuppression = false;
     @Nullable
     private UUID aiSuppressedWorkerUuid;
@@ -292,12 +295,17 @@ public class HorseCrankEngine {
         this.workerUuid = uuid;
     }
 
+    /** Test-only introspection: whether this crank currently owns the worker activity marker. */
+    public boolean ownsWorkerActivityMarkerForTesting() {
+        return ownsWorkerActivityMarker;
+    }
+
     /** Test-only introspection: whether this crank currently owns worker AI suppression. */
     public boolean ownsWorkerAiSuppressionForTesting() {
         return ownsWorkerAiSuppression;
     }
 
-    /** Test-only introspection: the worker UUID this crank currently suppresses AI for. */
+    /** Test-only introspection: the worker UUID whose activity marker this crank owns. */
     @Nullable
     public UUID aiSuppressedWorkerUuidForTesting() {
         return aiSuppressedWorkerUuid;
@@ -347,10 +355,12 @@ public class HorseCrankEngine {
         } else {
             compound.remove("WorkerOrbitAngle");
         }
-        if (ownsWorkerAiSuppression && aiSuppressedWorkerUuid != null) {
-            compound.putBoolean("OwnsWorkerAiSuppression", true);
+        if (ownsWorkerActivityMarker && aiSuppressedWorkerUuid != null) {
+            compound.putBoolean("OwnsWorkerActivityMarker", true);
+            compound.putBoolean("OwnsWorkerAiSuppression", ownsWorkerAiSuppression);
             compound.putUUID("AiSuppressedWorkerUUID", aiSuppressedWorkerUuid);
         } else {
+            compound.remove("OwnsWorkerActivityMarker");
             compound.remove("OwnsWorkerAiSuppression");
             compound.remove("AiSuppressedWorkerUUID");
         }
@@ -424,9 +434,12 @@ public class HorseCrankEngine {
         if (!Double.isFinite(workerOrbitAngle)) {
             workerOrbitAngle = Double.NaN;
         }
-        ownsWorkerAiSuppression = compound.getBoolean("OwnsWorkerAiSuppression")
-                && compound.hasUUID("AiSuppressedWorkerUUID");
-        aiSuppressedWorkerUuid = ownsWorkerAiSuppression
+        boolean hasAiWorkerUuid = compound.hasUUID("AiSuppressedWorkerUUID");
+        boolean legacyOwnedSuppression = hasAiWorkerUuid && compound.getBoolean("OwnsWorkerAiSuppression");
+        ownsWorkerActivityMarker = hasAiWorkerUuid
+                && (compound.getBoolean("OwnsWorkerActivityMarker") || legacyOwnedSuppression);
+        ownsWorkerAiSuppression = ownsWorkerActivityMarker && compound.getBoolean("OwnsWorkerAiSuppression");
+        aiSuppressedWorkerUuid = ownsWorkerActivityMarker
                 ? compound.getUUID("AiSuppressedWorkerUUID")
                 : null;
         deferredDetachPolicies.clear();
@@ -632,11 +645,11 @@ public class HorseCrankEngine {
 
         // Permanent detach/removal: if the old worker was unavailable, its
         // persistent marker remains on that worker for entity-load orphan
-        // recovery, but this BE must no longer claim ownership. Keeping a
-        // stale ownership record here would make the next worker skip its
-        // own acquire (controlWorkerAi would merely maintain it), leaving
-        // it NoAI with no recovery marker of its own. Safe even when
-        // restoreWorkerAi succeeded: those fields are already false/null.
+        // recovery, but this BE must no longer claim marker or NoAI-transition
+        // ownership. Keeping a stale marker-ownership record here would make
+        // the next worker skip its own acquire. Safe even when restoreWorkerAi
+        // succeeded: these fields are already false/null.
+        this.ownsWorkerActivityMarker = false;
         this.ownsWorkerAiSuppression = false;
         this.aiSuppressedWorkerUuid = null;
 
@@ -772,9 +785,14 @@ public class HorseCrankEngine {
     private void controlWorkerAi(Mob mob) {
         UUID mobUuid = mob.getUUID();
 
-        if (ownsWorkerAiSuppression
+        if (ownsWorkerActivityMarker
                 && !mobUuid.equals(aiSuppressedWorkerUuid)) {
             restoreWorkerAi();
+            // Do not transfer control while the previous marked worker is
+            // still unloaded; its original NoAI baseline must remain intact.
+            if (ownsWorkerActivityMarker) {
+                return;
+            }
         }
 
         UUID thisCrank = crankInstanceUuid;
@@ -783,28 +801,36 @@ public class HorseCrankEngine {
             WorkerActivityControl.releaseFromMarker(mob);
         }
 
-        if (!ownsWorkerAiSuppression) {
+        boolean hasOwnedMarker = ownsWorkerActivityMarker
+                && mobUuid.equals(aiSuppressedWorkerUuid)
+                && thisCrank.equals(WorkerActivityControl.markerCrankUuid(mob));
+
+        if (!hasOwnedMarker) {
             ownsWorkerAiSuppression = WorkerActivityControl.acquire(
                     mob,
                     host.pos(),
                     thisCrank
             );
-            aiSuppressedWorkerUuid = ownsWorkerAiSuppression ? mobUuid : null;
+            ownsWorkerActivityMarker = true;
+            aiSuppressedWorkerUuid = mobUuid;
+            host.markDirty();
         } else {
             WorkerActivityControl.maintain(mob);
         }
     }
 
     /**
-     * Restore the worker's original {@code NoAI} state and clear the crank's
-     * ownership record. When the worker cannot be resolved (it is unloaded
-     * or in another chunk), local ownership is preserved: temporarily
-     * dropping the record is exactly what makes the next same-crank
-     * {@link #controlWorkerAi} call treat a normal unload as a foreign-crank
-     * reacquisition, which would corrupt the recorded {@code NoAI} baseline.
+     * Clear this crank's activity marker and, only when CHP actually changed
+     * it, restore the worker's original {@code NoAI} state. Marker ownership
+     * is intentionally separate from NoAI-transition ownership so workers
+     * that already had {@code NoAI=true} are still cleaned up normally.
+     *
+     * <p>When the worker cannot be resolved (it is unloaded or in another
+     * chunk), local ownership is preserved so the saved marker baseline is
+     * not overwritten by a later same-crank reacquisition.
      */
     private void restoreWorkerAi() {
-        if (!ownsWorkerAiSuppression || aiSuppressedWorkerUuid == null) {
+        if (!ownsWorkerActivityMarker || aiSuppressedWorkerUuid == null) {
             return;
         }
 
@@ -815,9 +841,11 @@ public class HorseCrankEngine {
             return;
         }
 
-        WorkerActivityControl.release(controlledWorker, true);
+        WorkerActivityControl.release(controlledWorker, ownsWorkerAiSuppression);
+        ownsWorkerActivityMarker = false;
         ownsWorkerAiSuppression = false;
         aiSuppressedWorkerUuid = null;
+        host.markDirty();
     }
 
     @Nullable
