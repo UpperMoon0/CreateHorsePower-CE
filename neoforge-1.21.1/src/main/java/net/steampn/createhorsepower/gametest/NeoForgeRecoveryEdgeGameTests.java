@@ -20,7 +20,9 @@ import net.steampn.createhorsepower.blocks.crank.WorkerActivityControl;
 import net.steampn.createhorsepower.blocks.crank.WorkerAttachmentControl;
 import net.steampn.createhorsepower.blocks.crank.WorkerRecoveryQueue;
 import net.steampn.createhorsepower.platform.CHPApi;
+import net.steampn.createhorsepower.platform.DeferredDetachStore;
 import net.steampn.createhorsepower.registry.BlockRegister;
+import net.steampn.createhorsepower.utils.CHPUtils;
 
 import java.util.UUID;
 
@@ -252,6 +254,109 @@ public final class NeoForgeRecoveryEdgeGameTests {
             helper.assertFalse(horse.isNoAi(),
                     "explicit current-owner cleanup must still restore the original AI state");
             helper.succeed();
+        });
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 20)
+    public static void unloadedForeignCleanupCannotOverwriteDurableDetach(GameTestHelper helper) {
+        BlockPos localCrankA = new BlockPos(0, 1, 0);
+        BlockPos localCrankB = new BlockPos(4, 1, 0);
+        helper.setBlock(localCrankA, BlockRegister.HORSE_CRANK.get());
+        helper.setBlock(localCrankB, BlockRegister.HORSE_CRANK.get());
+        AbstractHorseCrankBlockEntity crankA = requireCrank(helper, localCrankA);
+        AbstractHorseCrankBlockEntity crankB = requireCrank(helper, localCrankB);
+        ServerLevel level = helper.getLevel();
+        UUID workerUuid = UUID.randomUUID();
+
+        DeferredDetachStore.Entry ownedByA = new DeferredDetachStore.Entry(
+                crankA.getBlockPos(), crankA.engine().crankInstanceUuid(), false);
+        CHPApi.deferredDetaches().put(level, workerUuid, ownedByA);
+
+        CHPUtils.cleanUpLeash(level, crankB.getBlockPos(), workerUuid, true);
+
+        DeferredDetachStore.Entry remaining = CHPApi.deferredDetaches().get(level, workerUuid);
+        helper.assertTrue(remaining != null
+                        && remaining.matches(crankA.getBlockPos(), crankA.engine().crankInstanceUuid())
+                        && !remaining.dropLead(),
+                "foreign unloaded cleanup must not overwrite crank A's no-drop durable detach intent");
+        CHPApi.deferredDetaches().remove(level, workerUuid);
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 20)
+    public static void exactWorkerDetachPreservesOtherMobOnSharedKnot(GameTestHelper helper) {
+        BlockPos localCrankPos = new BlockPos(0, 1, 0);
+        helper.setBlock(localCrankPos, BlockRegister.HORSE_CRANK.get());
+        AbstractHorseCrankBlockEntity crank = requireCrank(helper, localCrankPos);
+        ServerLevel level = helper.getLevel();
+        Horse worker = helper.spawn(EntityType.HORSE, new BlockPos(2, 1, 2));
+        Horse other = helper.spawn(EntityType.HORSE, new BlockPos(3, 1, 2));
+        LeashFenceKnotEntity knot = LeashFenceKnotEntity.getOrCreateKnot(level, crank.getBlockPos());
+        worker.setLeashedTo(knot, true);
+        other.setLeashedTo(knot, true);
+        crank.engine().setWorkerUuidForTesting(worker.getUUID());
+        crank.engine().setCachedWorkerMobForTesting(worker);
+        WorkerAttachmentControl.markAttached(worker, crank.getBlockPos(), crank.engine().crankInstanceUuid());
+
+        crank.engine().detachWorker(false);
+
+        helper.assertFalse(worker.isLeashed(), "assigned worker must be detached");
+        helper.assertTrue(other.getLeashHolder() == knot,
+                "detaching the assigned worker must preserve another mob sharing the knot");
+        helper.assertTrue(knot.isAlive(), "shared knot must remain while another loaded mob uses it");
+
+        other.dropLeash(true, false);
+        knot.discard();
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 20)
+    public static void recoveryPreservesDelayedForeignEntityLeash(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(2, 1, 2));
+        Horse foreignHolder = helper.spawn(EntityType.HORSE, new BlockPos(3, 1, 2));
+        BlockPos staleCrankPos = horse.blockPosition().offset(1024, 0, 1024);
+        UUID staleCrankUuid = UUID.randomUUID();
+
+        horse.setLeashedTo(foreignHolder, true);
+        WorkerAttachmentControl.markAttached(horse, staleCrankPos, staleCrankUuid);
+
+        CompoundTag savedHorse = new CompoundTag();
+        CompoundTag savedHolder = new CompoundTag();
+        horse.saveWithoutId(savedHorse);
+        foreignHolder.saveWithoutId(savedHolder);
+        UUID workerUuid = horse.getUUID();
+        horse.discard();
+        foreignHolder.discard();
+
+        Horse reloaded = EntityType.HORSE.create(level);
+        helper.assertTrue(reloaded != null, "horse must be creatable for delayed-leash regression");
+        reloaded.load(savedHorse);
+        level.addFreshEntity(reloaded);
+        CHPApi.deferredDetaches().put(level, workerUuid,
+                new DeferredDetachStore.Entry(staleCrankPos, staleCrankUuid, false));
+        WorkerRecoveryQueue.enqueue(reloaded, level);
+
+        helper.runAfterDelay(3, () -> {
+            CompoundTag afterRecovery = new CompoundTag();
+            reloaded.saveWithoutId(afterRecovery);
+            helper.assertFalse(WorkerAttachmentControl.hasMarker(reloaded),
+                    "matching durable recovery must clear only CHP attachment ownership");
+            helper.assertTrue(afterRecovery.contains("leash", 10)
+                            && afterRecovery.getCompound("leash").hasUUID("UUID"),
+                    "unresolved foreign entity UUID leash must survive CHP recovery");
+
+            Horse restoredHolder = EntityType.HORSE.create(level);
+            helper.assertTrue(restoredHolder != null, "foreign holder must be recreatable");
+            restoredHolder.load(savedHolder);
+            level.addFreshEntity(restoredHolder);
+
+            helper.runAfterDelay(6, () -> {
+                helper.assertTrue(reloaded.getLeashHolder() == restoredHolder,
+                        "vanilla must still be able to resolve the preserved foreign UUID leash");
+                reloaded.dropLeash(true, false);
+                helper.succeed();
+            });
         });
     }
 
