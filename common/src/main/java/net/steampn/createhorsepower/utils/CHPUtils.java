@@ -133,6 +133,12 @@ public class CHPUtils {
      * immediately; only a durable intent owned by this exact crank instance is
      * consumed. A stale record belonging to some other crank must survive for
      * that owner/recovery path to resolve.
+     *
+     * <p>The old block-entity-local detach-policy map is migration-only now.
+     * Current detaches may briefly populate it before this cleanup path runs,
+     * but once the authoritative level-scoped decision is resolved the matching
+     * legacy entry is consumed immediately so it cannot accumulate or become a
+     * second persistent source of truth.
      */
     private static void reconcileDurableDetachPolicy(
             ServerLevel level,
@@ -151,6 +157,7 @@ public class CHPUtils {
             if (existing != null && existing.matches(crankPos, crankUuid)) {
                 CHPApi.deferredDetaches().remove(level, workerUuid);
             }
+            crank.engine().consumeDeferredDetachPolicy(workerUuid);
             return;
         }
 
@@ -159,6 +166,7 @@ public class CHPUtils {
                 workerUuid,
                 new DeferredDetachStore.Entry(crankPos, crankUuid, dropLead)
         );
+        crank.engine().consumeDeferredDetachPolicy(workerUuid);
         CHPDiagnostics.event("deferred_detach_persisted", level, crankPos, crankUuid, null,
                 "worker_uuid=" + workerUuid + " dropLead=" + dropLead);
     }
