@@ -11,6 +11,9 @@ import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.animal.Cow;
 import net.minecraft.world.entity.animal.horse.Horse;
 import net.minecraft.world.entity.decoration.LeashFenceKnotEntity;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
@@ -453,6 +456,11 @@ public final class HorsePowerGameTests {
                     "Recovery must restore the worker's original NoAI=false state");
             helper.assertTrue(CHPUtils.getKnot(level, worldCrankPos).isEmpty(),
                     "Recovery must remove the unused knot recreated from saved leash data");
+            boolean spawnedLead = !level.getEntitiesOfClass(
+                    ItemEntity.class, new AABB(reloaded.blockPosition()).inflate(8.0D),
+                    item -> item.getItem().is(Items.LEAD)).isEmpty();
+            helper.assertFalse(spawnedLead,
+                    "Deferred detachWorker(false) must not spawn a lead when the worker reloads");
             helper.succeed();
         });
     }

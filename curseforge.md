@@ -58,8 +58,8 @@ On NeoForge 1.21.1, KubeJS profiles take priority over NeoForge Data Maps, which
 
 Full release details:
 
-- NeoForge 1.21.1 — [1.2.0-ce.2 changelog](https://github.com/UpperMoon0/CreateHorsePower-CE/blob/main/changelog/1.21.1-1.2.0-ce.2.md)
-- Forge 1.20.1 — [1.2.0-ce.2 changelog](https://github.com/UpperMoon0/CreateHorsePower-CE/blob/main/changelog/1.20.1-1.2.0-ce.2.md)
+- NeoForge 1.21.1 — [1.2.0-ce.3 changelog](https://github.com/UpperMoon0/CreateHorsePower-CE/blob/main/changelog/1.21.1-1.2.0-ce.3.md)
+- Forge 1.20.1 — [1.2.0-ce.3 changelog](https://github.com/UpperMoon0/CreateHorsePower-CE/blob/main/changelog/1.20.1-1.2.0-ce.3.md)
 
 ## Credits
 

@@ -102,22 +102,10 @@ public class CreateHorsePower {
 
     @SubscribeEvent
     public void serverSetup(final ServerStartingEvent event){
-        configFileDebug();
-    }
-
-    private void configFileDebug(){
-        LOGGER.info("Base RPM for all creatures is {}", Config.BASE_CREATURE_RPM.getAsInt());
-        LOGGER.info("Stress for Small is {}", Config.SMALL_CREATURE_STRESS.getAsInt());
-        LOGGER.info("Stress for Medium is {}", Config.MEDIUM_CREATURE_STRESS.getAsInt());
-        LOGGER.info("Stress for Large is {}", Config.LARGE_CREATURE_STRESS.getAsInt());
-
-        Config.SMALL_CREATURES.get().forEach((mob) -> LOGGER.info("Selected Small mob: {}", mob));
-        Config.MEDIUM_CREATURES.get().forEach((mob) -> LOGGER.info("Selected Medium mob: {}", mob));
-        Config.LARGE_CREATURES.get().forEach((mob) -> LOGGER.info("Selected Large mob: {}", mob));
-
-        Config.POOR_PATH.get().forEach((block) -> LOGGER.info("Selected Poor Path Block: {}", block));
-        Config.NORMAL_PATH.get().forEach((block) -> LOGGER.info("Selected Normal Path Block: {}", block));
-        Config.GREAT_PATH.get().forEach((block) -> LOGGER.info("Selected Great Path Block: {}", block));
+        int workerEntries = Config.SMALL_CREATURES.get().size() + Config.MEDIUM_CREATURES.get().size() + Config.LARGE_CREATURES.get().size();
+        int pathEntries = Config.POOR_PATH.get().size() + Config.NORMAL_PATH.get().size() + Config.GREAT_PATH.get().size();
+        LOGGER.info("Create Horse Power CE ready (NeoForge 1.21.1): configured_workers={} configured_paths={} tfc_optional_compat=true debugLogging={}",
+                workerEntries, pathEntries, Config.DEBUG_LOGGING.get());
     }
 
     public static ResourceLocation asResource(String path){

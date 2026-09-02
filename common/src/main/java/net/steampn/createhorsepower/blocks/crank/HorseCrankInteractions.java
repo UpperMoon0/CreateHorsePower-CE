@@ -14,6 +14,7 @@ import net.steampn.createhorsepower.content.crank.RedstoneMode;
 import net.steampn.createhorsepower.content.stats.WorkerResolver;
 import net.steampn.createhorsepower.platform.CHPApi;
 import net.steampn.createhorsepower.utils.CHPUtils;
+import net.steampn.createhorsepower.utils.CHPDiagnostics;
 
 import java.util.List;
 
@@ -75,10 +76,16 @@ public final class HorseCrankInteractions {
         List<Mob> mobsNearPlayer = level.getEntitiesOfClass(Mob.class, new AABB(pos).inflate(7.0D), mob -> mob.isLeashed() && mob.getLeashHolder() == player);
 
         if (mobsNearPlayer.isEmpty()) {
+            CHPDiagnostics.event("attach_rejected", level, pos,
+                    level.getBlockEntity(pos) instanceof AbstractHorseCrankBlockEntity be ? be.engine().crankInstanceUuid() : null,
+                    null, "reason=no_player_leashed_worker");
             return Outcome.PASS;
         }
 
         if (mobsNearPlayer.size() > 1) {
+            CHPDiagnostics.event("attach_rejected", level, pos,
+                    level.getBlockEntity(pos) instanceof AbstractHorseCrankBlockEntity be ? be.engine().crankInstanceUuid() : null,
+                    null, "reason=multiple_workers count=" + mobsNearPlayer.size());
             player.displayClientMessage(Component.translatable("tooltip.createhorsepower.horse_crank.maximumMobs"), true);
             return Outcome.SUCCESS;
         }
@@ -86,11 +93,17 @@ public final class HorseCrankInteractions {
         Mob mob = mobsNearPlayer.get(0);
         WorkerResolver.ResolvedWorker profile = WorkerResolver.resolve(mob);
         if (!profile.isValid()) {
+            CHPDiagnostics.event("attach_rejected", level, pos,
+                    level.getBlockEntity(pos) instanceof AbstractHorseCrankBlockEntity be ? be.engine().crankInstanceUuid() : null,
+                    mob, "reason=invalid_worker");
             player.displayClientMessage(Component.translatable("tooltip.createhorsepower.horse_crank.notValidWorker"), true);
             return Outcome.SUCCESS;
         }
 
         if (!CHPApi.scripts().fireBeforeAttach(player, mob, pos, level, profile)) {
+            CHPDiagnostics.event("attach_rejected", level, pos,
+                    level.getBlockEntity(pos) instanceof AbstractHorseCrankBlockEntity be ? be.engine().crankInstanceUuid() : null,
+                    mob, "reason=script_veto");
             return Outcome.FAIL;
         }
 

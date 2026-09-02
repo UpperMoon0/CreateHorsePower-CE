@@ -12,6 +12,7 @@ import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.event.RegisterGameTestsEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.EntityJoinLevelEvent;
+import net.minecraftforge.event.server.ServerStartingEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.ModLoadingContext;
@@ -73,6 +74,14 @@ public class CreateHorsePower {
     @SubscribeEvent
     public void onRegisterCommands(RegisterCommandsEvent event) {
         net.steampn.createhorsepower.command.CHPCommands.register(event.getDispatcher(), event.getBuildContext());
+    }
+
+    @SubscribeEvent
+    public void onServerStarting(ServerStartingEvent event) {
+        int workerEntries = Config.SMALL_CREATURES.get().size() + Config.MEDIUM_CREATURES.get().size() + Config.LARGE_CREATURES.get().size();
+        int pathEntries = Config.POOR_PATH.get().size() + Config.NORMAL_PATH.get().size() + Config.GREAT_PATH.get().size();
+        LOGGER.info("Create Horse Power CE ready (Forge 1.20.1): configured_workers={} configured_paths={} tfc_optional_compat=true debugLogging={}",
+                workerEntries, pathEntries, Config.DEBUG_LOGGING.get());
     }
 
     /**

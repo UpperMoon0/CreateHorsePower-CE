@@ -62,6 +62,14 @@ public interface CHPConfig {
 
     boolean allowUndeadWorkers();
 
+    double workerGroundSpeedScale();
+
+    double minWorkerGroundSpeed();
+
+    double maxWorkerGroundSpeed();
+
+    boolean debugLogging();
+
     PathEvaluationMode pathEvaluationMode();
 
     double minimumPathCoverage();

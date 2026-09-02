@@ -10,6 +10,7 @@ import net.minecraft.world.phys.Vec3;
 
 import net.steampn.createhorsepower.CHPConstants;
 import net.steampn.createhorsepower.utils.CHPUtils;
+import net.steampn.createhorsepower.utils.CHPDiagnostics;
 
 import org.jetbrains.annotations.Nullable;
 
@@ -116,6 +117,8 @@ public final class WorkerActivityControl {
 
         writeMarker(mob, previousNoAi, crankPos, crankUuid);
         maintain(mob);
+        CHPDiagnostics.event("ai_suppression_acquired", mob.level(), crankPos, crankUuid, mob,
+                "previous_no_ai=" + previousNoAi + " owns_change=" + (!previousNoAi));
 
         return !previousNoAi;
     }
@@ -138,6 +141,8 @@ public final class WorkerActivityControl {
      * continue flying along its last orbit vector.
      */
     public static void release(Mob mob, boolean ownedByCrank) {
+        BlockPos crankPos = markerCrankPos(mob);
+        UUID crankUuid = markerCrankUuid(mob);
         if (ownedByCrank) {
             // Prefer the marker: the BE-level state can disagree with the
             // mob's persistent marker if the worker was reassigned or
@@ -148,6 +153,8 @@ public final class WorkerActivityControl {
         clearMarker(mob);
         mob.getNavigation().stop();
         clearHorizontalVelocity(mob);
+        CHPDiagnostics.event("ai_suppression_released", mob.level(), crankPos, crankUuid, mob,
+                "owned_by_crank=" + ownedByCrank);
     }
 
     /**
@@ -165,11 +172,15 @@ public final class WorkerActivityControl {
             return false;
         }
         CompoundTag marker = tag.getCompound(MARKER_KEY);
+        BlockPos crankPos = marker.contains(CRANK_POS_KEY) ? BlockPos.of(marker.getLong(CRANK_POS_KEY)) : null;
+        UUID crankUuid = marker.hasUUID(CRANK_UUID_KEY) ? marker.getUUID(CRANK_UUID_KEY) : null;
         boolean restoreTo = marker.getBoolean(PREVIOUS_NO_AI_KEY);
         mob.setNoAi(restoreTo);
         clearMarker(mob);
         mob.getNavigation().stop();
         clearHorizontalVelocity(mob);
+        CHPDiagnostics.event("ai_orphan_recovered", mob.level(), crankPos, crankUuid, mob,
+                "restored_no_ai=" + restoreTo);
         return true;
     }
 

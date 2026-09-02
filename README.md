@@ -67,7 +67,7 @@ On NeoForge 1.21.1, KubeJS profiles override Data Maps, which override legacy ta
 - Update any prerelease worker profile above a 6-block movement radius before loading it in 1.2; out-of-range Data Map or KubeJS values are rejected.
 - Back up important worlds before changing mod versions.
 
-See the [1.2.0 release notes](changelog/1.21.1-1.2.0-ce.2.md) for NeoForge 1.21.1 and the [Forge 1.20.1 1.2.0 release notes](changelog/1.20.1-1.2.0-ce.2.md) for the Forge port.
+See the [1.2.0-ce.3 release notes](changelog/1.21.1-1.2.0-ce.3.md) for NeoForge 1.21.1 and the [Forge 1.20.1 1.2.0-ce.3 release notes](changelog/1.20.1-1.2.0-ce.3.md) for the Forge port.
 
 ## Building
 

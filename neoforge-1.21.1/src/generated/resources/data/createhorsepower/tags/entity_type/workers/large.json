@@ -5,18 +5,6 @@
     "minecraft:mule",
     "minecraft:camel",
     "minecraft:skeleton_horse",
-    "minecraft:zombie_horse",
-    {
-      "id": "tfc:horse",
-      "required": false
-    },
-    {
-      "id": "tfc:donkey",
-      "required": false
-    },
-    {
-      "id": "tfc:mule",
-      "required": false
-    }
+    "minecraft:zombie_horse"
   ]
 }

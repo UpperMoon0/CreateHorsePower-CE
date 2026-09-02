@@ -8,6 +8,7 @@ import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.decoration.LeashFenceKnotEntity;
 import net.steampn.createhorsepower.CHPConstants;
 import net.steampn.createhorsepower.utils.CHPUtils;
+import net.steampn.createhorsepower.utils.CHPDiagnostics;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.UUID;
@@ -37,6 +38,7 @@ public final class WorkerAttachmentControl {
         marker.putLong(CRANK_POS_KEY, crankPos.asLong());
         marker.putUUID(CRANK_UUID_KEY, crankUuid);
         mob.getPersistentData().put(MARKER_KEY, marker);
+        CHPDiagnostics.event("attachment_marker_written", mob.level(), crankPos, crankUuid, mob, "");
     }
 
     public static void clearIfOwnedBy(Mob mob, UUID crankUuid) {
@@ -44,7 +46,9 @@ public final class WorkerAttachmentControl {
         if (tag == null || !tag.contains(MARKER_KEY)) return;
         CompoundTag marker = tag.getCompound(MARKER_KEY);
         if (marker.hasUUID(CRANK_UUID_KEY) && crankUuid.equals(marker.getUUID(CRANK_UUID_KEY))) {
+            BlockPos crankPos = marker.contains(CRANK_POS_KEY) ? BlockPos.of(marker.getLong(CRANK_POS_KEY)) : null;
             tag.remove(MARKER_KEY);
+            CHPDiagnostics.event("attachment_marker_cleared", mob.level(), crankPos, crankUuid, mob, "");
         }
     }
 
@@ -73,6 +77,8 @@ public final class WorkerAttachmentControl {
         BlockPos crankPos = markerCrankPos(mob);
         UUID crankUuid = markerCrankUuid(mob);
         if (crankPos == null || crankUuid == null) {
+            CHPDiagnostics.warnInvariant("malformed_attachment_marker", level, crankPos,
+                    "worker=" + mob.getUUID());
             mob.getPersistentData().remove(MARKER_KEY);
             return RecoveryResult.RECOVERED;
         }
@@ -85,19 +91,33 @@ public final class WorkerAttachmentControl {
         if (level.getBlockEntity(crankPos) instanceof AbstractHorseCrankBlockEntity crank
                 && crankUuid.equals(crank.engine().crankInstanceUuid())
                 && crank.engine().isAssignedWorker(mob.getUUID())) {
+            CHPDiagnostics.event("attachment_recovery_valid", level, crankPos, crankUuid, mob, "owner_still_live=true");
             return RecoveryResult.VALID;
+        }
+
+        boolean dropLead = true;
+        boolean hasDeferredPolicy = level.getBlockEntity(crankPos) instanceof AbstractHorseCrankBlockEntity crank
+                && crankUuid.equals(crank.engine().crankInstanceUuid())
+                && crank.engine().hasDeferredDetachPolicy(mob.getUUID());
+        if (hasDeferredPolicy) {
+            AbstractHorseCrankBlockEntity crank = (AbstractHorseCrankBlockEntity) level.getBlockEntity(crankPos);
+            dropLead = crank.engine().deferredDetachDropLead(mob.getUUID());
         }
 
         Entity holder = mob.getLeashHolder();
         if (holder instanceof LeashFenceKnotEntity knot && knot.blockPosition().equals(crankPos)) {
-            // The original detach could not drop this lead while the worker was
-            // unloaded, so recovery returns it now.
-            mob.dropLeash(true, true);
+            mob.dropLeash(true, dropLead);
             if (knot.isAlive() && !CHPUtils.hasAttachedWorker(level, crankPos)) {
                 knot.discard();
             }
         }
 
+        if (hasDeferredPolicy) {
+            AbstractHorseCrankBlockEntity crank = (AbstractHorseCrankBlockEntity) level.getBlockEntity(crankPos);
+            crank.engine().consumeDeferredDetachPolicy(mob.getUUID());
+        }
+        CHPDiagnostics.event("attachment_recovered", level, crankPos, crankUuid, mob,
+                "dropLead=" + dropLead + " deferred_policy=" + hasDeferredPolicy);
         mob.getPersistentData().remove(MARKER_KEY);
         return RecoveryResult.RECOVERED;
     }

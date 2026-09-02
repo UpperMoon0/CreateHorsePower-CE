@@ -7,6 +7,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.decoration.LeashFenceKnotEntity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
@@ -17,9 +18,12 @@ import net.steampn.createhorsepower.content.stats.WorkerResolver;
 import net.steampn.createhorsepower.content.stats.WorkerStats;
 import net.steampn.createhorsepower.platform.CHPApi;
 import net.steampn.createhorsepower.utils.CHPUtils;
+import net.steampn.createhorsepower.utils.CHPDiagnostics;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -44,6 +48,8 @@ public class HorseCrankEngine {
         void refreshKinetic();
 
         void syncToClient();
+
+        void markDirty();
 
         void clearKineticInfo();
 
@@ -96,9 +102,11 @@ public class HorseCrankEngine {
     private long nextWorkStartRetryTick = 0;
     private long nextFallbackWorkerSearchTick = 0;
     private double workerOrbitAngle = Double.NaN;
+    private double visualGroundSpeed = 0.0D;
     private boolean ownsWorkerAiSuppression = false;
     @Nullable
     private UUID aiSuppressedWorkerUuid;
+    private final Map<UUID, Boolean> deferredDetachPolicies = new HashMap<>();
 
     /**
      * Real, random, persistent identifier for this crank instance. Two
@@ -346,6 +354,13 @@ public class HorseCrankEngine {
             compound.remove("OwnsWorkerAiSuppression");
             compound.remove("AiSuppressedWorkerUUID");
         }
+        if (!deferredDetachPolicies.isEmpty()) {
+            CompoundTag policies = new CompoundTag();
+            deferredDetachPolicies.forEach((uuid, dropLead) -> policies.putBoolean(uuid.toString(), dropLead));
+            compound.put("DeferredDetachPolicies", policies);
+        } else {
+            compound.remove("DeferredDetachPolicies");
+        }
 
         if (clientPacket) {
             compound.putBoolean("WorkerResolved", workerResolved);
@@ -414,6 +429,17 @@ public class HorseCrankEngine {
         aiSuppressedWorkerUuid = ownsWorkerAiSuppression
                 ? compound.getUUID("AiSuppressedWorkerUUID")
                 : null;
+        deferredDetachPolicies.clear();
+        if (compound.contains("DeferredDetachPolicies")) {
+            CompoundTag policies = compound.getCompound("DeferredDetachPolicies");
+            for (String key : policies.getAllKeys()) {
+                try {
+                    deferredDetachPolicies.put(UUID.fromString(key), policies.getBoolean(key));
+                } catch (IllegalArgumentException ignored) {
+                    // Ignore malformed legacy/manual data instead of breaking BE load.
+                }
+            }
+        }
 
         if (clientPacket) {
             workerResolved = compound.getBoolean("WorkerResolved");
@@ -459,6 +485,12 @@ public class HorseCrankEngine {
         this.workerResolved = true;
         this.workerEligible = profile.isValid();
         this.workerOrbitAngle = Double.NaN;
+        double movementAttribute = worker.getAttributes().hasAttribute(Attributes.MOVEMENT_SPEED)
+                ? worker.getAttributeValue(Attributes.MOVEMENT_SPEED)
+                : WorkerStats.DEFAULT_SPEED_REF;
+        this.visualGroundSpeed = WorkerOrbitMovement.groundSpeedBlocksPerSecond(
+                movementAttribute, CHPApi.config().workerGroundSpeedScale(),
+                CHPApi.config().minWorkerGroundSpeed(), CHPApi.config().maxWorkerGroundSpeed());
 
         applyProfile(worker, profile);
 
@@ -476,6 +508,8 @@ public class HorseCrankEngine {
             host.refreshKinetic();
             host.syncToClient();
             CHPApi.scripts().fireWorkerAttached(worker, host.pos(), level, profile);
+            CHPDiagnostics.event("worker_attached", level, host.pos(), crankInstanceUuid, worker,
+                    "rpm=" + effectiveBaseRpm + " stress=" + effectiveBaseStress + " radius=" + workerRadius);
         }
     }
 
@@ -510,10 +544,13 @@ public class HorseCrankEngine {
     public void detachWorker(boolean dropLead) {
         Mob worker = cachedWorkerMob;
         UUID detachedWorkerUuid = workerUuid != null ? workerUuid : worker != null ? worker.getUUID() : null;
+        Level level = level();
+        CHPDiagnostics.event("worker_detach", level, host.pos(), crankInstanceUuid, worker,
+                "worker_uuid=" + detachedWorkerUuid + " dropLead=" + dropLead);
+        rememberDeferredDetachPolicy(level, detachedWorkerUuid, dropLead);
         stopWorking();
         clearWorkerReferences();
 
-        Level level = level();
         if (level != null && !level.isClientSide()) {
             BlockState state = host.blockState();
             if (state.getValue(CrankProperties.HAS_WORKER)) {
@@ -540,6 +577,37 @@ public class HorseCrankEngine {
             }
         }
         clearWorkerReferences();
+    }
+
+    private void rememberDeferredDetachPolicy(@Nullable Level level, @Nullable UUID detachedWorkerUuid, boolean dropLead) {
+        if (detachedWorkerUuid == null || !(level instanceof ServerLevel serverLevel)) {
+            return;
+        }
+        Entity loaded = serverLevel.getEntity(detachedWorkerUuid);
+        if (loaded instanceof Mob) {
+            if (deferredDetachPolicies.remove(detachedWorkerUuid) != null) {
+                host.markDirty();
+            }
+            return;
+        }
+        deferredDetachPolicies.put(detachedWorkerUuid, dropLead);
+        host.markDirty();
+    }
+
+    public boolean hasDeferredDetachPolicy(UUID workerUuid) {
+        return workerUuid != null && deferredDetachPolicies.containsKey(workerUuid);
+    }
+
+    public boolean deferredDetachDropLead(UUID workerUuid) {
+        return deferredDetachPolicies.getOrDefault(workerUuid, true);
+    }
+
+    public void consumeDeferredDetachPolicy(UUID workerUuid) {
+        if (workerUuid == null || deferredDetachPolicies.remove(workerUuid) == null) {
+            return;
+        }
+        host.markDirty();
+        host.syncToClient();
     }
 
     private void clearLoadedAttachmentMarker(Level level, UUID workerUuid, @Nullable Mob cachedWorker) {
@@ -589,6 +657,7 @@ public class HorseCrankEngine {
         this.speedBonusPercent = 0.0f;
         this.healthBonusPercent = 0.0f;
         this.workerOrbitAngle = Double.NaN;
+        this.visualGroundSpeed = 0.0D;
     }
 
     // ==========================================
@@ -657,10 +726,14 @@ public class HorseCrankEngine {
                         this.scriptVetoed = true;
                         this.isWorking = false;
                         this.nextWorkStartRetryTick = time + 20;
+                        CHPDiagnostics.event("work_start_vetoed", level, host.pos(), crankInstanceUuid, cachedWorkerMob,
+                                "retry_tick=" + nextWorkStartRetryTick);
                     } else {
                         this.scriptVetoed = false;
                         this.isWorking = true;
                         CHPApi.scripts().fireWorkStarted(cachedWorkerMob, host.pos(), level);
+                        CHPDiagnostics.event("work_started", level, host.pos(), crankInstanceUuid, cachedWorkerMob,
+                                "mechanical_rpm=" + generatedSpeed() + " path_efficiency=" + efficiencyPercent);
                     }
                 }
             }
@@ -689,6 +762,9 @@ public class HorseCrankEngine {
 
         Level level = level();
         if (wasWorking && level != null && !level.isClientSide()) {
+            CHPDiagnostics.event("work_stopped", level, host.pos(), crankInstanceUuid, cachedWorkerMob,
+                    "redstone=" + isStoppedByRedstone() + " path_valid=" + hasValidWorkingBlocks
+                            + " worker_resolved=" + workerResolved + " worker_eligible=" + workerEligible);
             CHPApi.scripts().fireWorkStopped(host.pos(), level);
         }
     }
@@ -865,12 +941,18 @@ public class HorseCrankEngine {
             }
 
             if (!wasResolved) {
+                CHPDiagnostics.event("worker_resolved", level, host.pos(), crankInstanceUuid, worker,
+                        "eligible=" + workerEligible);
                 float networkSpeed = host.theoreticalSpeed();
                 if (networkSpeed != 0) {
                     generationDirection = Math.signum(networkSpeed);
                 }
             }
         } else {
+            if (wasResolved) {
+                CHPDiagnostics.event("worker_unresolved", level, host.pos(), crankInstanceUuid, cachedWorkerMob,
+                        "last_pos=" + lastKnownWorkerPos);
+            }
             this.workerResolved = false;
             this.workerEligible = false;
             BlockPos checkPos = lastKnownWorkerPos != null ? lastKnownWorkerPos : host.pos();
@@ -934,6 +1016,9 @@ public class HorseCrankEngine {
             this.pathStressModifier = stressMult;
             this.efficiencyPercent = eff;
             this.invalidBlockCount = invalidCount;
+            CHPDiagnostics.event("path_state_changed", level, host.pos(), crankInstanceUuid, cachedWorkerMob,
+                    "valid=" + valid + " speed_multiplier=" + speedMult + " stress_multiplier=" + stressMult
+                            + " efficiency=" + eff + " invalid_tiles=" + invalidCount);
 
             boolean willGenerate = hasValidWorkingBlocks && (rpmModifier > 0);
             if (!wasGenerating && willGenerate) {
@@ -976,6 +1061,24 @@ public class HorseCrankEngine {
         return effectiveBaseStress;
     }
 
+    public double getVisualGroundSpeed() {
+        return visualGroundSpeed;
+    }
+
+    public float getWorkerRadius() {
+        return workerRadius;
+    }
+
+    @Nullable
+    public UUID getWorkerUuid() {
+        return workerUuid;
+    }
+
+    @Nullable
+    public Mob getLoadedWorkerForDiagnostics() {
+        return cachedWorkerMob;
+    }
+
     private void moveWorkerTo(Mob mob) {
         Level level = level();
         if (level == null || mob == null) return;
@@ -988,8 +1091,16 @@ public class HorseCrankEngine {
         double centerZ = pos.getZ() + 0.5;
 
         double direction = Math.signum(speed);
-        double angularVelocity = Math.toRadians(Math.abs(speed) * 6.0); // 6 deg/sec per RPM
-        double angularDelta = (angularVelocity * direction) / 20.0;
+        double movementAttribute = mob.getAttributes().hasAttribute(Attributes.MOVEMENT_SPEED)
+                ? mob.getAttributeValue(Attributes.MOVEMENT_SPEED)
+                : WorkerStats.DEFAULT_SPEED_REF;
+        visualGroundSpeed = WorkerOrbitMovement.groundSpeedBlocksPerSecond(
+                movementAttribute,
+                CHPApi.config().workerGroundSpeedScale(),
+                CHPApi.config().minWorkerGroundSpeed(),
+                CHPApi.config().maxWorkerGroundSpeed());
+        double angularDelta = WorkerOrbitMovement.angularDeltaPerTick(
+                visualGroundSpeed, workerRadius, direction);
         controlWorkerAi(mob);
         if (!Double.isFinite(workerOrbitAngle)) {
             workerOrbitAngle = WorkerOrbitMovement.angleFromPosition(

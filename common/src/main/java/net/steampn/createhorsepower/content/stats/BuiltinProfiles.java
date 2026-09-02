@@ -44,7 +44,13 @@ public final class BuiltinProfiles {
     private static final Map<String, WorkerStats> OPTIONAL_WORKERS = Map.ofEntries(
             Map.entry("tfc:horse", HORSE),
             Map.entry("tfc:donkey", DONKEY),
-            Map.entry("tfc:mule", MULE));
+            Map.entry("tfc:mule", MULE),
+            Map.entry("tfc:cow", COW),
+            Map.entry("tfc:pig", PIG),
+            Map.entry("tfc:sheep", SHEEP),
+            // TFC 1.21.x camel variants extend vanilla Camel through AbstractCamel.
+            Map.entry("tfc:dromedary_camel", CAMEL),
+            Map.entry("tfc:bactrian_camel", CAMEL));
 
     private static final Map<Block, PathStats> PATHS = Map.ofEntries(
             Map.entry(Blocks.DIRT_PATH, PathStats.NORMAL), Map.entry(Blocks.DIRT, DIRT),

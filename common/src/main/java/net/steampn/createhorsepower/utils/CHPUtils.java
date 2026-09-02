@@ -94,6 +94,7 @@ public class CHPUtils {
         if (workerUuid != null && level instanceof ServerLevel serverLevel) {
             Entity entity = serverLevel.getEntity(workerUuid);
             if (entity instanceof Mob mob && isLeashedToKnotAt(mob, pos)) {
+                CHPDiagnostics.event("leash_cleanup_uuid", level, pos, null, mob, "dropLead=" + dropLead);
                 mob.dropLeash(true, dropLead);
             }
         }
@@ -105,8 +106,10 @@ public class CHPUtils {
                     mob -> mob.getLeashHolder() == knot
             );
             for (Mob mob : mobs) {
+                CHPDiagnostics.event("leash_cleanup_fallback", level, pos, null, mob, "dropLead=" + dropLead);
                 mob.dropLeash(true, dropLead);
             }
+            CHPDiagnostics.event("leash_knot_discarded", level, pos, null, null, "fallback_workers=" + mobs.size());
             knot.discard();
         });
         return InteractionResult.SUCCESS;
