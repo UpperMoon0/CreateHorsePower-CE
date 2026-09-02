@@ -19,15 +19,18 @@ import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterGameTestsEvent;
 import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
+import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import net.neoforged.neoforge.event.tick.LevelTickEvent;
 import net.steampn.createhorsepower.blocks.crank.WorkerRecoveryQueue;
 import net.steampn.createhorsepower.client.ponders.HorseCrankPonderPlugin;
 import net.steampn.createhorsepower.config.Config;
 import net.steampn.createhorsepower.gametest.HorsePowerGameTests;
 import net.steampn.createhorsepower.gametest.HorsePowerLifecycleGameTests;
+import net.steampn.createhorsepower.gametest.NeoForgeRecoveryEdgeGameTests;
 import net.steampn.createhorsepower.registry.BlockRegister;
 import net.steampn.createhorsepower.registry.TileEntityRegister;
 import net.steampn.createhorsepower.utils.CHPBlockPartials;
+import net.steampn.createhorsepower.utils.CHPDiagnostics;
 import org.slf4j.Logger;
 
 
@@ -71,6 +74,7 @@ public class CreateHorsePower {
     private void registerGameTests(final RegisterGameTestsEvent event) {
         event.register(HorsePowerGameTests.class);
         event.register(HorsePowerLifecycleGameTests.class);
+        event.register(NeoForgeRecoveryEdgeGameTests.class);
     }
 
     @SubscribeEvent
@@ -107,6 +111,12 @@ public class CreateHorsePower {
         int pathEntries = Config.POOR_PATH.get().size() + Config.NORMAL_PATH.get().size() + Config.GREAT_PATH.get().size();
         LOGGER.info("Create Horse Power CE ready (NeoForge 1.21.1): configured_workers={} configured_paths={} tfc_optional_compat=true debugLogging={}",
                 workerEntries, pathEntries, Config.DEBUG_LOGGING.get());
+    }
+
+    @SubscribeEvent
+    public void onServerStopped(ServerStoppedEvent event) {
+        WorkerRecoveryQueue.clearTransientState();
+        CHPDiagnostics.clearRuntimeState();
     }
 
     public static ResourceLocation asResource(String path){

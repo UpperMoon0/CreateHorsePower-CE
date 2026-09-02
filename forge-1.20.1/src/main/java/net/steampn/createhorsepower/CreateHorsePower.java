@@ -13,6 +13,7 @@ import net.minecraftforge.event.RegisterGameTestsEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.EntityJoinLevelEvent;
 import net.minecraftforge.event.server.ServerStartingEvent;
+import net.minecraftforge.event.server.ServerStoppedEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.ModLoadingContext;
@@ -24,12 +25,14 @@ import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import net.steampn.createhorsepower.blocks.crank.WorkerRecoveryQueue;
 import net.steampn.createhorsepower.compat.OptionalIntegrations;
 import net.steampn.createhorsepower.config.Config;
+import net.steampn.createhorsepower.gametest.ForgeRecoveryEdgeGameTests;
 import net.steampn.createhorsepower.gametest.HorsePowerGameTests;
 import net.steampn.createhorsepower.gametest.HorsePowerLifecycleGameTests;
 import net.steampn.createhorsepower.registry.BlockRegister;
 import net.steampn.createhorsepower.registry.CHPCreativeTabs;
 import net.steampn.createhorsepower.registry.TileEntityRegister;
 import net.steampn.createhorsepower.utils.CHPBlockPartials;
+import net.steampn.createhorsepower.utils.CHPDiagnostics;
 import org.slf4j.Logger;
 
 @Mod(CreateHorsePower.MODID)
@@ -76,6 +79,7 @@ public class CreateHorsePower {
     private void registerGameTests(final RegisterGameTestsEvent event) {
         event.register(HorsePowerGameTests.class);
         event.register(HorsePowerLifecycleGameTests.class);
+        event.register(ForgeRecoveryEdgeGameTests.class);
     }
 
     @SubscribeEvent
@@ -89,6 +93,12 @@ public class CreateHorsePower {
         int pathEntries = Config.POOR_PATH.get().size() + Config.NORMAL_PATH.get().size() + Config.GREAT_PATH.get().size();
         LOGGER.info("Create Horse Power CE ready (Forge 1.20.1): configured_workers={} configured_paths={} tfc_optional_compat=true debugLogging={}",
                 workerEntries, pathEntries, Config.DEBUG_LOGGING.get());
+    }
+
+    @SubscribeEvent
+    public void onServerStopped(ServerStoppedEvent event) {
+        WorkerRecoveryQueue.clearTransientState();
+        CHPDiagnostics.clearRuntimeState();
     }
 
     /**

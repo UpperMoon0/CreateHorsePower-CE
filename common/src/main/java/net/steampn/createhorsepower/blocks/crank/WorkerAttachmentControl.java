@@ -234,15 +234,22 @@ public final class WorkerAttachmentControl {
             return;
         }
 
-        if (holder == null) {
-            // In both supported vanilla lines a persisted BlockPos leash can be
-            // present while getLeashHolder() is still null. Replacing it with a
-            // non-networked temporary holder before dropLeash clears that delayed
-            // leash state without resolving or force-loading the old knot chunk.
+        if (holder == null && hasPersistedLeashData(mob)) {
+            // Cross-version defensive path: 1.20.1 writes delayed leash data
+            // under "Leash" while 1.21.1 writes "leash". Only fabricate the
+            // temporary non-networked holder when vanilla serialization proves
+            // a leash payload still exists. A stale CHP marker by itself must
+            // never manufacture a lead when the mob is genuinely unleaded.
             mob.setLeashedTo(mob, false);
             mob.dropLeash(true, dropLead);
         }
         // A non-matching live holder belongs to someone/something else; preserve it.
+    }
+
+    private static boolean hasPersistedLeashData(Mob mob) {
+        CompoundTag snapshot = new CompoundTag();
+        mob.saveWithoutId(snapshot);
+        return snapshot.contains("Leash") || snapshot.contains("leash");
     }
 
     private static boolean hasLoadedMobAttachedToKnot(ServerLevel level, LeashFenceKnotEntity knot) {

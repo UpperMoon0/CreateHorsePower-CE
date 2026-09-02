@@ -146,6 +146,17 @@ public final class WorkerRecoveryQueue {
         NEXT_DEFERRED_LOG.remove(mob.getUUID());
     }
 
+    /**
+     * Drop only process-local queue state. Persistent recovery clocks stay on
+     * the mobs so a later world load resumes the same bounded recovery age.
+     * Loader server-stopped hooks call this to avoid retaining an integrated
+     * server's ServerLevel/entity graph from static maps after returning to menu.
+     */
+    public static void clearTransientState() {
+        PENDING.clear();
+        NEXT_DEFERRED_LOG.clear();
+    }
+
     private static long ensureRecoveryStartedGameTime(Mob mob, long now) {
         CompoundTag persistent = mob.getPersistentData();
         CompoundTag recovery = persistent.getCompound(RECOVERY_STATE_KEY);
