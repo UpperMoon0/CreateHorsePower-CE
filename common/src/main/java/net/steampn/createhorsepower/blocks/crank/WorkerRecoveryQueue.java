@@ -97,8 +97,15 @@ public final class WorkerRecoveryQueue {
                         : WorkerActivityControl.markerCrankUuid(mob);
 
                 // No old-crank block/chunk lookup is allowed below this point.
+                // When an attachment marker still exists, recoverAfterTimeout()
+                // releases only activity state owned by that exact attachment
+                // identity. Any activity marker left afterwards belongs to a
+                // different/newer crank and must survive. With no attachment
+                // marker, this is an activity-only timeout and the remaining
+                // marker is the state this queue entry is explicitly recovering.
+                boolean hadAttachmentMarker = WorkerAttachmentControl.hasMarker(mob);
                 WorkerAttachmentControl.recoverAfterTimeout(mob, level);
-                if (WorkerActivityControl.hasMarker(mob)) {
+                if (!hadAttachmentMarker && WorkerActivityControl.hasMarker(mob)) {
                     WorkerActivityControl.releaseFromMarker(mob);
                 }
                 CHPDiagnostics.event("recovery_timeout", level, recoveryPos, recoveryCrank, mob,
