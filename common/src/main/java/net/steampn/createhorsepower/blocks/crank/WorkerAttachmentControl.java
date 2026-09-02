@@ -58,15 +58,29 @@ public final class WorkerAttachmentControl {
         CHPDiagnostics.event("attachment_marker_written", mob.level(), crankPos, crankUuid, mob, "");
     }
 
-    public static void clearIfOwnedBy(Mob mob, UUID crankUuid) {
-        CompoundTag tag = mob.getPersistentData();
-        if (tag == null || !tag.contains(MARKER_KEY)) return;
-        CompoundTag marker = tag.getCompound(MARKER_KEY);
-        if (marker.hasUUID(CRANK_UUID_KEY) && crankUuid.equals(marker.getUUID(CRANK_UUID_KEY))) {
-            BlockPos crankPos = marker.contains(CRANK_POS_KEY) ? BlockPos.of(marker.getLong(CRANK_POS_KEY)) : null;
-            tag.remove(MARKER_KEY);
-            CHPDiagnostics.event("attachment_marker_cleared", mob.level(), crankPos, crankUuid, mob, "");
+    /**
+     * Returns whether the persistent attachment marker belongs to this exact
+     * crank identity. Position is part of the identity because vanilla /clone
+     * and NBT tooling can duplicate a block entity's persisted instance UUID.
+     */
+    public static boolean isOwnedBy(Mob mob, @Nullable BlockPos crankPos, @Nullable UUID crankUuid) {
+        if (!hasMarker(mob) || crankPos == null || crankUuid == null) {
+            return false;
         }
+        CompoundTag marker = mob.getPersistentData().getCompound(MARKER_KEY);
+        return marker.contains(CRANK_POS_KEY)
+                && crankPos.equals(BlockPos.of(marker.getLong(CRANK_POS_KEY)))
+                && marker.hasUUID(CRANK_UUID_KEY)
+                && crankUuid.equals(marker.getUUID(CRANK_UUID_KEY));
+    }
+
+    /** Clear an attachment marker only when both crank position and UUID match. */
+    public static void clearIfOwnedBy(Mob mob, BlockPos crankPos, UUID crankUuid) {
+        if (!isOwnedBy(mob, crankPos, crankUuid)) {
+            return;
+        }
+        mob.getPersistentData().remove(MARKER_KEY);
+        CHPDiagnostics.event("attachment_marker_cleared", mob.level(), crankPos, crankUuid, mob, "");
     }
 
     @Nullable
@@ -104,7 +118,7 @@ public final class WorkerAttachmentControl {
             // stronger record rather than silently losing detach(false).
             if (durable != null) {
                 releasePersistedCrankLeash(mob, level, durable.crankPos(), durable.dropLead());
-                releaseActivityIfOwnedBy(mob, durable.crankUuid());
+                releaseActivityIfOwnedBy(mob, durable.crankPos(), durable.crankUuid());
                 CHPApi.deferredDetaches().remove(level, mob.getUUID());
             }
             mob.getPersistentData().remove(MARKER_KEY);
@@ -113,7 +127,7 @@ public final class WorkerAttachmentControl {
 
         if (durable != null && durable.matches(crankPos, crankUuid)) {
             releasePersistedCrankLeash(mob, level, crankPos, durable.dropLead());
-            releaseActivityIfOwnedBy(mob, crankUuid);
+            releaseActivityIfOwnedBy(mob, crankPos, crankUuid);
             CHPApi.deferredDetaches().remove(level, mob.getUUID());
             mob.getPersistentData().remove(MARKER_KEY);
             CHPDiagnostics.event("attachment_recovered", level, crankPos, crankUuid, mob,
@@ -182,8 +196,8 @@ public final class WorkerAttachmentControl {
         if (crankPos != null) {
             releasePersistedCrankLeash(mob, level, crankPos, true);
         }
-        if (crankUuid != null) {
-            releaseActivityIfOwnedBy(mob, crankUuid);
+        if (crankPos != null && crankUuid != null) {
+            releaseActivityIfOwnedBy(mob, crankPos, crankUuid);
         }
         removeDurableIfOwnedBy(level, mob.getUUID(), crankPos, crankUuid);
         mob.getPersistentData().remove(MARKER_KEY);
@@ -191,8 +205,8 @@ public final class WorkerAttachmentControl {
                 "dropLead=true old_chunk_force_loaded=false");
     }
 
-    private static void releaseActivityIfOwnedBy(Mob mob, UUID crankUuid) {
-        if (crankUuid.equals(WorkerActivityControl.markerCrankUuid(mob))) {
+    private static void releaseActivityIfOwnedBy(Mob mob, BlockPos crankPos, UUID crankUuid) {
+        if (WorkerActivityControl.isOwnedBy(mob, crankPos, crankUuid)) {
             WorkerActivityControl.releaseFromMarker(mob);
         }
     }
