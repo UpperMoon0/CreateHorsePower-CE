@@ -28,7 +28,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -68,24 +68,23 @@ jobs:
           echo "release=true" >> "$GITHUB_OUTPUT"
 
       - name: Setup Java 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '21'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
+        uses: gradle/actions/setup-gradle@v4
 
       - name: Make Gradle executable
         run: chmod +x ./gradlew
 
-      - name: Build Create Horse Power - CE (all platforms)
-        # Full verification gate: shared source + resource parity checks, both
-        # platform builds and the shared test suites. A release must never be
-        # able to bypass the checks PR CI runs.
-        run: ./gradlew cleanAll --no-daemon
-      - name: Verify both platform builds
-        run: ./gradlew verify --no-daemon
+      - name: Verify and build both platform artifacts
+        # Hosted release runners start from a clean checkout, so a separate
+        # cleanAll invocation only repeats expensive Forge/NeoForge Gradle
+        # configuration. verify already gates parity, builds, unit tests and
+        # both GameTest servers and leaves the release jars in build/libs.
+        run: ./gradlew verify --stacktrace --no-daemon
 
       - name: Read mod versions and locate artifacts
         id: release_file
