@@ -17,7 +17,7 @@ public final class WorkerRecoveryQueue {
     private static final String RECOVERY_STATE_KEY = CHPConstants.MODID + ":recovery";
     private static final String RECOVERY_STARTED_GAME_TIME_KEY = "StartedGameTime";
 
-    private record Pending(Mob mob, ServerLevel level, int initialTickCount) {}
+    private record Pending(Mob mob, ServerLevel level, int initialTickCount, long enqueuedGameTime) {}
     private static final Map<UUID, Pending> PENDING = new HashMap<>();
     private static final Map<UUID, Long> NEXT_DEFERRED_LOG = new HashMap<>();
     private static final long DEFERRED_REMINDER_TICKS = 1200L;
@@ -47,7 +47,7 @@ public final class WorkerRecoveryQueue {
             return;
         }
         long started = ensureRecoveryStartedGameTime(mob, level.getGameTime());
-        PENDING.put(mob.getUUID(), new Pending(mob, level, mob.tickCount));
+        PENDING.put(mob.getUUID(), new Pending(mob, level, mob.tickCount, level.getGameTime()));
         NEXT_DEFERRED_LOG.put(mob.getUUID(), 0L);
         CHPDiagnostics.event("recovery_enqueued", level, WorkerAttachmentControl.markerCrankPos(mob),
                 WorkerAttachmentControl.markerCrankUuid(mob), mob,
@@ -64,6 +64,13 @@ public final class WorkerRecoveryQueue {
 
             Mob mob = pending.mob();
             if (level.getEntity(entry.getKey()) != mob) {
+                // EntityJoinLevel fires before the level's UUID lookup is
+                // guaranteed to expose the joining instance. Keep the entry
+                // through that tick, then discard it if registration still
+                // did not complete or another instance owns the UUID.
+                if (level.getGameTime() <= pending.enqueuedGameTime()) {
+                    continue;
+                }
                 // The durable recovery clock stays on the worker's persistent
                 // data. A later EntityJoinLevel only re-schedules execution.
                 it.remove();
@@ -78,7 +85,15 @@ public final class WorkerRecoveryQueue {
 
             WorkerAttachmentControl.RecoveryResult attachment =
                     WorkerAttachmentControl.recoverIfOrphaned(mob, level);
-            WorkerActivityControl.recoverIfOrphaned(mob, level);
+            BlockPos attachmentCrankPos = WorkerAttachmentControl.markerCrankPos(mob);
+            UUID attachmentCrankUuid = WorkerAttachmentControl.markerCrankUuid(mob);
+            boolean preserveForeignActivity =
+                    attachment == WorkerAttachmentControl.RecoveryResult.DEFERRED
+                            && WorkerActivityControl.hasMarker(mob)
+                            && !WorkerActivityControl.isOwnedBy(mob, attachmentCrankPos, attachmentCrankUuid);
+            if (!preserveForeignActivity) {
+                WorkerActivityControl.recoverIfOrphaned(mob, level);
+            }
 
             BlockPos activityCrankPos = WorkerActivityControl.markerCrankPos(mob);
             boolean activityDeferred = WorkerActivityControl.hasMarker(mob)

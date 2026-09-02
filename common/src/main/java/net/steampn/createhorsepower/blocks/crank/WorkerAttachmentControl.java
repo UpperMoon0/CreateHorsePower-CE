@@ -40,7 +40,11 @@ public final class WorkerAttachmentControl {
         // legacy BE-local migration record before writing new ownership.
         if (mob.level() instanceof ServerLevel serverLevel) {
             DeferredDetachStore.Entry stale = CHPApi.deferredDetaches().remove(serverLevel, mob.getUUID());
-            if (serverLevel.getBlockEntity(crankPos) instanceof AbstractHorseCrankBlockEntity crank
+            // A marker can be restored from stale worker data before its old
+            // crank chunk is available. Never load that chunk merely to clean
+            // up the legacy BE-local detach policy.
+            if (serverLevel.hasChunkAt(crankPos)
+                    && serverLevel.getBlockEntity(crankPos) instanceof AbstractHorseCrankBlockEntity crank
                     && crankUuid.equals(crank.engine().crankInstanceUuid())) {
                 crank.engine().consumeDeferredDetachPolicy(mob.getUUID());
             }
