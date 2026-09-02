@@ -130,7 +130,9 @@ public class CHPUtils {
      * Persist unloaded-worker detach semantics at level scope. This runs while
      * the owning crank chunk is already loaded, so reading the crank instance
      * UUID here never force-loads anything. A loaded worker is cleaned
-     * immediately instead and any obsolete durable intent is removed.
+     * immediately; only a durable intent owned by this exact crank instance is
+     * consumed. A stale record belonging to some other crank must survive for
+     * that owner/recovery path to resolve.
      */
     private static void reconcileDurableDetachPolicy(
             ServerLevel level,
@@ -138,22 +140,27 @@ public class CHPUtils {
             UUID workerUuid,
             boolean dropLead
     ) {
-        Entity loaded = level.getEntity(workerUuid);
-        if (loaded instanceof Mob) {
-            CHPApi.deferredDetaches().remove(level, workerUuid);
+        if (!(level.getBlockEntity(crankPos) instanceof AbstractHorseCrankBlockEntity crank)) {
             return;
         }
 
-        if (level.getBlockEntity(crankPos) instanceof AbstractHorseCrankBlockEntity crank) {
-            UUID crankUuid = crank.engine().crankInstanceUuid();
-            CHPApi.deferredDetaches().put(
-                    level,
-                    workerUuid,
-                    new DeferredDetachStore.Entry(crankPos, crankUuid, dropLead)
-            );
-            CHPDiagnostics.event("deferred_detach_persisted", level, crankPos, crankUuid, null,
-                    "worker_uuid=" + workerUuid + " dropLead=" + dropLead);
+        UUID crankUuid = crank.engine().crankInstanceUuid();
+        Entity loaded = level.getEntity(workerUuid);
+        if (loaded instanceof Mob) {
+            DeferredDetachStore.Entry existing = CHPApi.deferredDetaches().get(level, workerUuid);
+            if (existing != null && existing.matches(crankPos, crankUuid)) {
+                CHPApi.deferredDetaches().remove(level, workerUuid);
+            }
+            return;
         }
+
+        CHPApi.deferredDetaches().put(
+                level,
+                workerUuid,
+                new DeferredDetachStore.Entry(crankPos, crankUuid, dropLead)
+        );
+        CHPDiagnostics.event("deferred_detach_persisted", level, crankPos, crankUuid, null,
+                "worker_uuid=" + workerUuid + " dropLead=" + dropLead);
     }
 
     public static InteractionResult killLeashEntity(Level level, BlockPos pos) {
