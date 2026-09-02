@@ -28,6 +28,7 @@ import net.steampn.createhorsepower.content.stats.WorkerResolver;
 import net.steampn.createhorsepower.platform.CHPApi;
 import net.steampn.createhorsepower.platform.DeferredDetachStore;
 import net.steampn.createhorsepower.registry.BlockRegister;
+import net.steampn.createhorsepower.utils.CHPUtils;
 
 import java.util.UUID;
 
@@ -217,6 +218,65 @@ public final class HorsePowerLifecycleGameTests {
         helper.assertTrue(WorkerAttachmentControl.hasMarker(horse)
                         && crankUuid.equals(WorkerAttachmentControl.markerCrankUuid(horse)),
                 "successful new attachment must write fresh current ownership");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 20)
+    public static void recoveredWorkerKeepsKnotUsedByAnotherLoadedMob(GameTestHelper helper) {
+        BlockPos localCrankPos = new BlockPos(0, 1, 0);
+        helper.setBlock(localCrankPos, BlockRegister.HORSE_CRANK.get());
+        AbstractHorseCrankBlockEntity crank = requireCrank(helper, localCrankPos);
+        ServerLevel level = helper.getLevel();
+        UUID crankUuid = crank.engine().crankInstanceUuid();
+
+        Horse recovering = helper.spawn(EntityType.HORSE, new BlockPos(2, 1, 2));
+        Horse other = helper.spawn(EntityType.HORSE, new BlockPos(3, 1, 2));
+        LeashFenceKnotEntity knot = LeashFenceKnotEntity.getOrCreateKnot(level, crank.getBlockPos());
+        recovering.setLeashedTo(knot, true);
+        other.setLeashedTo(knot, true);
+        WorkerAttachmentControl.markAttached(recovering, crank.getBlockPos(), crankUuid);
+        CHPApi.deferredDetaches().put(level, recovering.getUUID(),
+                new DeferredDetachStore.Entry(crank.getBlockPos(), crankUuid, false));
+
+        WorkerAttachmentControl.RecoveryResult result = WorkerAttachmentControl.recoverIfOrphaned(recovering, level);
+        helper.assertTrue(result == WorkerAttachmentControl.RecoveryResult.RECOVERED,
+                "matching durable detach must recover the stale worker immediately");
+        helper.assertFalse(recovering.isLeashed(),
+                "recovered worker must release its persisted crank leash");
+        helper.assertTrue(other.getLeashHolder() == knot,
+                "recovery must preserve another loaded mob using the same exact knot");
+        helper.assertTrue(knot.isAlive(),
+                "shared knot must stay alive while another loaded mob still uses it");
+
+        other.dropLeash(true, false);
+        knot.discard();
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 20)
+    public static void foreignCrankCleanupDoesNotConsumeDurableDetachIntent(GameTestHelper helper) {
+        BlockPos localCrankA = new BlockPos(0, 1, 0);
+        BlockPos localCrankB = new BlockPos(4, 1, 0);
+        helper.setBlock(localCrankA, BlockRegister.HORSE_CRANK.get());
+        helper.setBlock(localCrankB, BlockRegister.HORSE_CRANK.get());
+        AbstractHorseCrankBlockEntity crankA = requireCrank(helper, localCrankA);
+        AbstractHorseCrankBlockEntity crankB = requireCrank(helper, localCrankB);
+        ServerLevel level = helper.getLevel();
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(2, 1, 2));
+
+        DeferredDetachStore.Entry ownedByA = new DeferredDetachStore.Entry(
+                crankA.getBlockPos(), crankA.engine().crankInstanceUuid(), false);
+        CHPApi.deferredDetaches().put(level, horse.getUUID(), ownedByA);
+
+        CHPUtils.cleanUpLeash(level, crankB.getBlockPos(), horse.getUUID(), true);
+
+        DeferredDetachStore.Entry remaining = CHPApi.deferredDetaches().get(level, horse.getUUID());
+        helper.assertTrue(remaining != null
+                        && remaining.matches(crankA.getBlockPos(), crankA.engine().crankInstanceUuid())
+                        && !remaining.dropLead(),
+                "cleanup from crank B must not erase crank A's durable detach ownership");
+
+        CHPApi.deferredDetaches().remove(level, horse.getUUID());
         helper.succeed();
     }
 
