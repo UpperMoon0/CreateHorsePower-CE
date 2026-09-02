@@ -83,10 +83,30 @@ public interface HorseCrankAccess {
         return engine().generatedSpeed();
     }
 
+    default double getVisualGroundSpeed() {
+        return engine().getVisualGroundSpeed();
+    }
+
+    default float getWorkerRadius() {
+        return engine().getWorkerRadius();
+    }
+
+    default java.util.UUID getWorkerUuid() {
+        return engine().getWorkerUuid();
+    }
+
+    default net.minecraft.world.entity.Mob getLoadedWorkerForDiagnostics() {
+        return engine().getLoadedWorkerForDiagnostics();
+    }
+
     default void attachWorker(net.minecraft.world.entity.Mob worker, WorkerResolver.ResolvedWorker profile) {
         engine().attachWorker(worker, profile);
     }
 
+    /**
+     * Detach the current worker. The {@code dropLead} policy is preserved even
+     * when the worker is unloaded and its persisted leash is recovered later.
+     */
     default void detachWorker(boolean dropLead) {
         engine().detachWorker(dropLead);
     }

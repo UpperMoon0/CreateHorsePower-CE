@@ -111,6 +111,13 @@ repositories {
         name = "Modrinth"
         url = "https://api.modrinth.com/maven"
     }
+    maven {
+        name = "CurseMaven"
+        url = "https://www.cursemaven.com"
+        content {
+            includeGroup "curse.maven"
+        }
+    }
 }
 
 dependencies {
@@ -132,6 +139,11 @@ dependencies {
     // Jade is optional for users, but installed in the dev client for HUD integration testing.
     compileOnly(fg.deobf("maven.modrinth:jade:${jade_version}"))
     runtimeOnly(fg.deobf("maven.modrinth:jade:${jade_version}"))
+
+    // TFC is optional for users, but installed in dev runs for compatibility testing.
+    // CurseMaven does not publish transitive metadata, so include TFC's required Patchouli dependency explicitly.
+    runtimeOnly(fg.deobf("curse.maven:terrafirmacraft-302973:8762332")) // TFC 1.20.1-3.2.25
+    runtimeOnly(fg.deobf("vazkii.patchouli:Patchouli:1.20.1-81-FORGE"))
 
     // Shared behavioral tests run on every target
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'

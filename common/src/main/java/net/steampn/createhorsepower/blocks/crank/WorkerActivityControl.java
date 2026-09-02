@@ -3,10 +3,14 @@ package net.steampn.createhorsepower.blocks.crank;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.decoration.LeashFenceKnotEntity;
 import net.minecraft.world.phys.Vec3;
 
 import net.steampn.createhorsepower.CHPConstants;
+import net.steampn.createhorsepower.utils.CHPUtils;
+import net.steampn.createhorsepower.utils.CHPDiagnostics;
 
 import org.jetbrains.annotations.Nullable;
 
@@ -28,8 +32,9 @@ import java.util.UUID;
  *
  * <p>Marker invariant: once the marker records a worker's original {@code NoAI}
  * state, that value must not be overwritten while the marker remains, even if
- * {@link #acquire} is called again from the same or a different crank. A crank
- * only owns the suppression it actually created.
+ * {@link #acquire} is called again from the same crank identity. Ownership is
+ * the composite {@code (BlockPos, instance UUID)} rather than UUID alone so a
+ * vanilla/NBT-cloned crank cannot impersonate the original owner.
  */
 public final class WorkerActivityControl {
     /** Tag namespace for the suppression marker. */
@@ -51,7 +56,7 @@ public final class WorkerActivityControl {
         return tag != null && tag.contains(MARKER_KEY);
     }
 
-    /** UUID of the crank that issued the marker, or {@code null} if the marker is missing/malformed. */
+    /** UUID component of the crank identity that issued the marker, or {@code null} if missing/malformed. */
     @Nullable
     public static UUID markerCrankUuid(Mob mob) {
         if (!hasMarker(mob)) {
@@ -61,7 +66,7 @@ public final class WorkerActivityControl {
         return marker.hasUUID(CRANK_UUID_KEY) ? marker.getUUID(CRANK_UUID_KEY) : null;
     }
 
-    /** Block position of the crank that issued the marker, or {@code null} if the marker is missing/malformed. */
+    /** Position component of the crank identity that issued the marker, or {@code null} if missing/malformed. */
     @Nullable
     public static BlockPos markerCrankPos(Mob mob) {
         if (!hasMarker(mob)) {
@@ -72,15 +77,40 @@ public final class WorkerActivityControl {
     }
 
     /**
+     * Returns whether the current marker is owned by this exact crank identity.
+     * Current CE markers require both position and UUID to match. A caller that
+     * intentionally passes a null position gets the legacy UUID-only comparison.
+     */
+    public static boolean isOwnedBy(
+            Mob mob,
+            @Nullable BlockPos expectedCrankPos,
+            @Nullable UUID expectedCrankUuid
+    ) {
+        if (!hasMarker(mob) || expectedCrankUuid == null) {
+            return false;
+        }
+        CompoundTag marker = mob.getPersistentData().getCompound(MARKER_KEY);
+        if (!marker.hasUUID(CRANK_UUID_KEY)
+                || !expectedCrankUuid.equals(marker.getUUID(CRANK_UUID_KEY))) {
+            return false;
+        }
+        if (expectedCrankPos == null) {
+            return true;
+        }
+        return marker.contains(CRANK_POS_KEY)
+                && expectedCrankPos.equals(BlockPos.of(marker.getLong(CRANK_POS_KEY)));
+    }
+
+    /**
      * Acquire crank control of a worker's AI. Writes a persistent marker so the
      * original {@code NoAI} state is recoverable even if the crank BE later
      * disappears before {@link #release} runs.
      *
-     * <p>If a marker already exists, the previously recorded {@code NoAI} state
-     * is preserved exactly: this call records what the marker already says, not
-     * the mob's current {@code NoAI}. The only way the recorded value can change
-     * is if a foreign crank's marker is found and explicitly recovered, in which
-     * case the live {@code NoAI} is taken as the new baseline.
+     * <p>If a marker already exists for this exact crank identity, the previously
+     * recorded {@code NoAI} state is preserved exactly: this call records what
+     * the marker already says, not the mob's current {@code NoAI}. A marker from
+     * a different position and/or UUID is recovered first, then the live state
+     * becomes the new baseline.
      *
      * @return {@code true} only if the crank actually changed the mob's
      *         {@code NoAI} state (i.e. owns the suppression and must restore it).
@@ -96,14 +126,10 @@ public final class WorkerActivityControl {
             CompoundTag marker = mob.getPersistentData().getCompound(MARKER_KEY);
             previousNoAi = marker.getBoolean(PREVIOUS_NO_AI_KEY);
 
-            UUID existingOwner = marker.hasUUID(CRANK_UUID_KEY)
-                    ? marker.getUUID(CRANK_UUID_KEY)
-                    : null;
-
-            // Do not silently steal a marker from another crank.
-            if (existingOwner != null
-                    && crankUuid != null
-                    && !existingOwner.equals(crankUuid)) {
+            // Do not silently steal a marker from another crank. UUID alone is
+            // insufficient because vanilla /clone and NBT tooling can duplicate
+            // a block entity's persisted instance UUID at a new position.
+            if (crankUuid != null && hasForeignMarker(mob, crankPos, crankUuid)) {
                 releaseFromMarker(mob);
                 previousNoAi = mob.isNoAi();
             }
@@ -113,6 +139,8 @@ public final class WorkerActivityControl {
 
         writeMarker(mob, previousNoAi, crankPos, crankUuid);
         maintain(mob);
+        CHPDiagnostics.event("ai_suppression_acquired", mob.level(), crankPos, crankUuid, mob,
+                "previous_no_ai=" + previousNoAi + " owns_change=" + (!previousNoAi));
 
         return !previousNoAi;
     }
@@ -135,6 +163,8 @@ public final class WorkerActivityControl {
      * continue flying along its last orbit vector.
      */
     public static void release(Mob mob, boolean ownedByCrank) {
+        BlockPos crankPos = markerCrankPos(mob);
+        UUID crankUuid = markerCrankUuid(mob);
         if (ownedByCrank) {
             // Prefer the marker: the BE-level state can disagree with the
             // mob's persistent marker if the worker was reassigned or
@@ -145,6 +175,8 @@ public final class WorkerActivityControl {
         clearMarker(mob);
         mob.getNavigation().stop();
         clearHorizontalVelocity(mob);
+        CHPDiagnostics.event("ai_suppression_released", mob.level(), crankPos, crankUuid, mob,
+                "owned_by_crank=" + ownedByCrank);
     }
 
     /**
@@ -162,11 +194,15 @@ public final class WorkerActivityControl {
             return false;
         }
         CompoundTag marker = tag.getCompound(MARKER_KEY);
+        BlockPos crankPos = marker.contains(CRANK_POS_KEY) ? BlockPos.of(marker.getLong(CRANK_POS_KEY)) : null;
+        UUID crankUuid = marker.hasUUID(CRANK_UUID_KEY) ? marker.getUUID(CRANK_UUID_KEY) : null;
         boolean restoreTo = marker.getBoolean(PREVIOUS_NO_AI_KEY);
         mob.setNoAi(restoreTo);
         clearMarker(mob);
         mob.getNavigation().stop();
         clearHorizontalVelocity(mob);
+        CHPDiagnostics.event("ai_orphan_recovered", mob.level(), crankPos, crankUuid, mob,
+                "restored_no_ai=" + restoreTo);
         return true;
     }
 
@@ -180,12 +216,16 @@ public final class WorkerActivityControl {
     }
 
     /**
-     * Returns {@code true} if this mob already carries a CHP AI suppression
-     * marker that was not created by {@code expectedCrankUuid} (or any, if
-     * {@code expectedCrankUuid} is {@code null}). Used to detect a stale marker
-     * left by a previous crank that has since disappeared.
+     * Returns {@code true} if this mob carries a marker owned by another crank
+     * identity. UUID mismatch is always foreign. When both sides have a position,
+     * a position mismatch is also foreign even if an NBT clone duplicated the UUID.
+     * Missing legacy position data remains recoverable through the UUID-only path.
      */
-    public static boolean hasForeignMarker(Mob mob, @Nullable UUID expectedCrankUuid) {
+    public static boolean hasForeignMarker(
+            Mob mob,
+            @Nullable BlockPos expectedCrankPos,
+            @Nullable UUID expectedCrankUuid
+    ) {
         CompoundTag tag = mob.getPersistentData();
         if (tag == null || !tag.contains(MARKER_KEY)) {
             return false;
@@ -194,7 +234,20 @@ public final class WorkerActivityControl {
             return true;
         }
         CompoundTag marker = tag.getCompound(MARKER_KEY);
-        return marker.hasUUID(CRANK_UUID_KEY) && !marker.getUUID(CRANK_UUID_KEY).equals(expectedCrankUuid);
+        if (!marker.hasUUID(CRANK_UUID_KEY)) {
+            return false;
+        }
+        if (!marker.getUUID(CRANK_UUID_KEY).equals(expectedCrankUuid)) {
+            return true;
+        }
+        return expectedCrankPos != null
+                && marker.contains(CRANK_POS_KEY)
+                && !expectedCrankPos.equals(BlockPos.of(marker.getLong(CRANK_POS_KEY)));
+    }
+
+    /** Legacy UUID-only overload retained for compatibility with existing integrations. */
+    public static boolean hasForeignMarker(Mob mob, @Nullable UUID expectedCrankUuid) {
+        return hasForeignMarker(mob, null, expectedCrankUuid);
     }
 
     /**
@@ -206,9 +259,9 @@ public final class WorkerActivityControl {
      * <p>This is intentionally conservative:
      * <ul>
      *   <li>It never force-loads chunks.</li>
-     *   <li>If the original crank still exists with a matching instance UUID
-     *       and still considers this mob its worker, the marker is left in
-     *       place so the live crank can finish the suppression.</li>
+     *   <li>If the original crank still exists at the recorded position with
+     *       a matching instance UUID and still considers this mob its worker,
+     *       the marker is left in place so the live crank can finish suppression.</li>
      *   <li>If the marker is missing, the function returns {@code false} and
      *       touches nothing.</li>
      * </ul>
@@ -233,22 +286,28 @@ public final class WorkerActivityControl {
             return false;
         }
 
-        if (!(level.getBlockEntity(crankPos) instanceof AbstractHorseCrankBlockEntity crank)) {
-            return releaseFromMarker(mob);
+        AbstractHorseCrankBlockEntity liveCrank =
+                level.getBlockEntity(crankPos) instanceof AbstractHorseCrankBlockEntity crank ? crank : null;
+
+        boolean stillOwned = liveCrank != null
+                && expectedUuid.equals(liveCrank.engine().crankInstanceUuid())
+                && liveCrank.engine().isAssignedWorker(mob.getUUID());
+        if (stillOwned) {
+            return false;
         }
 
-        if (!expectedUuid.equals(crank.engine().crankInstanceUuid())) {
-            return releaseFromMarker(mob);
+        // CE.2 and older workers have no dedicated attachment marker. When
+        // this recovery runs post-tick, the AI marker's crank position is
+        // enough to clean a stale persisted leash without hard-coding TFC.
+        Entity holder = mob.getLeashHolder();
+        if (holder instanceof LeashFenceKnotEntity knot && knot.blockPosition().equals(crankPos)) {
+            mob.dropLeash(true, true);
+            if (knot.isAlive() && !CHPUtils.hasAttachedWorker(level, crankPos)) {
+                knot.discard();
+            }
         }
 
-        // Same real crank still exists; if it claims this exact mob, leave
-        // the marker alone. Otherwise the crank has been reassigned and the
-        // marker is stale.
-        if (!crank.engine().isAssignedWorker(mob.getUUID())) {
-            return releaseFromMarker(mob);
-        }
-
-        return false;
+        return releaseFromMarker(mob);
     }
 
     public static void clearHorizontalVelocity(Mob mob) {

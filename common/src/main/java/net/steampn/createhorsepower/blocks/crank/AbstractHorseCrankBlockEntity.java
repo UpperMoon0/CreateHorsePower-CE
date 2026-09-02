@@ -78,6 +78,11 @@ public abstract class AbstractHorseCrankBlockEntity extends GeneratingKineticBlo
     }
 
     @Override
+    public void markDirty() {
+        this.setChanged();
+    }
+
+    @Override
     public void clearKineticInfo() {
         this.clearKineticInformation();
     }

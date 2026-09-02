@@ -52,6 +52,10 @@ public class Config implements CHPConfig {
     public static final ModConfigSpec.BooleanValue ALLOW_BABIES;
     public static final ModConfigSpec.BooleanValue REQUIRE_TAMED_HORSE;
     public static final ModConfigSpec.BooleanValue ALLOW_UNDEAD_WORKERS;
+    public static final ModConfigSpec.DoubleValue WORKER_GROUND_SPEED_SCALE;
+    public static final ModConfigSpec.DoubleValue MIN_WORKER_GROUND_SPEED;
+    public static final ModConfigSpec.DoubleValue MAX_WORKER_GROUND_SPEED;
+    public static final ModConfigSpec.BooleanValue DEBUG_LOGGING;
 
     // ==========================================
     // PATH (1.2+)
@@ -154,6 +158,21 @@ public class Config implements CHPConfig {
         ALLOW_UNDEAD_WORKERS = BUILDER
                 .comment("Allow undead/skeleton horses and mobs as workers.")
                 .define("allowUndeadWorkers", true);
+        WORKER_GROUND_SPEED_SCALE = BUILDER
+                .comment("Converts a mob's movement-speed attribute into visual orbit ground speed in blocks/second. Mechanical RPM is independent.")
+                .defineInRange("workerGroundSpeedScale", 10.0, 0.1, 100.0);
+        MIN_WORKER_GROUND_SPEED = BUILDER
+                .comment("Minimum visual worker orbit speed in blocks/second.")
+                .defineInRange("minWorkerGroundSpeed", 0.8, 0.05, 20.0);
+        MAX_WORKER_GROUND_SPEED = BUILDER
+                .comment("Maximum visual worker orbit speed in blocks/second. Keeps high-output workers at a believable gait.")
+                .defineInRange("maxWorkerGroundSpeed", 3.5, 0.05, 40.0);
+        BUILDER.pop();
+
+        BUILDER.push("diagnostics");
+        DEBUG_LOGGING = BUILDER
+                .comment("Enable transition-based Create Horse Power diagnostics. Does not log normal movement every tick.")
+                .define("debugLogging", false);
         BUILDER.pop();
 
         BUILDER.push("path");
@@ -211,6 +230,10 @@ public class Config implements CHPConfig {
     @Override public boolean allowBabies() { return ALLOW_BABIES.get(); }
     @Override public boolean requireTamedHorse() { return REQUIRE_TAMED_HORSE.get(); }
     @Override public boolean allowUndeadWorkers() { return ALLOW_UNDEAD_WORKERS.get(); }
+    @Override public double workerGroundSpeedScale() { return WORKER_GROUND_SPEED_SCALE.get(); }
+    @Override public double minWorkerGroundSpeed() { return MIN_WORKER_GROUND_SPEED.get(); }
+    @Override public double maxWorkerGroundSpeed() { return MAX_WORKER_GROUND_SPEED.get(); }
+    @Override public boolean debugLogging() { return DEBUG_LOGGING.get(); }
     @Override public PathEvaluationMode pathEvaluationMode() { return PATH_EVALUATION_MODE.get(); }
     @Override public double minimumPathCoverage() { return MINIMUM_PATH_COVERAGE.get(); }
     @Override public int checkIntervalTicks() { return CHECK_INTERVAL_TICKS.get(); }

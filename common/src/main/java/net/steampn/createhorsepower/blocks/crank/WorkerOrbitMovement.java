@@ -74,6 +74,29 @@ public final class WorkerOrbitMovement {
         );
     }
 
+
+    /** Convert the mob movement-speed attribute into a bounded visual ground speed. */
+    public static double groundSpeedBlocksPerSecond(double movementAttribute, double scale, double min, double max) {
+        double low = Math.min(min, max);
+        double high = Math.max(min, max);
+        double raw = movementAttribute * scale;
+        if (!Double.isFinite(raw)) raw = low;
+        return Math.max(low, Math.min(high, raw));
+    }
+
+    /**
+     * Convert a linear ground speed to an angular step. Because angular speed
+     * is derived from v/r, equal ground speeds remain equal at every radius.
+     */
+    public static double angularDeltaPerTick(double groundSpeedBlocksPerSecond, double radius, double direction) {
+        if (!Double.isFinite(groundSpeedBlocksPerSecond) || !Double.isFinite(radius) || radius <= 0.0D) return 0.0D;
+        return (groundSpeedBlocksPerSecond / radius) / 20.0D * Math.signum(direction);
+    }
+
+    public static double linearDistancePerTick(double radius, double angularDelta) {
+        return Math.abs(radius * angularDelta);
+    }
+
     public static double angleFromPosition(double x, double z, double centerX, double centerZ) {
         return Math.atan2(z - centerZ, x - centerX);
     }

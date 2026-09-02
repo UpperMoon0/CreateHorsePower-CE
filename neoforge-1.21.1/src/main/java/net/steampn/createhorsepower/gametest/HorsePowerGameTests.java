@@ -3,22 +3,29 @@ package net.steampn.createhorsepower.gametest;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.animal.Cow;
 import net.minecraft.world.entity.animal.horse.Horse;
+import net.minecraft.world.entity.decoration.LeashFenceKnotEntity;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 import net.steampn.createhorsepower.blocks.crank.AbstractHorseCrankBlockEntity;
 import net.steampn.createhorsepower.blocks.crank.HorseCrankEngine;
 import net.steampn.createhorsepower.blocks.crank.WorkerActivityControl;
+import net.steampn.createhorsepower.blocks.crank.WorkerAttachmentControl;
 import net.steampn.createhorsepower.blocks.crank.WorkerOrbitMovement;
 import net.steampn.createhorsepower.content.stats.WorkerResolver;
 import net.steampn.createhorsepower.registry.BlockRegister;
 import net.steampn.createhorsepower.registry.TileEntityRegister;
+import net.steampn.createhorsepower.utils.CHPUtils;
 
 import java.util.UUID;
 
@@ -89,11 +96,14 @@ public final class HorsePowerGameTests {
         Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(0, 0, 0));
         helper.assertTrue(!horse.isNoAi(), "Pre-condition: ordinary horse has AI enabled");
 
+        // Simulate crank A acquiring control, then disappearing.
         UUID crankA = new UUID(0x1111L, 0xAAAAAAAAL);
         boolean ownsAiSuppression = WorkerActivityControl.acquire(horse, new BlockPos(3, 1, 3), crankA);
         helper.assertTrue(ownsAiSuppression, "Crank A must own the suppression for an ordinary AI-enabled horse");
         helper.assertTrue(horse.isNoAi(), "Crank A suppresses the horse's AI");
 
+        // Crank A's BE is gone; we never call release(). Recovery must come
+        // from the persistent marker on the worker.
         boolean recovered = WorkerActivityControl.releaseFromMarker(horse);
         helper.assertTrue(recovered, "releaseFromMarker must find the stranded marker");
         helper.assertTrue(!horse.isNoAi(), "Stranded horse must return to NoAI=false after marker recovery");
@@ -112,6 +122,7 @@ public final class HorsePowerGameTests {
 
         UUID crankA = new UUID(0x2222L, 0xBBBBBBBBL);
         WorkerActivityControl.acquire(horse, new BlockPos(3, 1, 3), crankA);
+        // Crank A disappears without calling release.
         boolean recovered = WorkerActivityControl.releaseFromMarker(horse);
         helper.assertTrue(recovered, "releaseFromMarker must find the stranded marker");
         helper.assertTrue(horse.isNoAi(), "Pre-existing NoAI must survive marker recovery");
@@ -133,11 +144,13 @@ public final class HorsePowerGameTests {
         UUID crankA = new UUID(0x3333L, 0xCCCCCCCCL);
         UUID crankB = new UUID(0x4444L, 0xDDDDDDDDL);
 
+        // Crank A acquires the cow, then disappears.
         WorkerActivityControl.acquire(cow, new BlockPos(1, 1, 1), crankA);
         helper.assertTrue(cow.isNoAi(), "Crank A suppresses the cow's AI");
         helper.assertTrue(WorkerActivityControl.hasForeignMarker(cow, crankB),
                 "Crank B must see crank A's marker as foreign");
 
+        // Crank B picks up the cow without crank A having released it.
         WorkerActivityControl.releaseFromMarker(cow);
         helper.assertTrue(!cow.isNoAi(), "Stale marker recovery restores the cow's original AI");
 
@@ -345,6 +358,179 @@ public final class HorsePowerGameTests {
                 "Marker must be recovered when the live crank at the recorded position is a different instance");
         helper.assertFalse(horse.isNoAi(), "Recovered horse must return to NoAI=false");
         helper.assertFalse(WorkerActivityControl.hasMarker(horse), "Marker must be removed after recovery");
+        helper.succeed();
+    }
+
+    /**
+     * Leash cleanup must resolve the crank's stored worker UUID instead of
+     * relying only on the nearby-entity fallback. Workers can be pulled or
+     * teleported outside that fallback radius while their leash still points
+     * at the crank knot; detaching in that state used to leave a ghost leash.
+     */
+    @GameTest(template = "empty")
+    public static void detachReleasesAssignedWorkerOutsideCleanupRadius(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        BlockPos localCrankPos = new BlockPos(0, 1, 0);
+        BlockPos worldCrankPos = helper.absolutePos(localCrankPos);
+        helper.setBlock(localCrankPos, BlockRegister.HORSE_CRANK.get());
+        AbstractHorseCrankBlockEntity crank = requireCrank(helper, localCrankPos);
+        HorseCrankEngine engine = crank.engine();
+
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(2, 0, 2));
+        LeashFenceKnotEntity knot = LeashFenceKnotEntity.getOrCreateKnot(level, worldCrankPos);
+        horse.setLeashedTo(knot, false);
+        engine.attachWorker(horse, WorkerResolver.resolve(horse));
+
+        // CHPUtils' fallback scan is capped at MAX_MOVEMENT_RADIUS + 4 (10
+        // blocks). Move the assigned worker well beyond it while keeping the
+        // same leash holder to reproduce the stale-knot failure mode.
+        horse.setPos(worldCrankPos.getX() + 20.5D, worldCrankPos.getY(), worldCrankPos.getZ() + 0.5D);
+        helper.assertTrue(horse.isLeashed(), "Pre-condition: worker is still leashed to the crank knot");
+        helper.assertTrue(horse.getLeashHolder() == knot, "Pre-condition: crank knot is the leash holder");
+
+        engine.detachWorker(false);
+
+        helper.assertFalse(horse.isLeashed(),
+                "Detach must release the assigned worker even outside the fallback search radius");
+        helper.assertTrue(horse.getLeashHolder() == null,
+                "Detached worker must not retain a stale leash-holder reference");
+        helper.assertFalse(knot.isAlive(), "Crank knot must be discarded during detach cleanup");
+        helper.succeed();
+    }
+
+
+    /**
+     * Full persisted-leash regression: save a crank-controlled horse while its
+     * chunk is conceptually unloaded, detach the crank while the entity is
+     * absent, then reload the horse. Vanilla restores the saved BlockPos leash
+     * by recreating a knot; CHP must recover after that restoration and remove
+     * both the stale leash and now-unused knot.
+     */
+    @GameTest(template = "empty")
+    public static void reloadedWorkerDoesNotRecreateGhostCrankLeash(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        BlockPos localCrankPos = new BlockPos(0, 1, 0);
+        BlockPos worldCrankPos = helper.absolutePos(localCrankPos);
+        helper.setBlock(localCrankPos, BlockRegister.HORSE_CRANK.get());
+        AbstractHorseCrankBlockEntity crank = requireCrank(helper, localCrankPos);
+        HorseCrankEngine engine = crank.engine();
+
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(2, 0, 2));
+        LeashFenceKnotEntity knot = LeashFenceKnotEntity.getOrCreateKnot(level, worldCrankPos);
+        horse.setLeashedTo(knot, false);
+        engine.attachWorker(horse, WorkerResolver.resolve(horse));
+        engine.controlWorkerAiForTesting(horse);
+        helper.assertTrue(WorkerAttachmentControl.hasMarker(horse),
+                "Pre-condition: attached worker must carry persistent attachment ownership");
+        helper.assertTrue(WorkerActivityControl.hasMarker(horse),
+                "Pre-condition: controlled worker must also carry the AI marker");
+
+        CompoundTag saved = horse.saveWithoutId(new CompoundTag());
+        UUID workerUuid = horse.getUUID();
+
+        // Simulate the worker chunk being absent when the crank is detached.
+        horse.discard();
+        engine.setCachedWorkerMobForTesting(null);
+        engine.detachWorker(false);
+        helper.assertTrue(CHPUtils.getKnot(level, worldCrankPos).isEmpty(),
+                "Detach clears the currently loaded knot even though the worker is absent");
+
+        Horse reloaded = EntityType.HORSE.create(level);
+        if (reloaded == null) {
+            throw new AssertionError("Failed to recreate saved horse");
+        }
+        reloaded.load(saved);
+        helper.assertTrue(reloaded.getUUID().equals(workerUuid), "Reload must preserve the worker UUID");
+        helper.assertTrue(WorkerAttachmentControl.hasMarker(reloaded),
+                "Reloaded worker must retain attachment ownership before recovery");
+        helper.assertTrue(WorkerActivityControl.hasMarker(reloaded),
+                "Reloaded worker must retain AI ownership before recovery");
+        level.addFreshEntity(reloaded);
+
+        // EntityJoin queues recovery. The first mob tick restores the delayed
+        // leash/knot from NBT; the post-level-tick queue then removes it.
+        helper.runAfterDelay(3, () -> {
+            helper.assertFalse(reloaded.isLeashed(),
+                    "Reloaded orphan worker must not remain leashed to the old crank position");
+            helper.assertTrue(reloaded.getLeashHolder() == null,
+                    "Reloaded orphan worker must have no stale leash holder");
+            helper.assertFalse(WorkerAttachmentControl.hasMarker(reloaded),
+                    "Recovery must consume stale attachment ownership");
+            helper.assertFalse(WorkerActivityControl.hasMarker(reloaded),
+                    "Recovery must consume the stale AI marker");
+            helper.assertFalse(reloaded.isNoAi(),
+                    "Recovery must restore the worker's original NoAI=false state");
+            helper.assertTrue(CHPUtils.getKnot(level, worldCrankPos).isEmpty(),
+                    "Recovery must remove the unused knot recreated from saved leash data");
+            boolean spawnedLead = !level.getEntitiesOfClass(
+                    ItemEntity.class, new AABB(reloaded.blockPosition()).inflate(8.0D),
+                    item -> item.getItem().is(Items.LEAD)).isEmpty();
+            helper.assertFalse(spawnedLead,
+                    "Deferred detachWorker(false) must not spawn a lead when the worker reloads");
+            helper.succeed();
+        });
+    }
+
+
+    /**
+     * Engine-level regression for workers that already had NoAI=true before
+     * the crank started controlling them. The crank must own/maintain the CHP
+     * activity marker without claiming the NoAI transition, must not rewrite
+     * that marker every working tick, and must clear it on detach while
+     * preserving the worker's original NoAI=true state.
+     */
+    @GameTest(template = "empty")
+    public static void preexistingNoAiEngineMarkerClearsOnDetach(GameTestHelper helper) {
+        BlockPos localCrankPos = new BlockPos(0, 1, 0);
+        helper.setBlock(localCrankPos, BlockRegister.HORSE_CRANK.get());
+        AbstractHorseCrankBlockEntity crank = requireCrank(helper, localCrankPos);
+        HorseCrankEngine engine = crank.engine();
+
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(2, 0, 2));
+        horse.setNoAi(true);
+        engine.setWorkerUuidForTesting(horse.getUUID());
+        engine.setCachedWorkerMobForTesting(horse);
+
+        engine.controlWorkerAiForTesting(horse);
+        helper.assertTrue(engine.ownsWorkerActivityMarkerForTesting(),
+                "Engine must own the CHP activity marker even for pre-existing NoAI");
+        helper.assertFalse(engine.ownsWorkerAiSuppressionForTesting(),
+                "Engine must not claim a pre-existing NoAI transition");
+        helper.assertTrue(WorkerActivityControl.hasMarker(horse),
+                "Pre-existing NoAI worker must carry a recoverable CHP marker");
+        helper.assertTrue(WorkerActivityControl.readPreviousNoAi(horse),
+                "Marker must preserve the original NoAI=true baseline");
+
+        CompoundTag marker = horse.getPersistentData().getCompound(WorkerActivityControl.MARKER_KEY);
+        marker.putBoolean("TestSentinel", true);
+        horse.getPersistentData().put(WorkerActivityControl.MARKER_KEY, marker);
+
+        for (int i = 0; i < 5; i++) {
+            engine.controlWorkerAiForTesting(horse);
+        }
+        helper.assertTrue(horse.getPersistentData()
+                        .getCompound(WorkerActivityControl.MARKER_KEY)
+                        .getBoolean("TestSentinel"),
+                "Repeated control must maintain the same marker instead of reacquiring/rewriting it");
+
+        CompoundTag saved = new CompoundTag();
+        engine.write(saved, false);
+        helper.assertTrue(saved.getBoolean("OwnsWorkerActivityMarker"),
+                "Marker ownership must persist across crank saves");
+        helper.assertFalse(saved.getBoolean("OwnsWorkerAiSuppression"),
+                "Saved state must keep marker ownership separate from NoAI-transition ownership");
+
+        engine.detachWorker(false);
+        helper.assertTrue(horse.isNoAi(),
+                "Detach must preserve the worker's original NoAI=true state");
+        helper.assertFalse(WorkerActivityControl.hasMarker(horse),
+                "Detach must clear this crank's CHP activity marker");
+        helper.assertFalse(engine.ownsWorkerActivityMarkerForTesting(),
+                "Engine must drop marker ownership after detach");
+        helper.assertFalse(engine.ownsWorkerAiSuppressionForTesting(),
+                "Engine must own no NoAI transition after detach");
+        helper.assertTrue(engine.aiSuppressedWorkerUuidForTesting() == null,
+                "Engine must clear the controlled worker UUID after detach");
         helper.succeed();
     }
 

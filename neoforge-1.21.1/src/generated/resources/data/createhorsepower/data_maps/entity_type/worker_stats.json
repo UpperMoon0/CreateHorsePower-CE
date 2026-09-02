@@ -76,6 +76,138 @@
     "minecraft:wolf": {
       "speed_reference": 0.3,
       "stress": 150.0
+    },
+    "tfc:horse": {
+      "neoforge:conditions": [
+        {
+          "type": "neoforge:mod_loaded",
+          "modid": "tfc"
+        }
+      ],
+      "value": {
+        "rpm": 5.0,
+        "stress": 600.0,
+        "speed_scaling": 0.75,
+        "health_scaling": 0.25,
+        "health_reference": 22.0
+      },
+      "replace": true
+    },
+    "tfc:donkey": {
+      "neoforge:conditions": [
+        {
+          "type": "neoforge:mod_loaded",
+          "modid": "tfc"
+        }
+      ],
+      "value": {
+        "rpm": 4.0,
+        "stress": 650.0,
+        "speed_scaling": 0.5,
+        "speed_reference": 0.175,
+        "health_scaling": 0.3
+      },
+      "replace": true
+    },
+    "tfc:mule": {
+      "neoforge:conditions": [
+        {
+          "type": "neoforge:mod_loaded",
+          "modid": "tfc"
+        }
+      ],
+      "value": {
+        "rpm": 4.5,
+        "stress": 700.0,
+        "speed_scaling": 0.6,
+        "speed_reference": 0.2,
+        "health_scaling": 0.35,
+        "health_reference": 24.0
+      },
+      "replace": true
+    },
+    "tfc:cow": {
+      "neoforge:conditions": [
+        {
+          "type": "neoforge:mod_loaded",
+          "modid": "tfc"
+        }
+      ],
+      "value": {
+        "rpm": 3.0,
+        "stress": 300.0,
+        "speed_reference": 0.2,
+        "health_scaling": 0.2,
+        "health_reference": 10.0
+      },
+      "replace": true
+    },
+    "tfc:pig": {
+      "neoforge:conditions": [
+        {
+          "type": "neoforge:mod_loaded",
+          "modid": "tfc"
+        }
+      ],
+      "value": {
+        "rpm": 3.5,
+        "stress": 200.0,
+        "speed_scaling": 0.2,
+        "speed_reference": 0.2,
+        "health_scaling": 0.1,
+        "health_reference": 10.0
+      },
+      "replace": true
+    },
+    "tfc:sheep": {
+      "neoforge:conditions": [
+        {
+          "type": "neoforge:mod_loaded",
+          "modid": "tfc"
+        }
+      ],
+      "value": {
+        "rpm": 3.0,
+        "stress": 180.0,
+        "speed_reference": 0.2,
+        "health_scaling": 0.1,
+        "health_reference": 8.0
+      },
+      "replace": true
+    },
+    "tfc:dromedary_camel": {
+      "neoforge:conditions": [
+        {
+          "type": "neoforge:mod_loaded",
+          "modid": "tfc"
+        }
+      ],
+      "value": {
+        "rpm": 4.0,
+        "stress": 750.0,
+        "speed_scaling": 0.4,
+        "speed_reference": 0.09,
+        "health_scaling": 0.4,
+        "health_reference": 32.0
+      },
+      "replace": true
+    },
+    "tfc:bactrian_camel": {
+      "neoforge:conditions": [
+        {
+          "type": "neoforge:mod_loaded",
+          "modid": "tfc"
+        }
+      ],
+      "value": {
+        "rpm": 4.0,
+        "stress": 750.0,
+        "speed_scaling": 0.4,
+        "speed_reference": 0.09,
+        "health_scaling": 0.4,
+        "health_reference": 32.0
+      },
+      "replace": true
     }
   }
 }

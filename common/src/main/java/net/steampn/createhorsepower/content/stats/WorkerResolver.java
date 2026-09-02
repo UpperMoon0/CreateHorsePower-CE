@@ -59,6 +59,15 @@ public class WorkerResolver {
             return platformStats;
         }
 
+        // Cross-loader built-ins and optional registry-ID compatibility. On
+        // NeoForge this intentionally comes after Data Maps so datapacks can
+        // override the defaults; on Forge the config adapter already exposes
+        // the same built-ins, making this a harmless no-op fallback.
+        Optional<WorkerStats> builtinStats = BuiltinProfiles.worker(type);
+        if (builtinStats.isPresent()) {
+            return builtinStats;
+        }
+
         // Fallback to legacy worker tags with live config values
         if (type.is(CHPTags.Entities.WORKERS_LARGE) || type.is(CHPTags.Entities.LARGE_WORKER_TAG)) {
             return Optional.of(createLegacyProfile(CHPApi.config().largeCreatureStress()));

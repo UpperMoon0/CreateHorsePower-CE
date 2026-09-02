@@ -15,15 +15,17 @@ This is an independent, community-maintained fork of [SteamPunkNation/CreateHors
 
 Create and the respective loader are required. The core gameplay — worker profiles, path evaluation, redstone modes, commands, goggles tooltips — is identical on both versions. See the [compatibility matrix](docs/COMPATIBILITY.md) for feature-level differences (KubeJS, Ponder, data maps).
 
-On both loaders, Jade integration activates automatically when Jade is installed. NeoForge also supports the optional KubeJS integration; neither mod is required.
+On both loaders, Jade integration activates automatically when Jade is installed. NeoForge also supports the optional KubeJS integration; neither mod is required. TerraFirmaCraft is also optional: when present, CE provides built-in worker defaults for supported TFC livestock and path defaults for common TFC soil/rock families without adding a hard dependency.
 
 ## Highlights
 
-- Persistent Horse Cranks that recover attached workers safely across chunk reloads.
+- Persistent Horse Cranks with durable worker ownership and orphan-leash recovery across chunk unload/save/reload cycles.
 - Data-driven worker profiles with RPM, stress capacity, movement radius, taming/baby rules, and optional movement-speed and max-health scaling.
 - Data-driven path profiles with weighted-average, worst-block, and legacy evaluation modes.
+- Believable worker gait that is independent from mechanical RPM; high-output cranks no longer force animals to sprint around the ring.
 - Per-crank redstone modes: `HIGH_STOPS`, `HIGH_RUNS`, and `IGNORE`.
 - Create Goggles and optional Jade (both loaders) diagnostics for worker, path, output, and veto state.
+- Optional transition-based field logging through `diagnostics.debugLogging` for attach/detach, leash recovery, AI control, work state, and path state.
 - Datapack tags for worker tiers and custom attachment items.
 - NeoForge 1.21.1 only: optional KubeJS startup profiles and lifecycle/output events.
 - Inspection commands for cranks, workers, and path blocks.
@@ -37,7 +39,7 @@ Worker movement radii are supported from `0.5` to `6.0` blocks. The upper limit 
    - Forge 47.x on Minecraft 1.20.1 (Java 17).
 2. Place the Create Horse Power CE jar for your loader/version in the `mods` directory.
 3. Do not keep the original Create Horse Power jar in the same instance.
-4. Optionally install Jade on either loader for HUD details, or KubeJS on NeoForge 1.21.1 for scripted profiles and events.
+4. Optionally install Jade on either loader for HUD details, KubeJS on NeoForge 1.21.1 for scripted profiles and events, or TerraFirmaCraft for CE's built-in TFC compatibility defaults.
 
 ## Playing
 
@@ -53,11 +55,12 @@ The full [Packmaker and Modder Guide](docs/PACKMAKERS.md) documents:
 
 - `createhorsepower:worker_stats` and `createhorsepower:path_stats` NeoForge Data Maps (NeoForge 1.21.1; on Forge 1.20.1 canonical worker/path behavior is provided by the platform layer and can be extended or tuned through supported tags and server configuration — NeoForge Data Maps and KubeJS profile registration are not available on Forge yet).
 - Worker, attachment-item, and leash tags (available on both versions).
-- Server configuration and precedence rules.
+- Server configuration, including the 1.2.1 visual-gait and debug-logging settings.
+- Built-in optional TerraFirmaCraft worker/path defaults and precedence behavior.
 - KubeJS startup registration and server lifecycle events (NeoForge 1.21.1 only for now).
 - Migration behavior from CE 1.1.
 
-On NeoForge 1.21.1, KubeJS profiles override Data Maps, which override legacy tags/config lists. Built-in vanilla worker and path Data Maps therefore take priority over old tier and path tuning for the same entries.
+On NeoForge 1.21.1, KubeJS profiles override Data Maps, which override built-in registry-ID fallbacks and then legacy tags/config lists. Exact TFC Data Map defaults are conditional on TFC being installed and remain overridable/removable by later datapacks.
 
 ## Migrating from CE 1.1
 
@@ -67,7 +70,14 @@ On NeoForge 1.21.1, KubeJS profiles override Data Maps, which override legacy ta
 - Update any prerelease worker profile above a 6-block movement radius before loading it in 1.2; out-of-range Data Map or KubeJS values are rejected.
 - Back up important worlds before changing mod versions.
 
-See the [1.2.0 release notes](changelog/1.21.1-1.2.0-ce.2.md) for NeoForge 1.21.1 and the [Forge 1.20.1 1.2.0 release notes](changelog/1.20.1-1.2.0-ce.2.md) for the Forge port.
+### 1.2.1 maintenance notes
+
+- Unloaded detach intent and recovery timeout age now persist across save/unload/reload, including `detachWorker(false)` no-drop semantics.
+- Orphan recovery waits for vanilla leash restoration and removes only the stale crank-owned leash/knot; it does not force-load the old crank chunk or steal a worker already attached elsewhere.
+- Visual orbit speed is configured separately from generated RPM through `workers.workerGroundSpeedScale`, `workers.minWorkerGroundSpeed`, and `workers.maxWorkerGroundSpeed`.
+- `diagnostics.debugLogging` is off by default and emits transition-oriented diagnostics rather than per-tick movement spam.
+
+See the [1.2.1 release notes](changelog/1.21.1-1.2.1.md) for NeoForge 1.21.1 and the [Forge 1.20.1 1.2.1 release notes](changelog/1.20.1-1.2.1.md) for the Forge port.
 
 ## Building
 

@@ -124,11 +124,33 @@ public class PathEvaluator {
         }
 
         Optional<PathStats> platformStats = CHPApi.config().lookupPathStats(block);
+        Optional<PathStats> builtinStats = BuiltinProfiles.path(block);
+        Optional<PathStats> legacyStats = legacyPathStats(blockBuiltInKey(block));
+        return resolveFallbackPathStats(platformStats, builtinStats, legacyStats);
+    }
+
+    /**
+     * Cross-loader fallback precedence after KubeJS: platform-native profile
+     * (NeoForge Data Map / Forge canonical adapter), then shared built-in exact
+     * or family defaults, then legacy server config lists. Keeping this order in
+     * common prevents optional TFC path families from resolving differently on
+     * Forge and NeoForge while preserving NeoForge datapack override priority.
+     */
+    static Optional<PathStats> resolveFallbackPathStats(
+            Optional<PathStats> platformStats,
+            Optional<PathStats> builtinStats,
+            Optional<PathStats> legacyStats
+    ) {
         if (platformStats.isPresent()) {
             return platformStats;
         }
+        if (builtinStats.isPresent()) {
+            return builtinStats;
+        }
+        return legacyStats;
+    }
 
-        String blockKey = blockBuiltInKey(block);
+    private static Optional<PathStats> legacyPathStats(String blockKey) {
         if (CHPApi.config().greatPath().contains(blockKey)) {
             return Optional.of(new PathStats((float) CHPApi.config().greatMultiplier(), 1.10f));
         }
@@ -138,7 +160,6 @@ public class PathEvaluator {
         if (CHPApi.config().poorPath().contains(blockKey)) {
             return Optional.of(new PathStats((float) CHPApi.config().poorMultiplier(), 0.90f));
         }
-
         return Optional.empty();
     }
 

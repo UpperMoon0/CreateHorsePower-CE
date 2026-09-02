@@ -38,6 +38,20 @@ public final class BuiltinProfiles {
             Map.entry(EntityType.COW, COW), Map.entry(EntityType.PIG, PIG),
             Map.entry(EntityType.SHEEP, SHEEP), Map.entry(EntityType.WOLF, WOLF));
 
+    // Optional compatibility by registry ID keeps TFC completely absent from
+    // CHP's compile/runtime dependency graph. TFC 1.20.x and 1.21.x register
+    // horse, donkey and mule under these stable IDs.
+    private static final Map<String, WorkerStats> OPTIONAL_WORKERS = Map.ofEntries(
+            Map.entry("tfc:horse", HORSE),
+            Map.entry("tfc:donkey", DONKEY),
+            Map.entry("tfc:mule", MULE),
+            Map.entry("tfc:cow", COW),
+            Map.entry("tfc:pig", PIG),
+            Map.entry("tfc:sheep", SHEEP),
+            // TFC 1.21.x camel variants extend vanilla Camel through AbstractCamel.
+            Map.entry("tfc:dromedary_camel", CAMEL),
+            Map.entry("tfc:bactrian_camel", CAMEL));
+
     private static final Map<Block, PathStats> PATHS = Map.ofEntries(
             Map.entry(Blocks.DIRT_PATH, PathStats.NORMAL), Map.entry(Blocks.DIRT, DIRT),
             Map.entry(Blocks.COARSE_DIRT, COARSE_DIRT), Map.entry(Blocks.GRAVEL, GRAVEL),
@@ -48,10 +62,54 @@ public final class BuiltinProfiles {
             Map.entry(Blocks.POLISHED_DEEPSLATE, PathStats.GREAT), Map.entry(Blocks.SMOOTH_STONE, PathStats.GREAT));
 
     public static Optional<WorkerStats> worker(EntityType<?> type) {
-        return Optional.ofNullable(WORKERS.get(type));
+        WorkerStats exact = WORKERS.get(type);
+        if (exact != null) {
+            return Optional.of(exact);
+        }
+        String id = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(type).toString();
+        return optionalWorker(id);
+    }
+
+    static Optional<WorkerStats> optionalWorker(String entityId) {
+        return Optional.ofNullable(OPTIONAL_WORKERS.get(entityId));
     }
 
     public static Optional<PathStats> path(Block block) {
-        return Optional.ofNullable(PATHS.get(block));
+        PathStats exact = PATHS.get(block);
+        if (exact != null) {
+            return Optional.of(exact);
+        }
+        String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(block).toString();
+        return optionalPath(id);
+    }
+
+    /**
+     * TFC generates families of soil/rock blocks under stable registry path
+     * prefixes (for example tfc:grass/alfisol and tfc:rock/gravel/basalt).
+     * Prefix matching covers every rock/soil variant without a compile-time TFC dependency.
+     */
+    static Optional<PathStats> optionalPath(String blockId) {
+        if (blockId == null || !blockId.startsWith("tfc:")) {
+            return Optional.empty();
+        }
+        if (blockId.startsWith("tfc:grass/")
+                || blockId.startsWith("tfc:dirt/")
+                || blockId.startsWith("tfc:clay_grass/")
+                || blockId.startsWith("tfc:clay/")) {
+            return Optional.of(DIRT);
+        }
+        if (blockId.startsWith("tfc:rock/gravel/")) {
+            return Optional.of(GRAVEL);
+        }
+        if (blockId.startsWith("tfc:rock/cobble/")
+                || blockId.startsWith("tfc:rock/mossy_cobble/")) {
+            return Optional.of(PathStats.NORMAL);
+        }
+        if (blockId.startsWith("tfc:rock/smooth/")
+                || blockId.startsWith("tfc:rock/bricks/")
+                || blockId.startsWith("tfc:rock/mossy_bricks/")) {
+            return Optional.of(PathStats.GREAT);
+        }
+        return Optional.empty();
     }
 }

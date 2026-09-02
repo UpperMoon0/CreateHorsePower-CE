@@ -4,26 +4,96 @@ on:
   pull_request:
     branches:
       - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+# A newer PR head supersedes every older result for that PR. Main keeps its own
+# ref-scoped group and seeds Gradle caches that pull requests can restore.
+concurrency:
+  group: createhorsepower-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
-  build:
+  shared-gates:
+    name: Shared parity gates
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v5
 
-      - uses: actions/setup-java@v4
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
 
-      - uses: gradle/actions/setup-gradle@v3
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
 
-      - run: chmod +x ./gradlew
-      # Aggregate verification: shared source + resource parity checks, both
-      # platform builds, and the shared tests compiled/run against every target.
-      - run: ./gradlew verify
+      - name: Make Gradle executable
+        run: chmod +x ./gradlew
+
+      # Fail fast on cheap cross-version drift before paying for either full
+      # Minecraft toolchain/bootstrap. Configuration-on-demand keeps this root-
+      # only file comparison from configuring Forge/NeoForge subprojects.
+      - name: Verify shared source and resource parity
+        run: ./gradlew verifySharedSources verifySharedResources --configure-on-demand --stacktrace --no-daemon
+
+  platform-runtime:
+    name: ${{ matrix.name }} build + GameTests
+    needs: shared-gates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - name: Forge 1.20.1
+            project: forge-1.20.1
+          - name: NeoForge 1.21.1
+            project: neoforge-1.21.1
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make Gradle executable
+        run: chmod +x ./gradlew
+
+      # Request build first (including this platform's JUnit suite) and then the
+      # real-game suite in one Gradle invocation. Gradle stops on the first
+      # failure unless --continue is requested, so compile/unit failures still
+      # prevent a Minecraft server boot while avoiding a second configuration.
+      # All GameTests share one server boot for this loader.
+      - name: Build, unit tests and Minecraft GameTests
+        env:
+          PROJECT: ${{ matrix.project }}
+        run: ./gradlew ":${PROJECT}:build" ":${PROJECT}:runGameTestServer" --stacktrace --no-daemon
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gametest-${{ matrix.project }}-logs
+          path: |
+            ${{ matrix.project }}/run/logs
+            ${{ matrix.project }}/build/reports/tests
+          if-no-files-found: ignore
+          retention-days: 7

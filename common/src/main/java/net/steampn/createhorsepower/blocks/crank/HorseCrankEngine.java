@@ -7,6 +7,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.decoration.LeashFenceKnotEntity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
@@ -17,9 +18,12 @@ import net.steampn.createhorsepower.content.stats.WorkerResolver;
 import net.steampn.createhorsepower.content.stats.WorkerStats;
 import net.steampn.createhorsepower.platform.CHPApi;
 import net.steampn.createhorsepower.utils.CHPUtils;
+import net.steampn.createhorsepower.utils.CHPDiagnostics;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -44,6 +48,8 @@ public class HorseCrankEngine {
         void refreshKinetic();
 
         void syncToClient();
+
+        void markDirty();
 
         void clearKineticInfo();
 
@@ -96,15 +102,20 @@ public class HorseCrankEngine {
     private long nextWorkStartRetryTick = 0;
     private long nextFallbackWorkerSearchTick = 0;
     private double workerOrbitAngle = Double.NaN;
+    private double visualGroundSpeed = 0.0D;
+    /** This crank owns the persistent CHP activity marker on the worker. */
+    private boolean ownsWorkerActivityMarker = false;
+    /** This crank changed NoAI from false to true and must restore that transition. */
     private boolean ownsWorkerAiSuppression = false;
     @Nullable
     private UUID aiSuppressedWorkerUuid;
+    private final Map<UUID, Boolean> deferredDetachPolicies = new HashMap<>();
 
     /**
-     * Real, random, persistent identifier for this crank instance. Two
-     * cranks at the same coordinates in succession get distinct UUIDs, and
-     * saving/reloading the world preserves the same UUID for the same crank.
-     * Used to scope worker AI suppression markers.
+     * Random, persistent UUID component of this crank's identity. Saving and
+     * reloading preserves it, while replacement at the same coordinates gets a
+     * new value. Ownership always combines it with {@link Host#pos()} because
+     * vanilla /clone and NBT tooling can duplicate persisted block-entity UUIDs.
      */
     private UUID crankInstanceUuid = UUID.randomUUID();
 
@@ -257,7 +268,7 @@ public class HorseCrankEngine {
         return workerRadius;
     }
 
-    /** Persistent, real, position-independent identifier for this crank instance. */
+    /** Persistent UUID component of this crank's composite position + UUID identity. */
     public UUID crankInstanceUuid() {
         return crankInstanceUuid;
     }
@@ -284,12 +295,17 @@ public class HorseCrankEngine {
         this.workerUuid = uuid;
     }
 
+    /** Test-only introspection: whether this crank currently owns the worker activity marker. */
+    public boolean ownsWorkerActivityMarkerForTesting() {
+        return ownsWorkerActivityMarker;
+    }
+
     /** Test-only introspection: whether this crank currently owns worker AI suppression. */
     public boolean ownsWorkerAiSuppressionForTesting() {
         return ownsWorkerAiSuppression;
     }
 
-    /** Test-only introspection: the worker UUID this crank currently suppresses AI for. */
+    /** Test-only introspection: the worker UUID whose activity marker this crank owns. */
     @Nullable
     public UUID aiSuppressedWorkerUuidForTesting() {
         return aiSuppressedWorkerUuid;
@@ -339,12 +355,21 @@ public class HorseCrankEngine {
         } else {
             compound.remove("WorkerOrbitAngle");
         }
-        if (ownsWorkerAiSuppression && aiSuppressedWorkerUuid != null) {
-            compound.putBoolean("OwnsWorkerAiSuppression", true);
+        if (ownsWorkerActivityMarker && aiSuppressedWorkerUuid != null) {
+            compound.putBoolean("OwnsWorkerActivityMarker", true);
+            compound.putBoolean("OwnsWorkerAiSuppression", ownsWorkerAiSuppression);
             compound.putUUID("AiSuppressedWorkerUUID", aiSuppressedWorkerUuid);
         } else {
+            compound.remove("OwnsWorkerActivityMarker");
             compound.remove("OwnsWorkerAiSuppression");
             compound.remove("AiSuppressedWorkerUUID");
+        }
+        if (!deferredDetachPolicies.isEmpty()) {
+            CompoundTag policies = new CompoundTag();
+            deferredDetachPolicies.forEach((uuid, dropLead) -> policies.putBoolean(uuid.toString(), dropLead));
+            compound.put("DeferredDetachPolicies", policies);
+        } else {
+            compound.remove("DeferredDetachPolicies");
         }
 
         if (clientPacket) {
@@ -409,11 +434,25 @@ public class HorseCrankEngine {
         if (!Double.isFinite(workerOrbitAngle)) {
             workerOrbitAngle = Double.NaN;
         }
-        ownsWorkerAiSuppression = compound.getBoolean("OwnsWorkerAiSuppression")
-                && compound.hasUUID("AiSuppressedWorkerUUID");
-        aiSuppressedWorkerUuid = ownsWorkerAiSuppression
+        boolean hasAiWorkerUuid = compound.hasUUID("AiSuppressedWorkerUUID");
+        boolean legacyOwnedSuppression = hasAiWorkerUuid && compound.getBoolean("OwnsWorkerAiSuppression");
+        ownsWorkerActivityMarker = hasAiWorkerUuid
+                && (compound.getBoolean("OwnsWorkerActivityMarker") || legacyOwnedSuppression);
+        ownsWorkerAiSuppression = ownsWorkerActivityMarker && compound.getBoolean("OwnsWorkerAiSuppression");
+        aiSuppressedWorkerUuid = ownsWorkerActivityMarker
                 ? compound.getUUID("AiSuppressedWorkerUUID")
                 : null;
+        deferredDetachPolicies.clear();
+        if (compound.contains("DeferredDetachPolicies")) {
+            CompoundTag policies = compound.getCompound("DeferredDetachPolicies");
+            for (String key : policies.getAllKeys()) {
+                try {
+                    deferredDetachPolicies.put(UUID.fromString(key), policies.getBoolean(key));
+                } catch (IllegalArgumentException ignored) {
+                    // Ignore malformed legacy/manual data instead of breaking BE load.
+                }
+            }
+        }
 
         if (clientPacket) {
             workerResolved = compound.getBoolean("WorkerResolved");
@@ -440,13 +479,12 @@ public class HorseCrankEngine {
     public void attachWorker(Mob worker, WorkerResolver.ResolvedWorker profile) {
         restoreWorkerAi();
         // Defensive cleanup: only a marker from a *different* crank should be
-        // cleared on attach. If the marker belongs to this exact crank
-        // (instance UUID), the marker is meaningful state and must be left
-        // alone so the next release can still use the recorded previous
-        // NoAI.
-        if (WorkerActivityControl.hasForeignMarker(worker, crankInstanceUuid)) {
+        // cleared on attach. Position + instance UUID form the identity, so a
+        // copied crank UUID at another position is still foreign.
+        if (WorkerActivityControl.hasForeignMarker(worker, host.pos(), crankInstanceUuid)) {
             WorkerActivityControl.releaseFromMarker(worker);
         }
+        WorkerAttachmentControl.markAttached(worker, host.pos(), crankInstanceUuid);
         this.cachedWorkerMob = worker;
         this.workerUuid = worker.getUUID();
         this.lastKnownWorkerPos = worker.blockPosition();
@@ -458,6 +496,12 @@ public class HorseCrankEngine {
         this.workerResolved = true;
         this.workerEligible = profile.isValid();
         this.workerOrbitAngle = Double.NaN;
+        double movementAttribute = worker.getAttributes().hasAttribute(Attributes.MOVEMENT_SPEED)
+                ? worker.getAttributeValue(Attributes.MOVEMENT_SPEED)
+                : WorkerStats.DEFAULT_SPEED_REF;
+        this.visualGroundSpeed = WorkerOrbitMovement.groundSpeedBlocksPerSecond(
+                movementAttribute, CHPApi.config().workerGroundSpeedScale(),
+                CHPApi.config().minWorkerGroundSpeed(), CHPApi.config().maxWorkerGroundSpeed());
 
         applyProfile(worker, profile);
 
@@ -475,6 +519,8 @@ public class HorseCrankEngine {
             host.refreshKinetic();
             host.syncToClient();
             CHPApi.scripts().fireWorkerAttached(worker, host.pos(), level, profile);
+            CHPDiagnostics.event("worker_attached", level, host.pos(), crankInstanceUuid, worker,
+                    "rpm=" + effectiveBaseRpm + " stress=" + effectiveBaseStress + " radius=" + workerRadius);
         }
     }
 
@@ -508,16 +554,21 @@ public class HorseCrankEngine {
 
     public void detachWorker(boolean dropLead) {
         Mob worker = cachedWorkerMob;
+        UUID detachedWorkerUuid = workerUuid != null ? workerUuid : worker != null ? worker.getUUID() : null;
+        Level level = level();
+        CHPDiagnostics.event("worker_detach", level, host.pos(), crankInstanceUuid, worker,
+                "worker_uuid=" + detachedWorkerUuid + " dropLead=" + dropLead);
+        rememberDeferredDetachPolicy(level, detachedWorkerUuid, dropLead);
         stopWorking();
         clearWorkerReferences();
 
-        Level level = level();
         if (level != null && !level.isClientSide()) {
             BlockState state = host.blockState();
             if (state.getValue(CrankProperties.HAS_WORKER)) {
                 host.setBlockState(state.setValue(CrankProperties.HAS_WORKER, false));
             }
-            CHPUtils.cleanUpLeash(level, host.pos(), dropLead);
+            CHPUtils.cleanUpLeash(level, host.pos(), detachedWorkerUuid, dropLead);
+            clearLoadedAttachmentMarker(level, detachedWorkerUuid, worker);
             host.refreshKinetic();
             host.syncToClient();
             CHPApi.scripts().fireWorkerDetached(worker, host.pos(), level);
@@ -526,15 +577,65 @@ public class HorseCrankEngine {
 
     public void onCrankRemoved() {
         Mob worker = cachedWorkerMob;
+        UUID detachedWorkerUuid = workerUuid != null ? workerUuid : worker != null ? worker.getUUID() : null;
         stopWorking();
         Level level = level();
         if (level != null && !level.isClientSide()) {
-            CHPUtils.cleanUpLeash(level, host.pos(), true);
-            if (worker != null || workerUuid != null) {
+            CHPUtils.cleanUpLeash(level, host.pos(), detachedWorkerUuid, true);
+            clearLoadedAttachmentMarker(level, detachedWorkerUuid, worker);
+            if (worker != null || detachedWorkerUuid != null) {
                 CHPApi.scripts().fireWorkerDetached(worker, host.pos(), level);
             }
         }
         clearWorkerReferences();
+    }
+
+    private void rememberDeferredDetachPolicy(@Nullable Level level, @Nullable UUID detachedWorkerUuid, boolean dropLead) {
+        if (detachedWorkerUuid == null || !(level instanceof ServerLevel serverLevel)) {
+            return;
+        }
+        Entity loaded = serverLevel.getEntity(detachedWorkerUuid);
+        if (loaded instanceof Mob) {
+            if (deferredDetachPolicies.remove(detachedWorkerUuid) != null) {
+                host.markDirty();
+            }
+            return;
+        }
+        deferredDetachPolicies.put(detachedWorkerUuid, dropLead);
+        host.markDirty();
+    }
+
+    public boolean hasDeferredDetachPolicy(UUID workerUuid) {
+        return workerUuid != null && deferredDetachPolicies.containsKey(workerUuid);
+    }
+
+    public boolean deferredDetachDropLead(UUID workerUuid) {
+        return deferredDetachPolicies.getOrDefault(workerUuid, true);
+    }
+
+    public void consumeDeferredDetachPolicy(UUID workerUuid) {
+        if (workerUuid == null || deferredDetachPolicies.remove(workerUuid) == null) {
+            return;
+        }
+        host.markDirty();
+        host.syncToClient();
+    }
+
+    private void clearLoadedAttachmentMarker(Level level, UUID workerUuid, @Nullable Mob cachedWorker) {
+        Mob loadedWorker = null;
+        if (workerUuid != null && level instanceof ServerLevel serverLevel) {
+            // The server entity index is authoritative; a cached reference may
+            // already represent an entity that was saved and unloaded.
+            Entity entity = serverLevel.getEntity(workerUuid);
+            if (entity instanceof Mob mob) {
+                loadedWorker = mob;
+            }
+        } else if (cachedWorker != null) {
+            loadedWorker = cachedWorker;
+        }
+        if (loadedWorker != null) {
+            WorkerAttachmentControl.clearIfOwnedBy(loadedWorker, host.pos(), crankInstanceUuid);
+        }
     }
 
     private void clearWorkerReferences() {
@@ -542,11 +643,11 @@ public class HorseCrankEngine {
 
         // Permanent detach/removal: if the old worker was unavailable, its
         // persistent marker remains on that worker for entity-load orphan
-        // recovery, but this BE must no longer claim ownership. Keeping a
-        // stale ownership record here would make the next worker skip its
-        // own acquire (controlWorkerAi would merely maintain it), leaving
-        // it NoAI with no recovery marker of its own. Safe even when
-        // restoreWorkerAi succeeded: those fields are already false/null.
+        // recovery, but this BE must no longer claim marker or NoAI-transition
+        // ownership. Keeping a stale marker-ownership record here would make
+        // the next worker skip its own acquire. Safe even when restoreWorkerAi
+        // succeeded: these fields are already false/null.
+        this.ownsWorkerActivityMarker = false;
         this.ownsWorkerAiSuppression = false;
         this.aiSuppressedWorkerUuid = null;
 
@@ -567,6 +668,7 @@ public class HorseCrankEngine {
         this.speedBonusPercent = 0.0f;
         this.healthBonusPercent = 0.0f;
         this.workerOrbitAngle = Double.NaN;
+        this.visualGroundSpeed = 0.0D;
     }
 
     // ==========================================
@@ -635,10 +737,14 @@ public class HorseCrankEngine {
                         this.scriptVetoed = true;
                         this.isWorking = false;
                         this.nextWorkStartRetryTick = time + 20;
+                        CHPDiagnostics.event("work_start_vetoed", level, host.pos(), crankInstanceUuid, cachedWorkerMob,
+                                "retry_tick=" + nextWorkStartRetryTick);
                     } else {
                         this.scriptVetoed = false;
                         this.isWorking = true;
                         CHPApi.scripts().fireWorkStarted(cachedWorkerMob, host.pos(), level);
+                        CHPDiagnostics.event("work_started", level, host.pos(), crankInstanceUuid, cachedWorkerMob,
+                                "mechanical_rpm=" + generatedSpeed() + " path_efficiency=" + efficiencyPercent);
                     }
                 }
             }
@@ -667,6 +773,9 @@ public class HorseCrankEngine {
 
         Level level = level();
         if (wasWorking && level != null && !level.isClientSide()) {
+            CHPDiagnostics.event("work_stopped", level, host.pos(), crankInstanceUuid, cachedWorkerMob,
+                    "redstone=" + isStoppedByRedstone() + " path_valid=" + hasValidWorkingBlocks
+                            + " worker_resolved=" + workerResolved + " worker_eligible=" + workerEligible);
             CHPApi.scripts().fireWorkStopped(host.pos(), level);
         }
     }
@@ -674,39 +783,55 @@ public class HorseCrankEngine {
     private void controlWorkerAi(Mob mob) {
         UUID mobUuid = mob.getUUID();
 
-        if (ownsWorkerAiSuppression
+        if (ownsWorkerActivityMarker
                 && !mobUuid.equals(aiSuppressedWorkerUuid)) {
             restoreWorkerAi();
+            // Do not transfer control while the previous marked worker is
+            // still unloaded; its original NoAI baseline must remain intact.
+            if (ownsWorkerActivityMarker) {
+                return;
+            }
         }
 
         UUID thisCrank = crankInstanceUuid;
 
-        if (WorkerActivityControl.hasForeignMarker(mob, thisCrank)) {
+        if (WorkerActivityControl.hasForeignMarker(mob, host.pos(), thisCrank)) {
             WorkerActivityControl.releaseFromMarker(mob);
         }
 
-        if (!ownsWorkerAiSuppression) {
+        boolean hasOwnedMarker = ownsWorkerActivityMarker
+                && mobUuid.equals(aiSuppressedWorkerUuid)
+                && WorkerActivityControl.isOwnedBy(mob, host.pos(), thisCrank);
+
+        if (!hasOwnedMarker) {
             ownsWorkerAiSuppression = WorkerActivityControl.acquire(
                     mob,
                     host.pos(),
                     thisCrank
             );
-            aiSuppressedWorkerUuid = ownsWorkerAiSuppression ? mobUuid : null;
+            ownsWorkerActivityMarker = true;
+            aiSuppressedWorkerUuid = mobUuid;
+            host.markDirty();
         } else {
             WorkerActivityControl.maintain(mob);
         }
     }
 
     /**
-     * Restore the worker's original {@code NoAI} state and clear the crank's
-     * ownership record. When the worker cannot be resolved (it is unloaded
-     * or in another chunk), local ownership is preserved: temporarily
-     * dropping the record is exactly what makes the next same-crank
-     * {@link #controlWorkerAi} call treat a normal unload as a foreign-crank
-     * reacquisition, which would corrupt the recorded {@code NoAI} baseline.
+     * Clear this crank's activity marker and, only when CHP actually changed
+     * it, restore the worker's original {@code NoAI} state. Marker ownership
+     * is intentionally separate from NoAI-transition ownership so workers
+     * that already had {@code NoAI=true} are still cleaned up normally.
+     *
+     * <p>When the worker cannot be resolved (it is unloaded or in another
+     * chunk), local ownership is preserved so the saved marker baseline is
+     * not overwritten by a later same-crank reacquisition. If the loaded
+     * worker's marker has already moved to another crank identity, this stale
+     * crank relinquishes only its local bookkeeping and never mutates the new
+     * owner's marker or NoAI transition.
      */
     private void restoreWorkerAi() {
-        if (!ownsWorkerAiSuppression || aiSuppressedWorkerUuid == null) {
+        if (!ownsWorkerActivityMarker || aiSuppressedWorkerUuid == null) {
             return;
         }
 
@@ -717,9 +842,39 @@ public class HorseCrankEngine {
             return;
         }
 
-        WorkerActivityControl.release(controlledWorker, true);
+        BlockPos markerPos = WorkerActivityControl.markerCrankPos(controlledWorker);
+        UUID markerOwner = WorkerActivityControl.markerCrankUuid(controlledWorker);
+        if (markerOwnedByDifferentCrank(markerPos, markerOwner, host.pos(), crankInstanceUuid)) {
+            CHPDiagnostics.event("ai_suppression_ownership_relinquished", controlledWorker.level(), host.pos(),
+                    crankInstanceUuid, controlledWorker,
+                    "current_marker_pos=" + markerPos + " current_marker_owner=" + markerOwner);
+            ownsWorkerActivityMarker = false;
+            ownsWorkerAiSuppression = false;
+            aiSuppressedWorkerUuid = null;
+            host.markDirty();
+            return;
+        }
+
+        WorkerActivityControl.release(controlledWorker, ownsWorkerAiSuppression);
+        ownsWorkerActivityMarker = false;
         ownsWorkerAiSuppression = false;
         aiSuppressedWorkerUuid = null;
+        host.markDirty();
+    }
+
+    static boolean markerOwnedByDifferentCrank(
+            @Nullable BlockPos markerPos,
+            @Nullable UUID markerOwner,
+            BlockPos crankPos,
+            UUID crankUuid
+    ) {
+        if (markerOwner == null) {
+            return false;
+        }
+        if (!crankUuid.equals(markerOwner)) {
+            return true;
+        }
+        return markerPos != null && !crankPos.equals(markerPos);
     }
 
     @Nullable
@@ -843,12 +998,18 @@ public class HorseCrankEngine {
             }
 
             if (!wasResolved) {
+                CHPDiagnostics.event("worker_resolved", level, host.pos(), crankInstanceUuid, worker,
+                        "eligible=" + workerEligible);
                 float networkSpeed = host.theoreticalSpeed();
                 if (networkSpeed != 0) {
                     generationDirection = Math.signum(networkSpeed);
                 }
             }
         } else {
+            if (wasResolved) {
+                CHPDiagnostics.event("worker_unresolved", level, host.pos(), crankInstanceUuid, cachedWorkerMob,
+                        "last_pos=" + lastKnownWorkerPos);
+            }
             this.workerResolved = false;
             this.workerEligible = false;
             BlockPos checkPos = lastKnownWorkerPos != null ? lastKnownWorkerPos : host.pos();
@@ -912,6 +1073,9 @@ public class HorseCrankEngine {
             this.pathStressModifier = stressMult;
             this.efficiencyPercent = eff;
             this.invalidBlockCount = invalidCount;
+            CHPDiagnostics.event("path_state_changed", level, host.pos(), crankInstanceUuid, cachedWorkerMob,
+                    "valid=" + valid + " speed_multiplier=" + speedMult + " stress_multiplier=" + stressMult
+                            + " efficiency=" + eff + " invalid_tiles=" + invalidCount);
 
             boolean willGenerate = hasValidWorkingBlocks && (rpmModifier > 0);
             if (!wasGenerating && willGenerate) {
@@ -954,6 +1118,24 @@ public class HorseCrankEngine {
         return effectiveBaseStress;
     }
 
+    public double getVisualGroundSpeed() {
+        return visualGroundSpeed;
+    }
+
+    public float getWorkerRadius() {
+        return workerRadius;
+    }
+
+    @Nullable
+    public UUID getWorkerUuid() {
+        return workerUuid;
+    }
+
+    @Nullable
+    public Mob getLoadedWorkerForDiagnostics() {
+        return cachedWorkerMob;
+    }
+
     private void moveWorkerTo(Mob mob) {
         Level level = level();
         if (level == null || mob == null) return;
@@ -966,8 +1148,15 @@ public class HorseCrankEngine {
         double centerZ = pos.getZ() + 0.5;
 
         double direction = Math.signum(speed);
-        double angularVelocity = Math.toRadians(Math.abs(speed) * 6.0); // 6 deg/sec per RPM
-        double angularDelta = (angularVelocity * direction) / 20.0;
+        double movementAttribute = mob.getAttributes().hasAttribute(Attributes.MOVEMENT_SPEED)
+                ? mob.getAttributeValue(Attributes.MOVEMENT_SPEED)
+                : WorkerStats.DEFAULT_SPEED_REF;
+        visualGroundSpeed = WorkerOrbitMovement.groundSpeedBlocksPerSecond(
+                movementAttribute,
+                CHPApi.config().workerGroundSpeedScale(),
+                CHPApi.config().minWorkerGroundSpeed(), CHPApi.config().maxWorkerGroundSpeed());
+        double angularDelta = WorkerOrbitMovement.angularDeltaPerTick(
+                visualGroundSpeed, workerRadius, direction);
         controlWorkerAi(mob);
         if (!Double.isFinite(workerOrbitAngle)) {
             workerOrbitAngle = WorkerOrbitMovement.angleFromPosition(

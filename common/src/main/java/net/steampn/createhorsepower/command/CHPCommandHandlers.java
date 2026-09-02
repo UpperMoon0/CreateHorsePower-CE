@@ -6,13 +6,18 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.level.ClipContext;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.steampn.createhorsepower.blocks.crank.HorseCrankAccess;
+import net.steampn.createhorsepower.blocks.crank.WorkerActivityControl;
+import net.steampn.createhorsepower.blocks.crank.WorkerAttachmentControl;
 import net.steampn.createhorsepower.content.path.PathEvaluator;
 import net.steampn.createhorsepower.content.stats.PathStats;
 import net.steampn.createhorsepower.content.stats.WorkerResolver;
@@ -73,7 +78,29 @@ public final class CHPCommandHandlers {
 
         source.sendSuccess(() -> Component.literal(String.format("Path Efficiency: %d%% (Valid: %s, Invalid Tiles: %d)",
                 crank.getEfficiencyPercent(), crank.hasValidWorkingBlocks(), crank.getInvalidBlockCount())).withStyle(ChatFormatting.GREEN), false);
-        source.sendSuccess(() -> Component.literal(String.format("Generated Speed: %.2f RPM", crank.getGeneratedSpeed())).withStyle(ChatFormatting.BLUE), false);
+        source.sendSuccess(() -> Component.literal(String.format("Mechanical Output: %.2f RPM", crank.getGeneratedSpeed())).withStyle(ChatFormatting.BLUE), false);
+        source.sendSuccess(() -> Component.literal(String.format("Visual Gait: %.2f blocks/s at radius %.2f",
+                crank.getVisualGroundSpeed(), crank.getWorkerRadius())).withStyle(ChatFormatting.AQUA), false);
+
+        if (crank.getWorkerUuid() != null) {
+            source.sendSuccess(() -> Component.literal("Worker UUID: " + crank.getWorkerUuid()), false);
+        }
+        Mob loadedWorker = crank.getLoadedWorkerForDiagnostics();
+        if (loadedWorker != null) {
+            ResourceLocation workerType = BuiltInRegistries.ENTITY_TYPE.getKey(loadedWorker.getType());
+            Entity holder = loadedWorker.getLeashHolder();
+            String leash = holder == null ? "none"
+                    : holder.getType().toString() + " @ " + holder.blockPosition().toShortString();
+            source.sendSuccess(() -> Component.literal("Worker Type: " + workerType), false);
+            source.sendSuccess(() -> Component.literal("Leash Holder: " + leash), false);
+            source.sendSuccess(() -> Component.literal("Markers: attachment=" + WorkerAttachmentControl.hasMarker(loadedWorker)
+                    + " ai=" + WorkerActivityControl.hasMarker(loadedWorker)), false);
+            BlockPos recoveryPos = WorkerAttachmentControl.markerCrankPos(loadedWorker);
+            if (recoveryPos != null) {
+                source.sendSuccess(() -> Component.literal("Recovery Anchor: " + recoveryPos.toShortString()
+                        + " (chunk loaded=" + player.level().hasChunkAt(recoveryPos) + ")"), false);
+            }
+        }
 
         return 1;
     }
