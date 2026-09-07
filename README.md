@@ -53,20 +53,21 @@ Craft and place a Horse Crank, prepare a complete valid path around it, then att
 
 The full [Packmaker and Modder Guide](docs/PACKMAKERS.md) documents:
 
-- `createhorsepower:worker_stats` and `createhorsepower:path_stats` NeoForge Data Maps (NeoForge 1.21.1; on Forge 1.20.1 canonical worker/path behavior is provided by the platform layer and can be extended or tuned through supported tags and server configuration — NeoForge Data Maps and KubeJS profile registration are not available on Forge yet).
+- `createhorsepower:worker_stats` and `createhorsepower:path_stats` NeoForge Data Maps (NeoForge 1.21.1; NeoForge Data Maps and KubeJS profile registration are not available on Forge yet).
 - Worker, attachment-item, and leash tags (available on both versions).
 - Server configuration, including the 1.2.1 visual-gait and debug-logging settings.
 - Built-in optional TerraFirmaCraft worker/path defaults and precedence behavior.
 - KubeJS startup registration and server lifecycle events (NeoForge 1.21.1 only for now).
 - Migration behavior from CE 1.1.
 
-On NeoForge 1.21.1, KubeJS profiles override Data Maps, which override built-in registry-ID fallbacks and then legacy tags/config lists. Exact TFC Data Map defaults are conditional on TFC being installed and remain overridable/removable by later datapacks.
+Starting with 1.2.2, CE's bundled worker/path profiles are fallback defaults rather than pack-override data. On NeoForge 1.21.1, KubeJS and explicit Data Maps remain the highest-priority customization layers. Legacy server balance/path config can override CE bundled defaults, and weighted mixed-path evaluation is unchanged.
 
 ## Migrating from CE 1.1
 
 - Existing 1.1 server-config keys remain at the TOML root.
 - Existing Horse Cranks without a saved redstone mode migrate to `IGNORE`; new cranks use `defaultRedstoneMode`.
-- Built-in worker and path Data Maps override legacy config fallback values. On NeoForge 1.21.1, override the relevant Data Map or use KubeJS when customizing those built-in entries; on Forge 1.20.1 the built-in per-species and per-block profiles cannot be overridden by legacy tags/config (tags can still add new workers or paths).
+- In 1.2.2, changed legacy RPM/stress values override CE bundled worker base output while intended per-animal health scaling remains active. Explicit legacy creature lists also take precedence over CE tier fallbacks for classification.
+- Pack/server legacy path lists override CE bundled per-block path defaults. On NeoForge, explicit KubeJS/Data Map profiles still win. Weighted mixed-path evaluation remains unchanged.
 - Update any prerelease worker profile above a 6-block movement radius before loading it in 1.2; out-of-range Data Map or KubeJS values are rejected.
 - Back up important worlds before changing mod versions.
 
@@ -77,7 +78,14 @@ On NeoForge 1.21.1, KubeJS profiles override Data Maps, which override built-in 
 - Visual orbit speed is configured separately from generated RPM through `workers.workerGroundSpeedScale`, `workers.minWorkerGroundSpeed`, and `workers.maxWorkerGroundSpeed`.
 - `diagnostics.debugLogging` is off by default and emits transition-oriented diagnostics rather than per-tick movement spam.
 
-See the [1.2.1 release notes](changelog/1.21.1-1.2.1.md) for NeoForge 1.21.1 and the [Forge 1.20.1 1.2.1 release notes](changelog/1.20.1-1.2.1.md) for the Forge port.
+### 1.2.2 balance and pack-precedence notes
+
+- Legacy pack/server worker balance now overrides CE bundled species base RPM/SU instead of being shadowed by bundled profiles.
+- Intended per-animal health scaling is preserved on top of the configured base output.
+- Pack-defined path data overrides CE bundled path defaults; weighted mixed-path evaluation still averages the resolved per-block profiles normally.
+- NeoForge bundled defaults are no longer shipped as Data Maps, so Data Maps consistently represent explicit datapack/packmaker overrides.
+
+See the [1.2.2 release notes](changelog/1.21.1-1.2.2.md) for NeoForge 1.21.1 and the [Forge 1.20.1 1.2.2 release notes](changelog/1.20.1-1.2.2.md) for the Forge port.
 
 ## Building
 
