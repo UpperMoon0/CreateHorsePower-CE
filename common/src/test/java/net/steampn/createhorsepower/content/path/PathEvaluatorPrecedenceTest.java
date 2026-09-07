@@ -6,46 +6,41 @@ import org.junit.jupiter.api.Test;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
 class PathEvaluatorPrecedenceTest {
 
-    private static final PathStats PLATFORM = new PathStats(1.4f, 1.2f);
-    private static final PathStats BUILTIN = new PathStats(1.1f, 1.0f);
-    private static final PathStats LEGACY = new PathStats(0.5f, 0.9f);
-
     @Test
-    void platformProfileBeatsBuiltinAndLegacyFallbacks() {
-        assertEquals(
-                Optional.of(PLATFORM),
-                PathEvaluator.resolveFallbackPathStats(
-                        Optional.of(PLATFORM),
-                        Optional.of(BUILTIN),
-                        Optional.of(LEGACY)
-                )
-        );
+    void platformOverrideWinsPackLegacyAndBundledDefaults() {
+        PathStats platform = new PathStats(1.4f, 1.3f);
+        PathStats legacy = new PathStats(0.5f, 0.9f);
+        PathStats bundled = new PathStats(0.7f, 0.9f);
+
+        Optional<PathStats> result = PathEvaluator.resolveFallbackPathStats(
+                Optional.of(platform), Optional.of(legacy), Optional.of(bundled));
+
+        assertSame(platform, result.orElseThrow());
     }
 
     @Test
-    void builtinProfileBeatsLegacyConfigFallback() {
-        assertEquals(
-                Optional.of(BUILTIN),
-                PathEvaluator.resolveFallbackPathStats(
-                        Optional.empty(),
-                        Optional.of(BUILTIN),
-                        Optional.of(LEGACY)
-                )
-        );
+    void packLegacyPathWinsBundledDefaults() {
+        PathStats legacy = new PathStats(0.5f, 0.9f);
+        PathStats bundled = new PathStats(0.7f, 0.9f);
+
+        Optional<PathStats> result = PathEvaluator.resolveFallbackPathStats(
+                Optional.empty(), Optional.of(legacy), Optional.of(bundled));
+
+        assertSame(legacy, result.orElseThrow());
+        assertEquals(0.5f, result.orElseThrow().speedMultiplier());
     }
 
     @Test
-    void legacyConfigRemainsFallbackForOtherwiseUnresolvedBlocks() {
-        assertEquals(
-                Optional.of(LEGACY),
-                PathEvaluator.resolveFallbackPathStats(
-                        Optional.empty(),
-                        Optional.empty(),
-                        Optional.of(LEGACY)
-                )
-        );
+    void bundledDefaultRemainsFallbackWhenPackDoesNotOverride() {
+        PathStats bundled = new PathStats(1.1f, 1.0f);
+
+        Optional<PathStats> result = PathEvaluator.resolveFallbackPathStats(
+                Optional.empty(), Optional.empty(), Optional.of(bundled));
+
+        assertSame(bundled, result.orElseThrow());
     }
 }

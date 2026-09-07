@@ -12,19 +12,19 @@ Enforced and reviewed with every release. "Full" means identical behavior to the
 | Redstone modes (`HIGH_STOPS`, `HIGH_RUNS`, `IGNORE`) | Full | Full |
 | Worker / attachment / leash datapack tags | Full | Full |
 | Durable unloaded-worker detach + orphan leash recovery | Full | Full |
-| Optional TerraFirmaCraft worker + terrain defaults | Full (conditional Data Maps + shared registry-ID/path fallback) | Full (shared registry-ID/path fallback) |
+| Optional TerraFirmaCraft worker + terrain defaults | Full (shared registry-ID/path fallback; explicit Data Maps/KubeJS can override) | Full (shared registry-ID/path fallback; legacy config can override) |
 | `/createhorsepower` diagnostics commands | Full | Full |
 | Transition-based `diagnostics.debugLogging` | Full | Full |
 | Create Goggles tooltips | Full | Full |
 | Shared behavioral tests (JUnit) | Full | Full |
 | Real-game lifecycle coverage (GameTest) | Full | Full |
-| Worker/path Data Maps (`createhorsepower:worker_stats`, `path_stats`) | Full | Not available on Forge; use tags or config |
+| Worker/path Data Maps (`createhorsepower:worker_stats`, `path_stats`) | Full (explicit pack overrides; CE bundled defaults are not shipped as Data Maps) | Not available on Forge; use tags or config |
 | Jade HUD integration | Full | Full |
 | KubeJS startup profiles and lifecycle events | Full | Not yet ported (no Forge KubeJS script entry point; the shared profile registry cannot be populated from scripts) |
 | Ponder scenes | Full | Not yet ported |
 | Datagen (recipes, loot tables, tags, data maps) | Full | Not yet ported (JSONs are hand-maintained under `forge-1.20.1/src/main/resources`) |
 
-TerraFirmaCraft is never a required runtime dependency. CE only activates its built-in TFC defaults for registry IDs that actually exist; NeoForge's exact TFC species Data Map entries are additionally guarded by `neoforge:mod_loaded`.
+TerraFirmaCraft is never a required runtime dependency. CE only activates its built-in TFC defaults for registry IDs that actually exist. Starting in 1.2.2 those defaults are shared bundled fallbacks rather than NeoForge Data Map entries, so pack-provided Data Maps/KubeJS and legacy pack/server config can override them according to the documented precedence.
 
 Rule: a feature may only be advertised as "supported" on a version when this
 matrix lists it as Full there. When porting a missing feature, move the row to

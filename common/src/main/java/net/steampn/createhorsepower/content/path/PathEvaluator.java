@@ -123,31 +123,31 @@ public class PathEvaluator {
             return kjsStats;
         }
 
+        String blockKey = blockBuiltInKey(block);
         Optional<PathStats> platformStats = CHPApi.config().lookupPathStats(block);
+        Optional<PathStats> legacyStats = legacyPathStats(blockKey);
         Optional<PathStats> builtinStats = BuiltinProfiles.path(block);
-        Optional<PathStats> legacyStats = legacyPathStats(blockBuiltInKey(block));
-        return resolveFallbackPathStats(platformStats, builtinStats, legacyStats);
+        return resolveFallbackPathStats(platformStats, legacyStats, builtinStats);
     }
 
     /**
-     * Cross-loader fallback precedence after KubeJS: platform-native profile
-     * (NeoForge Data Map / Forge canonical adapter), then shared built-in exact
-     * or family defaults, then legacy server config lists. Keeping this order in
-     * common prevents optional TFC path families from resolving differently on
-     * Forge and NeoForge while preserving NeoForge datapack override priority.
+     * Cross-loader fallback precedence after KubeJS: explicit platform-native
+     * profile (NeoForge Data Map), then pack/server legacy path lists, then CE's
+     * bundled defaults. This lets modpacks override bundled exact/family data
+     * while keeping weighted mixed-path evaluation unchanged.
      */
     static Optional<PathStats> resolveFallbackPathStats(
             Optional<PathStats> platformStats,
-            Optional<PathStats> builtinStats,
-            Optional<PathStats> legacyStats
+            Optional<PathStats> legacyStats,
+            Optional<PathStats> builtinStats
     ) {
         if (platformStats.isPresent()) {
             return platformStats;
         }
-        if (builtinStats.isPresent()) {
-            return builtinStats;
+        if (legacyStats.isPresent()) {
+            return legacyStats;
         }
-        return legacyStats;
+        return builtinStats;
     }
 
     private static Optional<PathStats> legacyPathStats(String blockKey) {

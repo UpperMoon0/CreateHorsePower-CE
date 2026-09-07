@@ -11,6 +11,27 @@ import java.util.Optional;
 public final class BuiltinProfiles {
     private BuiltinProfiles() {}
 
+    /**
+     * Legacy output tier used by the 1.1 server config. The default stress
+     * values are also the sentinel values that mean "keep the richer 1.2
+     * species profile"; a changed value is an intentional pack balance override.
+     */
+    public enum WorkerTier {
+        SMALL(128),
+        MEDIUM(256),
+        LARGE(512);
+
+        private final int legacyDefaultStress;
+
+        WorkerTier(int legacyDefaultStress) {
+            this.legacyDefaultStress = legacyDefaultStress;
+        }
+
+        public int legacyDefaultStress() {
+            return legacyDefaultStress;
+        }
+    }
+
     public static final WorkerStats SMALL = new WorkerStats(4.0f, 128.0f, 2.5f, 0.0f, 0.225f, 0.0f, 20.0f, false, false);
     public static final WorkerStats MEDIUM = new WorkerStats(4.0f, 256.0f, 2.5f, 0.0f, 0.225f, 0.0f, 20.0f, false, false);
     public static final WorkerStats LARGE = new WorkerStats(4.0f, 512.0f, 2.5f, 0.5f, 0.225f, 0.2f, 20.0f, false, false);
@@ -38,6 +59,13 @@ public final class BuiltinProfiles {
             Map.entry(EntityType.COW, COW), Map.entry(EntityType.PIG, PIG),
             Map.entry(EntityType.SHEEP, SHEEP), Map.entry(EntityType.WOLF, WOLF));
 
+    private static final Map<EntityType<?>, WorkerTier> WORKER_TIERS = Map.ofEntries(
+            Map.entry(EntityType.HORSE, WorkerTier.LARGE), Map.entry(EntityType.DONKEY, WorkerTier.LARGE),
+            Map.entry(EntityType.MULE, WorkerTier.LARGE), Map.entry(EntityType.CAMEL, WorkerTier.LARGE),
+            Map.entry(EntityType.LLAMA, WorkerTier.MEDIUM), Map.entry(EntityType.TRADER_LLAMA, WorkerTier.MEDIUM),
+            Map.entry(EntityType.COW, WorkerTier.MEDIUM), Map.entry(EntityType.PIG, WorkerTier.MEDIUM),
+            Map.entry(EntityType.SHEEP, WorkerTier.MEDIUM), Map.entry(EntityType.WOLF, WorkerTier.SMALL));
+
     // Optional compatibility by registry ID keeps TFC completely absent from
     // CHP's compile/runtime dependency graph. TFC 1.20.x and 1.21.x register
     // horse, donkey and mule under these stable IDs.
@@ -51,6 +79,16 @@ public final class BuiltinProfiles {
             // TFC 1.21.x camel variants extend vanilla Camel through AbstractCamel.
             Map.entry("tfc:dromedary_camel", CAMEL),
             Map.entry("tfc:bactrian_camel", CAMEL));
+
+    private static final Map<String, WorkerTier> OPTIONAL_WORKER_TIERS = Map.ofEntries(
+            Map.entry("tfc:horse", WorkerTier.LARGE),
+            Map.entry("tfc:donkey", WorkerTier.LARGE),
+            Map.entry("tfc:mule", WorkerTier.LARGE),
+            Map.entry("tfc:cow", WorkerTier.MEDIUM),
+            Map.entry("tfc:pig", WorkerTier.MEDIUM),
+            Map.entry("tfc:sheep", WorkerTier.MEDIUM),
+            Map.entry("tfc:dromedary_camel", WorkerTier.LARGE),
+            Map.entry("tfc:bactrian_camel", WorkerTier.LARGE));
 
     private static final Map<Block, PathStats> PATHS = Map.ofEntries(
             Map.entry(Blocks.DIRT_PATH, PathStats.NORMAL), Map.entry(Blocks.DIRT, DIRT),
@@ -68,6 +106,15 @@ public final class BuiltinProfiles {
         }
         String id = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(type).toString();
         return optionalWorker(id);
+    }
+
+    public static Optional<WorkerTier> workerTier(EntityType<?> type) {
+        WorkerTier exact = WORKER_TIERS.get(type);
+        if (exact != null) {
+            return Optional.of(exact);
+        }
+        String id = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(type).toString();
+        return Optional.ofNullable(OPTIONAL_WORKER_TIERS.get(id));
     }
 
     static Optional<WorkerStats> optionalWorker(String entityId) {
