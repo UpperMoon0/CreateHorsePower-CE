@@ -84,12 +84,14 @@ public class WorkerResolver {
     }
 
     private static WorkerStats createLegacyProfile(BuiltinProfiles.WorkerTier tier) {
-        WorkerStats profile = switch (tier) {
-            case SMALL -> BuiltinProfiles.SMALL;
-            case MEDIUM -> BuiltinProfiles.MEDIUM;
-            case LARGE -> BuiltinProfiles.LARGE;
-        };
-        return createLegacyAwareProfile(profile, tier);
+        CHPConfig config = CHPApi.config();
+        return LegacyOutputBalance.legacyProfile(
+                tier,
+                config.baseCreatureRpm(),
+                config.smallCreatureStress(),
+                config.mediumCreatureStress(),
+                config.largeCreatureStress()
+        );
     }
 
     public static Optional<WorkerStats> getBaseStats(EntityType<?> type) {
