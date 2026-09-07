@@ -12,7 +12,6 @@ import net.steampn.createhorsepower.content.crank.RedstoneMode;
 import net.steampn.createhorsepower.content.path.PathEvaluationMode;
 import net.steampn.createhorsepower.content.stats.PathStats;
 import net.steampn.createhorsepower.content.stats.WorkerStats;
-import net.steampn.createhorsepower.content.stats.BuiltinProfiles;
 import net.steampn.createhorsepower.platform.CHPConfig;
 
 public class Config implements CHPConfig {
@@ -239,8 +238,9 @@ public class Config implements CHPConfig {
     @Override public int checkIntervalTicks() { return CHECK_INTERVAL_TICKS.get(); }
     @Override public RedstoneMode defaultRedstoneMode() { return DEFAULT_REDSTONE_MODE.get(); }
 
-    // Forge 1.20.1 has no Data Map API. Bundled worker profiles are resolved in
-    // common code so their legacy-balance semantics stay identical to NeoForge.
+    // Forge 1.20.1 has no Data Map API. Explicit pack path overrides arrive
+    // through legacy config/KubeJS, while CE bundled paths resolve last in
+    // common code so pack balance always wins.
     @Override
     public Optional<WorkerStats> lookupWorkerStats(EntityType<?> type) {
         return Optional.empty();
@@ -248,6 +248,6 @@ public class Config implements CHPConfig {
 
     @Override
     public Optional<PathStats> lookupPathStats(Block block) {
-        return BuiltinProfiles.path(block);
+        return Optional.empty();
     }
 }
