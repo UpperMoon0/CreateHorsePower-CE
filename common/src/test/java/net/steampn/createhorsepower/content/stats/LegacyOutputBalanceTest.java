@@ -32,7 +32,7 @@ class LegacyOutputBalanceTest {
     }
 
     @Test
-    void tfgLegacyBalanceMakesLargeHorseSixteenRpmAndThirtyTwoSu() {
+    void tfgLegacyBalanceMakesLargeHorseSixteenRpmAndThirtyTwoBaseSu() {
         WorkerStats horse = horseProfile();
         WorkerStats result = LegacyOutputBalance.apply(
                 horse,
@@ -43,14 +43,14 @@ class LegacyOutputBalanceTest {
         assertEquals(16.0f, result.baseRpm());
         assertEquals(32.0f, result.stressCapacity());
         assertEquals(0.0f, result.speedScaling(), "legacy RPM override must remain authoritative");
-        assertEquals(0.0f, result.healthScaling(), "legacy SU override must remain authoritative");
+        assertEquals(0.25f, result.healthScaling(), "legacy SU override changes the base but must preserve per-animal health variation");
         assertEquals(horse.movementRadius(), result.movementRadius());
         assertEquals(horse.speedReference(), result.speedReference());
         assertEquals(horse.healthReference(), result.healthReference());
     }
 
     @Test
-    void outputAxesOverrideIndependently() {
+    void outputAxesOverrideIndependentlyWithoutRemovingSuVariation() {
         WorkerStats horse = horseProfile();
         WorkerStats stressOnly = LegacyOutputBalance.apply(
                 horse,
@@ -60,7 +60,7 @@ class LegacyOutputBalanceTest {
         assertEquals(5.0f, stressOnly.baseRpm());
         assertEquals(32.0f, stressOnly.stressCapacity());
         assertEquals(0.75f, stressOnly.speedScaling());
-        assertEquals(0.0f, stressOnly.healthScaling());
+        assertEquals(0.25f, stressOnly.healthScaling());
 
         WorkerStats rpmOnly = LegacyOutputBalance.apply(
                 horse,
@@ -89,7 +89,7 @@ class LegacyOutputBalanceTest {
     }
 
     @Test
-    void legacyOnlyWorkerSuppressesOnlyExplicitlyOverriddenAxes() {
+    void legacyOnlyWorkerKeepsHealthVariationWhenStressBaseIsOverridden() {
         WorkerStats stressOnly = LegacyOutputBalance.legacyProfile(
                 BuiltinProfiles.WorkerTier.MEDIUM,
                 4, 128, 24, 512
@@ -97,7 +97,7 @@ class LegacyOutputBalanceTest {
         assertEquals(4.0f, stressOnly.baseRpm());
         assertEquals(24.0f, stressOnly.stressCapacity());
         assertEquals(0.5f, stressOnly.speedScaling());
-        assertEquals(0.0f, stressOnly.healthScaling());
+        assertEquals(0.2f, stressOnly.healthScaling());
 
         WorkerStats rpmOnly = LegacyOutputBalance.legacyProfile(
                 BuiltinProfiles.WorkerTier.MEDIUM,
