@@ -72,19 +72,19 @@ public class Config implements CHPConfig {
     static {
         // --- 1.1 Legacy root keys ---
         BASE_CREATURE_RPM = BUILDER
-                .comment("Base rpm creatures can spin the horse crank (fallback when not defined by Data Maps).")
+                .comment("Base RPM for legacy/tier workers. When changed from the default 4, this also overrides bundled species-profile RPM; explicit Data Map/KubeJS profiles still win.")
                 .defineInRange("creatureRPMRange", 4, 1, Integer.MAX_VALUE);
 
         SMALL_CREATURE_STRESS = BUILDER
-                .comment("How much stress small creatures can produce for the horse crank (fallback when not defined by Data Maps).")
+                .comment("Small-worker stress capacity. When changed from the default 128, this overrides bundled profiles assigned to the small tier; explicit Data Map/KubeJS profiles still win.")
                 .defineInRange("smallCreatureStressRange", 128, 1, Integer.MAX_VALUE);
 
         MEDIUM_CREATURE_STRESS = BUILDER
-                .comment("How much stress medium creatures can produce for the horse crank (fallback when not defined by Data Maps).")
+                .comment("Medium-worker stress capacity. When changed from the default 256, this overrides bundled profiles assigned to the medium tier; explicit Data Map/KubeJS profiles still win.")
                 .defineInRange("mediumCreatureStressRange", 256, 1, Integer.MAX_VALUE);
 
         LARGE_CREATURE_STRESS = BUILDER
-                .comment("How much stress large creatures can produce for the horse crank (fallback when not defined by Data Maps).")
+                .comment("Large-worker stress capacity. When changed from the default 512, this overrides bundled profiles assigned to the large tier; explicit Data Map/KubeJS profiles still win.")
                 .defineInRange("largeCreatureStressRange", 512, 1, Integer.MAX_VALUE);
 
         POOR_MULTIPLIER = BUILDER
@@ -239,6 +239,8 @@ public class Config implements CHPConfig {
     @Override public int checkIntervalTicks() { return CHECK_INTERVAL_TICKS.get(); }
     @Override public RedstoneMode defaultRedstoneMode() { return DEFAULT_REDSTONE_MODE.get(); }
 
+    // With no bundled worker Data Map, a present value here is an explicit
+    // datapack/packmaker override and intentionally outranks legacy balance.
     @Override
     public Optional<WorkerStats> lookupWorkerStats(EntityType<?> type) {
         return Optional.ofNullable(BuiltInRegistries.ENTITY_TYPE.wrapAsHolder(type).getData(CHPDataMaps.WORKER_STATS));

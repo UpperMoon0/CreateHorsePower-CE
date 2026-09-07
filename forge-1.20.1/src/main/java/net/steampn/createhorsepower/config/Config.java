@@ -13,7 +13,6 @@ import net.steampn.createhorsepower.content.path.PathEvaluationMode;
 import net.steampn.createhorsepower.content.stats.PathStats;
 import net.steampn.createhorsepower.content.stats.WorkerStats;
 import net.steampn.createhorsepower.content.stats.BuiltinProfiles;
-import net.steampn.createhorsepower.utils.CHPTags;
 import net.steampn.createhorsepower.platform.CHPConfig;
 
 public class Config implements CHPConfig {
@@ -73,19 +72,19 @@ public class Config implements CHPConfig {
     static {
         // --- 1.1 Legacy root keys ---
         BASE_CREATURE_RPM = BUILDER
-                .comment("Base rpm creatures can spin the horse crank (fallback when not defined by Data Maps).")
+                .comment("Base RPM for legacy/tier workers. When changed from the default 4, this also overrides bundled species-profile RPM; explicit Data Map/KubeJS profiles still win.")
                 .defineInRange("creatureRPMRange", 4, 1, Integer.MAX_VALUE);
 
         SMALL_CREATURE_STRESS = BUILDER
-                .comment("How much stress small creatures can produce for the horse crank (fallback when not defined by Data Maps).")
+                .comment("Small-worker stress capacity. When changed from the default 128, this overrides bundled profiles assigned to the small tier; explicit Data Map/KubeJS profiles still win.")
                 .defineInRange("smallCreatureStressRange", 128, 1, Integer.MAX_VALUE);
 
         MEDIUM_CREATURE_STRESS = BUILDER
-                .comment("How much stress medium creatures can produce for the horse crank (fallback when not defined by Data Maps).")
+                .comment("Medium-worker stress capacity. When changed from the default 256, this overrides bundled profiles assigned to the medium tier; explicit Data Map/KubeJS profiles still win.")
                 .defineInRange("mediumCreatureStressRange", 256, 1, Integer.MAX_VALUE);
 
         LARGE_CREATURE_STRESS = BUILDER
-                .comment("How much stress large creatures can produce for the horse crank (fallback when not defined by Data Maps).")
+                .comment("Large-worker stress capacity. When changed from the default 512, this overrides bundled profiles assigned to the large tier; explicit Data Map/KubeJS profiles still win.")
                 .defineInRange("largeCreatureStressRange", 512, 1, Integer.MAX_VALUE);
 
         POOR_MULTIPLIER = BUILDER
@@ -240,15 +239,10 @@ public class Config implements CHPConfig {
     @Override public int checkIntervalTicks() { return CHECK_INTERVAL_TICKS.get(); }
     @Override public RedstoneMode defaultRedstoneMode() { return DEFAULT_REDSTONE_MODE.get(); }
 
-    // Forge 1.20.1 has no Data Map API. These lookups emulate the built-in
-    // 1.21.1 Data Maps; legacy tags/config lists remain handled by the common resolver.
+    // Forge 1.20.1 has no Data Map API. Bundled worker profiles are resolved in
+    // common code so their legacy-balance semantics stay identical to NeoForge.
     @Override
     public Optional<WorkerStats> lookupWorkerStats(EntityType<?> type) {
-        Optional<WorkerStats> specific = BuiltinProfiles.worker(type);
-        if (specific.isPresent()) return specific;
-        if (type.is(CHPTags.Entities.WORKERS_LARGE)) return Optional.of(BuiltinProfiles.LARGE);
-        if (type.is(CHPTags.Entities.WORKERS_MEDIUM)) return Optional.of(BuiltinProfiles.MEDIUM);
-        if (type.is(CHPTags.Entities.WORKERS_SMALL)) return Optional.of(BuiltinProfiles.SMALL);
         return Optional.empty();
     }
 

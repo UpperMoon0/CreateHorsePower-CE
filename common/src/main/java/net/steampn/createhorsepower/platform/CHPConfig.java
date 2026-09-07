@@ -3,7 +3,6 @@ package net.steampn.createhorsepower.platform;
 import java.util.List;
 import java.util.Optional;
 
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.level.block.Block;
 import net.steampn.createhorsepower.content.crank.RedstoneMode;
@@ -78,6 +77,7 @@ public interface CHPConfig {
 
     RedstoneMode defaultRedstoneMode();
 
+    /** Platform/pack-provided worker override; bundled CE defaults resolve in common code. */
     Optional<WorkerStats> lookupWorkerStats(EntityType<?> type);
 
     Optional<PathStats> lookupPathStats(Block block);

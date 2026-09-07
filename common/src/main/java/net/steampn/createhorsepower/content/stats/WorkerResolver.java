@@ -6,9 +6,9 @@ import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.TamableAnimal;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.animal.horse.AbstractHorse;
-import net.minecraft.tags.EntityTypeTags;
 import net.steampn.createhorsepower.compat.kubejs.KubeJSProfileRegistry;
 import net.steampn.createhorsepower.platform.CHPApi;
+import net.steampn.createhorsepower.platform.CHPConfig;
 import net.steampn.createhorsepower.utils.CHPTags;
 import org.jetbrains.annotations.Nullable;
 
@@ -33,6 +33,53 @@ public class WorkerResolver {
         public static final ResolvedWorker INVALID = new ResolvedWorker(WorkerStats.DEFAULT, 0.0f, 0.0f, 0.0f, 0.0f, false);
     }
 
+    private static Optional<BuiltinProfiles.WorkerTier> legacyTier(EntityType<?> type) {
+        CHPConfig config = CHPApi.config();
+        String entityKey = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(type).toString();
+
+        // Explicit legacy lists are packmaker intent and therefore outrank CE's
+        // built-in tags/default classification. This matters for packs such as
+        // TFG, which deliberately classifies TFC donkey/pig/sheep differently.
+        if (config.smallCreatures().contains(entityKey)) {
+            return Optional.of(BuiltinProfiles.WorkerTier.SMALL);
+        }
+        if (config.mediumCreatures().contains(entityKey)) {
+            return Optional.of(BuiltinProfiles.WorkerTier.MEDIUM);
+        }
+        if (config.largeCreatures().contains(entityKey)) {
+            return Optional.of(BuiltinProfiles.WorkerTier.LARGE);
+        }
+
+        if (type.is(CHPTags.Entities.WORKERS_SMALL) || type.is(CHPTags.Entities.SMALL_WORKER_TAG)) {
+            return Optional.of(BuiltinProfiles.WorkerTier.SMALL);
+        }
+        if (type.is(CHPTags.Entities.WORKERS_MEDIUM) || type.is(CHPTags.Entities.MEDIUM_WORKER_TAG)) {
+            return Optional.of(BuiltinProfiles.WorkerTier.MEDIUM);
+        }
+        if (type.is(CHPTags.Entities.WORKERS_LARGE) || type.is(CHPTags.Entities.LARGE_WORKER_TAG)) {
+            return Optional.of(BuiltinProfiles.WorkerTier.LARGE);
+        }
+
+        return BuiltinProfiles.workerTier(type);
+    }
+
+    private static WorkerStats applyLegacyOutputOverrides(EntityType<?> type, WorkerStats profile) {
+        Optional<BuiltinProfiles.WorkerTier> tier = legacyTier(type);
+        if (tier.isEmpty()) {
+            return profile;
+        }
+
+        CHPConfig config = CHPApi.config();
+        return LegacyOutputBalance.apply(
+                profile,
+                tier.get(),
+                config.baseCreatureRpm(),
+                config.smallCreatureStress(),
+                config.mediumCreatureStress(),
+                config.largeCreatureStress()
+        );
+    }
+
     private static WorkerStats createLegacyProfile(float stressCapacity) {
         float rpm = (float) CHPApi.config().baseCreatureRpm();
         return new WorkerStats(
@@ -54,18 +101,17 @@ public class WorkerResolver {
             return kjsStats;
         }
 
+        // Platform lookup is reserved for explicit pack-provided overrides
+        // (NeoForge Data Maps). Bundled CE defaults are resolved below so the
+        // legacy server balance knobs can still govern migrated packs.
         Optional<WorkerStats> platformStats = CHPApi.config().lookupWorkerStats(type);
         if (platformStats.isPresent()) {
             return platformStats;
         }
 
-        // Cross-loader built-ins and optional registry-ID compatibility. On
-        // NeoForge this intentionally comes after Data Maps so datapacks can
-        // override the defaults; on Forge the config adapter already exposes
-        // the same built-ins, making this a harmless no-op fallback.
         Optional<WorkerStats> builtinStats = BuiltinProfiles.worker(type);
         if (builtinStats.isPresent()) {
-            return builtinStats;
+            return Optional.of(applyLegacyOutputOverrides(type, builtinStats.get()));
         }
 
         // Fallback to legacy worker tags with live config values
