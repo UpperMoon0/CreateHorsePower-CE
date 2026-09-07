@@ -72,4 +72,40 @@ class LegacyOutputBalanceTest {
         assertEquals(0.0f, rpmOnly.speedScaling());
         assertEquals(0.25f, rpmOnly.healthScaling());
     }
+
+    @Test
+    void legacyOnlyWorkerKeepsHistoricalScalingAtDefaultBalance() {
+        WorkerStats smallLegacyWorker = LegacyOutputBalance.legacyProfile(
+                BuiltinProfiles.WorkerTier.SMALL,
+                4, 128, 256, 512
+        );
+
+        assertEquals(4.0f, smallLegacyWorker.baseRpm());
+        assertEquals(128.0f, smallLegacyWorker.stressCapacity());
+        assertEquals(0.5f, smallLegacyWorker.speedScaling(),
+                "legacy-only workers must keep the pre-1.2 speed scaling baseline");
+        assertEquals(0.2f, smallLegacyWorker.healthScaling(),
+                "legacy-only workers must keep the pre-1.2 health scaling baseline");
+    }
+
+    @Test
+    void legacyOnlyWorkerSuppressesOnlyExplicitlyOverriddenAxes() {
+        WorkerStats stressOnly = LegacyOutputBalance.legacyProfile(
+                BuiltinProfiles.WorkerTier.MEDIUM,
+                4, 128, 24, 512
+        );
+        assertEquals(4.0f, stressOnly.baseRpm());
+        assertEquals(24.0f, stressOnly.stressCapacity());
+        assertEquals(0.5f, stressOnly.speedScaling());
+        assertEquals(0.0f, stressOnly.healthScaling());
+
+        WorkerStats rpmOnly = LegacyOutputBalance.legacyProfile(
+                BuiltinProfiles.WorkerTier.MEDIUM,
+                16, 128, 256, 512
+        );
+        assertEquals(16.0f, rpmOnly.baseRpm());
+        assertEquals(256.0f, rpmOnly.stressCapacity());
+        assertEquals(0.0f, rpmOnly.speedScaling());
+        assertEquals(0.2f, rpmOnly.healthScaling());
+    }
 }
