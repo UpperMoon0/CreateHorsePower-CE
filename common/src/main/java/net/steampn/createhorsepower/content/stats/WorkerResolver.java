@@ -68,11 +68,14 @@ public class WorkerResolver {
         if (tier.isEmpty()) {
             return profile;
         }
+        return createLegacyAwareProfile(profile, tier.get());
+    }
 
+    private static WorkerStats createLegacyAwareProfile(WorkerStats profile, BuiltinProfiles.WorkerTier tier) {
         CHPConfig config = CHPApi.config();
         return LegacyOutputBalance.apply(
                 profile,
-                tier.get(),
+                tier,
                 config.baseCreatureRpm(),
                 config.smallCreatureStress(),
                 config.mediumCreatureStress(),
@@ -80,19 +83,13 @@ public class WorkerResolver {
         );
     }
 
-    private static WorkerStats createLegacyProfile(float stressCapacity) {
-        float rpm = (float) CHPApi.config().baseCreatureRpm();
-        return new WorkerStats(
-                rpm,
-                stressCapacity,
-                2.5f,
-                0.5f,
-                WorkerStats.DEFAULT_SPEED_REF,
-                0.2f,
-                WorkerStats.DEFAULT_HEALTH_REF,
-                false,
-                false
-        );
+    private static WorkerStats createLegacyProfile(BuiltinProfiles.WorkerTier tier) {
+        WorkerStats profile = switch (tier) {
+            case SMALL -> BuiltinProfiles.SMALL;
+            case MEDIUM -> BuiltinProfiles.MEDIUM;
+            case LARGE -> BuiltinProfiles.LARGE;
+        };
+        return createLegacyAwareProfile(profile, tier);
     }
 
     public static Optional<WorkerStats> getBaseStats(EntityType<?> type) {
@@ -114,27 +111,28 @@ public class WorkerResolver {
             return Optional.of(applyLegacyOutputOverrides(type, builtinStats.get()));
         }
 
-        // Fallback to legacy worker tags with live config values
-        if (type.is(CHPTags.Entities.WORKERS_LARGE) || type.is(CHPTags.Entities.LARGE_WORKER_TAG)) {
-            return Optional.of(createLegacyProfile(CHPApi.config().largeCreatureStress()));
-        }
-        if (type.is(CHPTags.Entities.WORKERS_MEDIUM) || type.is(CHPTags.Entities.MEDIUM_WORKER_TAG)) {
-            return Optional.of(createLegacyProfile(CHPApi.config().mediumCreatureStress()));
-        }
-        if (type.is(CHPTags.Entities.WORKERS_SMALL) || type.is(CHPTags.Entities.SMALL_WORKER_TAG)) {
-            return Optional.of(createLegacyProfile(CHPApi.config().smallCreatureStress()));
-        }
-
-        // Fallback to legacy config lists
+        // Explicit legacy lists also outrank generic CE tags, allowing a pack to
+        // deliberately reclassify a tagged worker without needing a Data Map.
         String entityKey = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(type).toString();
-        if (CHPApi.config().largeCreatures().contains(entityKey)) {
-            return Optional.of(createLegacyProfile(CHPApi.config().largeCreatureStress()));
+        if (CHPApi.config().smallCreatures().contains(entityKey)) {
+            return Optional.of(createLegacyProfile(BuiltinProfiles.WorkerTier.SMALL));
         }
         if (CHPApi.config().mediumCreatures().contains(entityKey)) {
-            return Optional.of(createLegacyProfile(CHPApi.config().mediumCreatureStress()));
+            return Optional.of(createLegacyProfile(BuiltinProfiles.WorkerTier.MEDIUM));
         }
-        if (CHPApi.config().smallCreatures().contains(entityKey)) {
-            return Optional.of(createLegacyProfile(CHPApi.config().smallCreatureStress()));
+        if (CHPApi.config().largeCreatures().contains(entityKey)) {
+            return Optional.of(createLegacyProfile(BuiltinProfiles.WorkerTier.LARGE));
+        }
+
+        // Fallback to worker tags with the same legacy-aware output semantics.
+        if (type.is(CHPTags.Entities.WORKERS_SMALL) || type.is(CHPTags.Entities.SMALL_WORKER_TAG)) {
+            return Optional.of(createLegacyProfile(BuiltinProfiles.WorkerTier.SMALL));
+        }
+        if (type.is(CHPTags.Entities.WORKERS_MEDIUM) || type.is(CHPTags.Entities.MEDIUM_WORKER_TAG)) {
+            return Optional.of(createLegacyProfile(BuiltinProfiles.WorkerTier.MEDIUM));
+        }
+        if (type.is(CHPTags.Entities.WORKERS_LARGE) || type.is(CHPTags.Entities.LARGE_WORKER_TAG)) {
+            return Optional.of(createLegacyProfile(BuiltinProfiles.WorkerTier.LARGE));
         }
 
         return Optional.empty();
