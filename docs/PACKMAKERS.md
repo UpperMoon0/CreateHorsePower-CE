@@ -114,6 +114,8 @@ Copying a NeoForge datapack into Forge 1.20.1 without renaming `tags/item` → `
 
 `speed_scaling` affects mechanical output only. The 1.2.1 visual gait uses the separate server settings under `[workers]` documented below.
 
+Starting in 1.2.2, CE no longer ships its own bundled worker defaults as Data Map values. A value present in this Data Map is therefore an explicit datapack/packmaker override and stays above legacy server balance and CE bundled fallback profiles.
+
 ### Path Stats Data Map (`createhorsepower:path_stats`)
 
 - **Path:** `data/<namespace>/data_maps/block/path_stats.json`
@@ -138,6 +140,8 @@ Copying a NeoForge datapack into Forge 1.20.1 without renaming `tags/item` → `
 |---|---|---|---|
 | `speed_multiplier` | Float (>= 0) | `1.0` | Multiplier applied to mechanical RPM. |
 | `stress_multiplier` | Float (>= 0) | `1.0` | Multiplier applied to stress capacity. |
+
+Starting in 1.2.2, bundled CE path defaults are also resolved in common code instead of being shipped as Data Map values. Explicit datapack Data Maps remain above legacy path config and bundled defaults.
 
 ---
 
@@ -173,7 +177,7 @@ To add another attachment item while preserving defaults, omit `replace`:
 - `#createhorsepower:workers/medium`
 - `#createhorsepower:workers/large`
 
-These tier tags are available on both loaders and are fallbacks after higher-priority exact profiles.
+These tier tags are available on both loaders and are fallbacks after higher-priority exact profiles. When legacy balance is overriding a bundled species profile, an explicit legacy creature list classification is checked before these tier tags so existing packs keep their intended small/medium/large assignment.
 
 ---
 
@@ -269,14 +273,18 @@ KubeJS is optional. Without it, NeoForge Data Maps, tags, config, attachment, mo
 
 > **Forge 1.20.1 only.** NeoForge Data Maps and CHP KubeJS registration are unavailable.
 
-Forge uses a deterministic fallback chain:
+Forge uses the shared CE bundled defaults as fallback profiles rather than treating them as platform overrides.
 
-1. Built-in per-species profiles (matching the canonical NeoForge defaults where applicable).
-2. Canonical worker tier tags.
-3. Legacy worker tags/config fallback for additional workers (`smallCreatures`, `mediumCreatures`, `largeCreatures`).
-4. Built-in path profiles, then legacy path/config fallback for additional blocks.
+For workers:
 
-There is no arbitrary per-entity override API comparable to NeoForge Data Maps/KubeJS on Forge 1.20.1. Built-in exact profiles take priority over legacy tag/config tuning for the same built-in entity or block.
+1. CE resolves a bundled per-species profile when one exists.
+2. If legacy `creatureRPMRange` or tier stress values were changed from their shipped defaults, those configured values replace the bundled base RPM/stress for the applicable tier.
+3. Tier selection for that legacy override checks explicit `smallCreatures` / `mediumCreatures` / `largeCreatures` lists before worker tier tags and CE's built-in tier classification.
+4. Intended per-animal attribute scaling remains active on top of the configured base output.
+
+For paths, explicit `poorPathBlock`, `normalPathBlock`, and `greatPathBlock` config entries beat CE bundled exact/family path defaults. The configured path profile is then fed into the selected evaluation mode normally, including `WEIGHTED_AVERAGE` for mixed tracks.
+
+There is no arbitrary per-entity exact-profile API comparable to NeoForge Data Maps/KubeJS on Forge 1.20.1, but pack/server legacy balance and path config can override CE bundled defaults as described above.
 
 ---
 
@@ -286,7 +294,7 @@ TerraFirmaCraft is **not** a published hard dependency. CE's compatibility is re
 
 ### Workers
 
-Version 1.2.1 includes built-in TFC defaults for these IDs when they exist:
+Version 1.2.1 introduced built-in TFC defaults for these IDs when they exist:
 
 - `tfc:horse`
 - `tfc:donkey`
@@ -297,9 +305,9 @@ Version 1.2.1 includes built-in TFC defaults for these IDs when they exist:
 - `tfc:dromedary_camel`
 - `tfc:bactrian_camel`
 
-On NeoForge 1.21.1, exact TFC Data Map entries are guarded by `neoforge:mod_loaded` and use `replace=true`, so they replace generic tier-tag defaults. A later datapack may still override or remove those entries normally. The shared registry-ID fallback also exists as a defensive cross-loader fallback.
+Starting with 1.2.2, those TFC species defaults are bundled common-code fallbacks on both loaders rather than shipped NeoForge Data Map values. On NeoForge, an explicit pack Data Map or KubeJS profile can override them. On both loaders, changed legacy RPM/stress values can override their bundled base output according to the effective worker tier while preserving intended per-animal health scaling.
 
-On Forge 1.20.1, the shared registry-ID fallback supplies the matching built-in species profile for IDs present in the installed TFC version. IDs absent from that TFC version simply do nothing.
+On Forge 1.20.1, registry IDs absent from the installed TFC version simply do nothing.
 
 ### Path families
 
@@ -312,7 +320,7 @@ Without any pack config, CE recognizes common TFC terrain families:
 | `tfc:rock/cobble/*`, `tfc:rock/mossy_cobble/*` | Normal |
 | `tfc:rock/smooth/*`, `tfc:rock/bricks/*`, `tfc:rock/mossy_bricks/*` | Great |
 
-These defaults are intended to make ordinary TFC walking rings work out of the box. Higher-priority NeoForge Data Maps/KubeJS profiles can override them where available.
+These defaults are intended to make ordinary TFC walking rings work out of the box. Explicit KubeJS/Data Map profiles override them on NeoForge, and pack/server legacy path lists override them on both loaders. Weighted mixed-path evaluation still combines the resolved per-block profiles normally.
 
 ---
 
@@ -390,31 +398,30 @@ Higher-priority entries replace lower-priority tuning for the same entity or blo
 
 ### NeoForge 1.21.1
 
-Worker stats:
+Worker profile source precedence:
 
 1. **KubeJS startup profile** (`HorsePowerEvents.workerProfiles`)
-2. **NeoForge Data Map** (`createhorsepower:worker_stats`)
-3. **Built-in exact registry-ID fallback** (including optional TFC species)
-4. **Tier entity tag** (`#createhorsepower:workers/*`)
-5. **Config entity list** (`largeCreatures`, `mediumCreatures`, `smallCreatures`)
+2. **Explicit NeoForge Data Map** (`createhorsepower:worker_stats`)
+3. **CE bundled exact registry-ID profile** (including optional TFC species)
+4. **Explicit legacy config list / worker tier tag / CE built-in tier fallback** for otherwise unresolved workers
+
+When a CE bundled profile is selected, changed legacy `creatureRPMRange` / tier-stress values are applied to its base output. Tier classification for that legacy override checks explicit config creature lists first, then tier tags, then CE's built-in tier. Intended health-based per-animal stress scaling remains active on top of the configured base SU.
 
 Path stats:
 
-**KubeJS → Data Map → built-in exact/family fallback → legacy tier/config fallback**.
+**KubeJS → explicit Data Map → legacy path config → CE bundled exact/family fallback**.
 
-The built-in TFC exact Data Map entries are conditional and `replace=true`, so when TFC is loaded they beat generic tier-tag defaults but remain overrideable by later datapacks/KubeJS.
+The selected per-block profiles are still processed by the configured path evaluation mode. `WEIGHTED_AVERAGE` remains the default and continues to average mixed paths.
 
 ### Forge 1.20.1
 
-KubeJS and NeoForge Data Maps are unavailable:
+KubeJS and NeoForge Data Maps are unavailable.
 
-1. **Built-in per-species / registry-ID profile**
-2. **Tier entity tag**
-3. **Legacy tag/config fallback**
+Worker bundled profiles use the same legacy balance override logic as NeoForge, including explicit legacy creature-list classification before tier tags/built-in tier fallback.
 
-For paths: **built-in exact/family profile → legacy path/config fallback** (`greatPathBlock`, `normalPathBlock`, `poorPathBlock`).
+For paths: **legacy path config → CE bundled exact/family fallback** (`greatPathBlock`, `normalPathBlock`, `poorPathBlock`).
 
-Built-in Forge profiles take priority over legacy tag/config values for the same built-in entry. Legacy config remains useful for otherwise unresolved workers/blocks.
+This ordering is intentional: pack/server data must be able to override CE defaults, while bundled defaults still provide sensible behavior when a pack supplies nothing.
 
 ---
 
@@ -445,15 +452,21 @@ Version 1.2.1 adds these non-breaking defaults:
 - `workers.maxWorkerGroundSpeed = 3.5`
 - `diagnostics.debugLogging = false`
 
-### 2. Precedence and Data Map Overrides (NeoForge 1.21.1)
+### 2. 1.2.2 precedence correction
 
-Vanilla workers now have dedicated Data Map profiles, so old tier/config values no longer override those exact built-ins. Override `createhorsepower:worker_stats` or use KubeJS for exact tuning. Built-in path Data Maps follow the same rule.
+CE 1.2.2 restores pack authority over CE bundled defaults:
 
-Optional TFC exact species Data Maps are also higher priority than generic tier tags when TFC is installed; they remain normal datapack entries and can be replaced/removed by a later pack.
+- Changed legacy `creatureRPMRange` and tier stress values override bundled worker base output for the applicable tier.
+- Explicit legacy creature lists are consulted before CE tier fallbacks when determining the tier for those overrides.
+- Intended per-animal health scaling remains active on top of the configured base output.
+- Legacy `poorPathBlock`, `normalPathBlock`, and `greatPathBlock` entries override CE bundled exact/family path defaults.
+- Weighted mixed-path evaluation is unchanged; only per-block source precedence changed.
+
+On NeoForge, KubeJS and explicit Data Maps remain above those legacy config overrides. CE's own bundled defaults are no longer shipped as Data Map values, so Data Maps consistently represent explicit pack/datapack overrides.
 
 ### 2b. Forge 1.20.1 Customization
 
-Forge emulates canonical built-in worker/path defaults without Data Maps. Use supported tags or legacy config for additional unresolved workers/blocks; exact built-ins remain higher priority than the legacy fallback.
+Forge has no Data Map/KubeJS profile layer. Legacy worker balance and path config therefore override CE bundled defaults directly as documented above.
 
 ### 3. Existing Horse Cranks and Redstone
 
