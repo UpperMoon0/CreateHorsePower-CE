@@ -15,8 +15,8 @@ final class LegacyOutputBalance {
 
     /**
      * Historical profile used by workers that only exist through legacy config
-     * lists/tags. Keep its old attribute scaling, then apply the same per-axis
-     * override suppression used for richer bundled species profiles.
+     * lists/tags. Keep its old attribute scaling, then apply the same override
+     * semantics used for richer bundled species profiles.
      */
     static WorkerStats legacyProfile(
             BuiltinProfiles.WorkerTier tier,
@@ -65,7 +65,7 @@ final class LegacyOutputBalance {
                 profile.movementRadius(),
                 rpmOverridden ? 0.0f : profile.speedScaling(),
                 profile.speedReference(),
-                stressOverridden ? 0.0f : profile.healthScaling(),
+                profile.healthScaling(),
                 profile.healthReference(),
                 profile.requiresTamed(),
                 profile.allowBaby()
