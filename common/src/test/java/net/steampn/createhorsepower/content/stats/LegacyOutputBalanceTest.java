@@ -6,15 +6,25 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
 class LegacyOutputBalanceTest {
+    private static WorkerStats horseProfile() {
+        return new WorkerStats(
+                5.0f, 600.0f, 2.5f,
+                0.75f, 0.225f,
+                0.25f, 22.0f,
+                false, false
+        );
+    }
+
     @Test
     void untouchedLegacyDefaultsKeepRichSpeciesProfile() {
+        WorkerStats horse = horseProfile();
         WorkerStats result = LegacyOutputBalance.apply(
-                BuiltinProfiles.HORSE,
+                horse,
                 BuiltinProfiles.WorkerTier.LARGE,
                 4, 128, 256, 512
         );
 
-        assertSame(BuiltinProfiles.HORSE, result);
+        assertSame(horse, result);
         assertEquals(5.0f, result.baseRpm());
         assertEquals(600.0f, result.stressCapacity());
         assertEquals(0.75f, result.speedScaling());
@@ -23,8 +33,9 @@ class LegacyOutputBalanceTest {
 
     @Test
     void tfgLegacyBalanceMakesLargeHorseSixteenRpmAndThirtyTwoSu() {
+        WorkerStats horse = horseProfile();
         WorkerStats result = LegacyOutputBalance.apply(
-                BuiltinProfiles.HORSE,
+                horse,
                 BuiltinProfiles.WorkerTier.LARGE,
                 16, 16, 24, 32
         );
@@ -33,15 +44,16 @@ class LegacyOutputBalanceTest {
         assertEquals(32.0f, result.stressCapacity());
         assertEquals(0.0f, result.speedScaling(), "legacy RPM override must remain authoritative");
         assertEquals(0.0f, result.healthScaling(), "legacy SU override must remain authoritative");
-        assertEquals(BuiltinProfiles.HORSE.movementRadius(), result.movementRadius());
-        assertEquals(BuiltinProfiles.HORSE.speedReference(), result.speedReference());
-        assertEquals(BuiltinProfiles.HORSE.healthReference(), result.healthReference());
+        assertEquals(horse.movementRadius(), result.movementRadius());
+        assertEquals(horse.speedReference(), result.speedReference());
+        assertEquals(horse.healthReference(), result.healthReference());
     }
 
     @Test
     void outputAxesOverrideIndependently() {
+        WorkerStats horse = horseProfile();
         WorkerStats stressOnly = LegacyOutputBalance.apply(
-                BuiltinProfiles.HORSE,
+                horse,
                 BuiltinProfiles.WorkerTier.LARGE,
                 4, 128, 256, 32
         );
@@ -51,7 +63,7 @@ class LegacyOutputBalanceTest {
         assertEquals(0.0f, stressOnly.healthScaling());
 
         WorkerStats rpmOnly = LegacyOutputBalance.apply(
-                BuiltinProfiles.HORSE,
+                horse,
                 BuiltinProfiles.WorkerTier.LARGE,
                 16, 128, 256, 512
         );
