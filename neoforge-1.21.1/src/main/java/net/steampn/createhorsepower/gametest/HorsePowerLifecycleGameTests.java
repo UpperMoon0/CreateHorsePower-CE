@@ -404,7 +404,7 @@ public final class HorsePowerLifecycleGameTests {
      * three surviving sources, return the stress/capacity relation to sustainable,
      * and resume actual network rotation without losing any surviving worker.
      */
-    @GameTest(template = "kinetic_network", timeoutTicks = 240)
+    @GameTest(template = "kinetic_network", timeoutTicks = 240, batch = "chp_kinetic_branch_loss")
     public static void sharedOverstressedNetworkRecoversAfterFastCrankBranchLoss(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
         BlockPos origin = helper.absolutePos(BlockPos.ZERO);
@@ -490,6 +490,14 @@ public final class HorsePowerLifecycleGameTests {
                 helper.assertTrue(be instanceof AbstractHorseCrankBlockEntity,
                         "fixture crank " + i + " must have a horse-crank block entity");
                 cranks[i] = (AbstractHorseCrankBlockEntity) be;
+
+                PathEvaluator.Result fixturePath = PathEvaluator.evaluate(
+                        level,
+                        crankPositions[i],
+                        HorseCrankEngine.generateOffsetsForRadius(HorseCrankEngine.DEFAULT_RADIUS));
+                helper.assertTrue(fixturePath.isValid(),
+                        "fixture path " + i + " must remain valid before worker attachment; "
+                                + describePathFixture(level, crankPositions[i], HorseCrankEngine.DEFAULT_RADIUS));
             }
 
             // Bring the normal sources online one at a time. The first source
@@ -525,6 +533,8 @@ public final class HorsePowerLifecycleGameTests {
                             .append(", eligible=").append(engine.isWorkerEligible())
                             .append(", path=").append(engine.hasValidWorkingBlocks)
                             .append(", invalidPath=").append(engine.getInvalidBlockCount())
+                            .append(", tiles=").append(describePathFixture(
+                                    level, cranks[i].getBlockPos(), engine.getWorkerRadius()))
                             .append(", assigned=").append(workers[i] != null && engine.isAssignedWorker(workers[i].horse().getUUID()))
                             .append(", generated=").append(engine.generatedSpeed())
                             .append(", speed=").append(cranks[i].getSpeed())
@@ -655,6 +665,37 @@ public final class HorsePowerLifecycleGameTests {
 
 
     private record FixtureWorker(Horse horse, LeashFenceKnotEntity knot) {}
+
+    private static String describePathFixture(ServerLevel level, BlockPos crankPos, float radius) {
+        int loaded = 0;
+        int unloaded = 0;
+        int valid = 0;
+        int invalid = 0;
+        String firstInvalid = "none";
+        for (BlockPos offset : HorseCrankEngine.generateOffsetsForRadius(radius)) {
+            BlockPos pos = crankPos.offset(offset);
+            if (!level.hasChunkAt(pos)) {
+                unloaded++;
+                if ("none".equals(firstInvalid)) {
+                    firstInvalid = offset + "=unloaded";
+                }
+                continue;
+            }
+            loaded++;
+            var state = level.getBlockState(pos);
+            if (PathEvaluator.getPathStats(state.getBlock()).isPresent()) {
+                valid++;
+            } else {
+                invalid++;
+                if ("none".equals(firstInvalid)) {
+                    firstInvalid = offset + "=" + BuiltInRegistries.BLOCK.getKey(state.getBlock());
+                }
+            }
+        }
+        return "loaded=" + loaded + ",unloaded=" + unloaded
+                + ",valid=" + valid + ",invalid=" + invalid
+                + ",firstInvalid=" + firstInvalid;
+    }
 
     private static FixtureWorker attachFixtureHorse(
             GameTestHelper helper,
