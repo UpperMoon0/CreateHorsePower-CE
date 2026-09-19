@@ -492,13 +492,22 @@ public final class HorsePowerLifecycleGameTests {
                 cranks[i] = (AbstractHorseCrankBlockEntity) be;
             }
 
-            // Start with only the three normal sources. Their 5 RPM network is
-            // deliberately below capacity with the full 36-press load.
-            for (int i = 1; i < cranks.length; i++) {
-                workers[i] = attachFixtureHorse(helper, level, cranks[i], 0.225D);
-            }
+            // Bring the normal sources online one at a time. The first source
+            // establishes the shared network's local rotation signs; each later
+            // crank then inherits its already-moving local theoretical speed in
+            // attachWorker(), exactly as separately attached gameplay cranks do.
+            // Starting all three in the same tick would make every fresh engine
+            // choose +1 before the gearbox graph has a direction and can create
+            // an artificial source conflict unrelated to branch-loss recovery.
+            workers[1] = attachFixtureHorse(helper, level, cranks[1], 0.225D);
 
-            helper.runAfterDelay(12, () -> {
+            helper.runAfterDelay(8, () -> {
+                workers[2] = attachFixtureHorse(helper, level, cranks[2], 0.225D);
+
+                helper.runAfterDelay(8, () -> {
+                    workers[3] = attachFixtureHorse(helper, level, cranks[3], 0.225D);
+
+                    helper.runAfterDelay(12, () -> {
                 KineticBlockEntity stressProbe =
                         requireKinetic(helper, level, origin.offset(7, 2, crankZ[1]), "stress-bank press");
                 helper.assertFalse(stressProbe.isOverStressed(),
@@ -531,7 +540,8 @@ public final class HorsePowerLifecycleGameTests {
                     HorseCrankEngine fastEngine = cranks[0].engine();
                     helper.assertTrue(fastEngine.isWorking() && fastEngine.isAssignedWorker(workers[0].horse().getUUID()),
                             "fast crank must remain actively attached while driving the overload transition");
-                    helper.assertTrue(fastEngine.generatedSpeed() > cranks[1].engine().generatedSpeed() * 1.5F,
+                    helper.assertTrue(Math.abs(fastEngine.generatedSpeed())
+                                    > Math.abs(cranks[1].engine().generatedSpeed()) * 1.5F,
                             "fixture fast horse must materially outrun the normal horses");
 
                     var overloadedNetwork = overloadedProbe.getOrCreateNetwork();
@@ -598,6 +608,8 @@ public final class HorsePowerLifecycleGameTests {
                             }
                         }
                         helper.succeed();
+                    });
+                });
                     });
                 });
             });
