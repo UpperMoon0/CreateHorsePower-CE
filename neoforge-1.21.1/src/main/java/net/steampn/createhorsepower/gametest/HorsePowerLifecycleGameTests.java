@@ -374,6 +374,8 @@ public final class HorsePowerLifecycleGameTests {
                 "crank must continue contributing rotation after the repair");
         helper.assertTrue(CHPUtils.isLeashedToKnotAt(horse, crank.getBlockPos()),
                 "missing vanilla knot must be recreated for the exact owned worker");
+
+        engine.detachWorker(false);
         helper.succeed();
     }
 
@@ -426,6 +428,9 @@ public final class HorsePowerLifecycleGameTests {
                     "surviving crank " + i + " must recreate only its own missing leash knot");
         }
 
+        for (int i = 1; i < cranks.length; i++) {
+            cranks[i].engine().detachWorker(false);
+        }
         helper.succeed();
     }
 
@@ -455,6 +460,12 @@ public final class HorsePowerLifecycleGameTests {
                 "self-healing must never steal a worker from a live foreign leash");
         helper.assertFalse(engine.isWorkerResolved(),
                 "foreign reassignment must remain visible as an unresolved old crank assignment");
+
+        engine.detachWorker(false);
+        horse.dropLeash(true, false);
+        if (foreignKnot.isAlive()) {
+            foreignKnot.discard();
+        }
         helper.succeed();
     }
 
