@@ -327,7 +327,7 @@ public final class HorsePowerLifecycleGameTests {
     }
 
 
-    @GameTest(template = "empty", timeoutTicks = 60)
+    @GameTest(template = "empty", timeoutTicks = 80)
     public static void ownedWorkerLeashRepairKeepsCrankRunning(GameTestHelper helper) {
         BlockPos localCrankPos = new BlockPos(4, 2, 4);
         for (BlockPos offset : HorseCrankEngine.generateOffsetsForRadius(HorseCrankEngine.DEFAULT_RADIUS)) {
@@ -335,48 +335,53 @@ public final class HorsePowerLifecycleGameTests {
         }
 
         helper.setBlock(localCrankPos, BlockRegister.HORSE_CRANK.get());
-        AbstractHorseCrankBlockEntity crank = requireCrank(helper, localCrankPos);
-        HorseCrankEngine engine = crank.engine();
         ServerLevel level = helper.getLevel();
         Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(6, 2, 4));
 
-        LeashFenceKnotEntity originalKnot = LeashFenceKnotEntity.getOrCreateKnot(level, crank.getBlockPos());
-        horse.setLeashedTo(originalKnot, false);
-        engine.attachWorker(horse, WorkerResolver.resolve(horse));
-
+        // A real crank exists and ticks before a player attaches a worker.
+        // Do not make the regression depend on same-tick BE placement state.
         helper.runAfterDelay(2, () -> {
-            helper.assertTrue(engine.isWorkerResolved(), "fixture worker must resolve before the network rebuild");
-            helper.assertTrue(engine.isWorking(), "fixture crank must be working before the network rebuild");
-            helper.assertTrue(Math.abs(engine.generatedSpeed()) > 0.0F,
-                    "fixture crank must contribute rotation before the network rebuild");
-
-            // Model the transient vanilla leash representation loss while
-            // Create rebuilds a kinetic network after a failed branch.
-            horse.dropLeash(true, false);
-            if (originalKnot.isAlive()) {
-                originalKnot.discard();
-            }
-            helper.assertTrue(WorkerAttachmentControl.isOwnedBy(
-                            horse, crank.getBlockPos(), engine.crankInstanceUuid()),
-                    "durable worker ownership must survive loss of the vanilla leash representation");
+            AbstractHorseCrankBlockEntity crank = requireCrank(helper, localCrankPos);
+            HorseCrankEngine engine = crank.engine();
+            LeashFenceKnotEntity originalKnot =
+                    LeashFenceKnotEntity.getOrCreateKnot(level, crank.getBlockPos());
+            horse.setLeashedTo(originalKnot, false);
+            engine.attachWorker(horse, WorkerResolver.resolve(horse));
 
             helper.runAfterDelay(2, () -> {
-                helper.assertTrue(engine.isWorkerResolved(),
-                        "owned worker must remain resolved after the transient knot loss");
-                helper.assertTrue(engine.isWorking(),
-                        "crank must continue working after repairing its owned worker leash");
+                helper.assertTrue(engine.isWorkerResolved(), "fixture worker must resolve before the network rebuild");
+                helper.assertTrue(engine.isWorking(), "fixture crank must be working before the network rebuild");
                 helper.assertTrue(Math.abs(engine.generatedSpeed()) > 0.0F,
-                        "crank must continue contributing rotation after the repair");
-                helper.assertTrue(CHPUtils.isLeashedToKnotAt(horse, crank.getBlockPos()),
-                        "missing vanilla knot must be recreated for the exact owned worker");
-                engine.detachWorker(false);
-                helper.succeed();
+                        "fixture crank must contribute rotation before the network rebuild");
+
+                // Model the transient vanilla leash representation loss while
+                // Create rebuilds a kinetic network after a failed branch.
+                horse.dropLeash(true, false);
+                if (originalKnot.isAlive()) {
+                    originalKnot.discard();
+                }
+                helper.assertTrue(WorkerAttachmentControl.isOwnedBy(
+                                horse, crank.getBlockPos(), engine.crankInstanceUuid()),
+                        "durable worker ownership must survive loss of the vanilla leash representation");
+
+                helper.runAfterDelay(2, () -> {
+                    helper.assertTrue(engine.isWorkerResolved(),
+                            "owned worker must remain resolved after the transient knot loss");
+                    helper.assertTrue(engine.isWorking(),
+                            "crank must continue working after repairing its owned worker leash");
+                    helper.assertTrue(Math.abs(engine.generatedSpeed()) > 0.0F,
+                            "crank must continue contributing rotation after the repair");
+                    helper.assertTrue(CHPUtils.isLeashedToKnotAt(horse, crank.getBlockPos()),
+                            "missing vanilla knot must be recreated for the exact owned worker");
+                    engine.detachWorker(false);
+                    helper.succeed();
+                });
             });
         });
     }
 
 
-    @GameTest(template = "empty", timeoutTicks = 80)
+    @GameTest(template = "empty", timeoutTicks = 100)
     public static void fourCrankBranchLossKeepsThreeOwnedWorkersAttached(GameTestHelper helper) {
         BlockPos[] positions = {
                 new BlockPos(1, 1, 1),
@@ -391,80 +396,94 @@ public final class HorsePowerLifecycleGameTests {
 
         for (int i = 0; i < positions.length; i++) {
             helper.setBlock(positions[i], BlockRegister.HORSE_CRANK.get());
-            cranks[i] = requireCrank(helper, positions[i]);
             horses[i] = helper.spawn(EntityType.HORSE, positions[i].offset(0, 0, 1));
-            knots[i] = LeashFenceKnotEntity.getOrCreateKnot(level, cranks[i].getBlockPos());
-            horses[i].setLeashedTo(knots[i], false);
-            cranks[i].engine().attachWorker(horses[i], WorkerResolver.resolve(horses[i]));
-            helper.assertTrue(WorkerAttachmentControl.isOwnedBy(
-                            horses[i], cranks[i].getBlockPos(), cranks[i].engine().crankInstanceUuid()),
-                    "each crank must begin with independent durable worker ownership");
         }
 
         helper.runAfterDelay(2, () -> {
-            for (int i = 0; i < cranks.length; i++) {
-                helper.assertTrue(cranks[i].engine().isWorkerResolved(),
-                        "all four workers must resolve before the branch-loss transition");
+            for (int i = 0; i < positions.length; i++) {
+                cranks[i] = requireCrank(helper, positions[i]);
+                knots[i] = LeashFenceKnotEntity.getOrCreateKnot(level, cranks[i].getBlockPos());
+                horses[i].setLeashedTo(knots[i], false);
+                cranks[i].engine().attachWorker(horses[i], WorkerResolver.resolve(horses[i]));
+                helper.assertTrue(WorkerAttachmentControl.isOwnedBy(
+                                horses[i], cranks[i].getBlockPos(), cranks[i].engine().crankInstanceUuid()),
+                        "each crank must begin with independent durable worker ownership");
             }
 
-            level.destroyBlock(cranks[0].getBlockPos(), false);
-
-            for (int i = 1; i < cranks.length; i++) {
-                horses[i].dropLeash(true, false);
-                if (knots[i].isAlive()) {
-                    knots[i].discard();
-                }
-            }
-
-            helper.runAfterDelay(HorseCrankEngine.MISSING_ATTACHMENT_GRACE_TICKS + 2, () -> {
-                for (int i = 1; i < cranks.length; i++) {
+            helper.runAfterDelay(2, () -> {
+                for (int i = 0; i < cranks.length; i++) {
                     helper.assertTrue(cranks[i].engine().isWorkerResolved(),
-                            "surviving crank " + i + " must keep resolving its worker after branch loss");
-                    helper.assertTrue(WorkerAttachmentControl.isOwnedBy(
-                                    horses[i], cranks[i].getBlockPos(), cranks[i].engine().crankInstanceUuid()),
-                            "surviving crank " + i + " must keep its durable ownership marker");
-                    helper.assertTrue(CHPUtils.isLeashedToKnotAt(horses[i], cranks[i].getBlockPos()),
-                            "surviving crank " + i + " must recreate only its own missing leash knot");
-                    cranks[i].engine().detachWorker(false);
+                            "all four workers must resolve before the branch-loss transition");
                 }
-                helper.succeed();
+
+                level.destroyBlock(cranks[0].getBlockPos(), false);
+
+                for (int i = 1; i < cranks.length; i++) {
+                    horses[i].dropLeash(true, false);
+                    if (knots[i].isAlive()) {
+                        knots[i].discard();
+                    }
+                }
+
+                helper.runAfterDelay(HorseCrankEngine.MISSING_ATTACHMENT_GRACE_TICKS + 2, () -> {
+                    for (int i = 1; i < cranks.length; i++) {
+                        helper.assertTrue(cranks[i].engine().isWorkerResolved(),
+                                "surviving crank " + i + " must keep resolving its worker after branch loss");
+                        helper.assertTrue(WorkerAttachmentControl.isOwnedBy(
+                                        horses[i], cranks[i].getBlockPos(), cranks[i].engine().crankInstanceUuid()),
+                                "surviving crank " + i + " must keep its durable ownership marker");
+                        helper.assertTrue(CHPUtils.isLeashedToKnotAt(horses[i], cranks[i].getBlockPos()),
+                                "surviving crank " + i + " must recreate only its own missing leash knot");
+                        cranks[i].engine().detachWorker(false);
+                    }
+                    helper.succeed();
+                });
             });
         });
     }
 
-    @GameTest(template = "empty", timeoutTicks = 20)
+    @GameTest(template = "empty", timeoutTicks = 60)
     public static void ownedMarkerDoesNotStealForeignLeash(GameTestHelper helper) {
         BlockPos localCrankPos = new BlockPos(1, 1, 1);
         helper.setBlock(localCrankPos, BlockRegister.HORSE_CRANK.get());
-        AbstractHorseCrankBlockEntity crank = requireCrank(helper, localCrankPos);
-        HorseCrankEngine engine = crank.engine();
         ServerLevel level = helper.getLevel();
         Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(2, 1, 1));
 
-        LeashFenceKnotEntity ownKnot = LeashFenceKnotEntity.getOrCreateKnot(level, crank.getBlockPos());
-        horse.setLeashedTo(ownKnot, true);
-        engine.attachWorker(horse, WorkerResolver.resolve(horse));
+        helper.runAfterDelay(2, () -> {
+            AbstractHorseCrankBlockEntity crank = requireCrank(helper, localCrankPos);
+            HorseCrankEngine engine = crank.engine();
+            LeashFenceKnotEntity ownKnot =
+                    LeashFenceKnotEntity.getOrCreateKnot(level, crank.getBlockPos());
+            horse.setLeashedTo(ownKnot, false);
+            engine.attachWorker(horse, WorkerResolver.resolve(horse));
 
-        BlockPos foreignPos = crank.getBlockPos().offset(3, 0, 0);
-        LeashFenceKnotEntity foreignKnot = LeashFenceKnotEntity.getOrCreateKnot(level, foreignPos);
-        horse.setLeashedTo(foreignKnot, true);
-        if (ownKnot.isAlive()) {
-            ownKnot.discard();
-        }
+            helper.runAfterDelay(2, () -> {
+                helper.assertTrue(engine.isWorkerResolved(),
+                        "fixture worker must resolve before foreign reassignment");
 
-        engine.afterHostTick();
+                BlockPos foreignPos = crank.getBlockPos().offset(3, 0, 0);
+                LeashFenceKnotEntity foreignKnot =
+                        LeashFenceKnotEntity.getOrCreateKnot(level, foreignPos);
+                horse.setLeashedTo(foreignKnot, false);
+                if (ownKnot.isAlive()) {
+                    ownKnot.discard();
+                }
 
-        helper.assertTrue(horse.getLeashHolder() == foreignKnot,
-                "self-healing must never steal a worker from a live foreign leash");
-        helper.assertFalse(engine.isWorkerResolved(),
-                "foreign reassignment must remain visible as an unresolved old crank assignment");
+                helper.runAfterDelay(2, () -> {
+                    helper.assertTrue(horse.getLeashHolder() == foreignKnot,
+                            "self-healing must never steal a worker from a live foreign leash");
+                    helper.assertFalse(engine.isWorkerResolved(),
+                            "foreign reassignment must remain visible as an unresolved old crank assignment");
 
-        engine.detachWorker(false);
-        horse.dropLeash(true, false);
-        if (foreignKnot.isAlive()) {
-            foreignKnot.discard();
-        }
-        helper.succeed();
+                    engine.detachWorker(false);
+                    horse.dropLeash(true, false);
+                    if (foreignKnot.isAlive()) {
+                        foreignKnot.discard();
+                    }
+                    helper.succeed();
+                });
+            });
+        });
     }
 
     @GameTest(template = "empty")
