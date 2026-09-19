@@ -349,7 +349,26 @@ public final class HorsePowerLifecycleGameTests {
             engine.attachWorker(horse, WorkerResolver.resolve(horse));
 
             helper.runAfterDelay(2, () -> {
-                helper.assertTrue(engine.isWorkerResolved(), "fixture worker must resolve before the network rebuild");
+                BlockState worldState = level.getBlockState(crank.getBlockPos());
+                boolean worldHasWorker = worldState.hasProperty(CrankProperties.HAS_WORKER)
+                        && worldState.getValue(CrankProperties.HAS_WORKER);
+                BlockState cachedState = crank.getBlockState();
+                boolean cachedHasWorker = cachedState.hasProperty(CrankProperties.HAS_WORKER)
+                        && cachedState.getValue(CrankProperties.HAS_WORKER);
+                boolean assigned = engine.isAssignedWorker(horse.getUUID());
+                boolean markerOwned = WorkerAttachmentControl.isOwnedBy(
+                        horse, crank.getBlockPos(), engine.crankInstanceUuid());
+                Entity holder = horse.getLeashHolder();
+                helper.assertTrue(engine.isWorkerResolved(),
+                        "fixture worker must resolve before the network rebuild"
+                                + " worldHasWorker=" + worldHasWorker
+                                + " cachedHasWorker=" + cachedHasWorker
+                                + " assigned=" + assigned
+                                + " markerOwned=" + markerOwned
+                                + " isLeashed=" + horse.isLeashed()
+                                + " holderMatches=" + (holder == originalKnot)
+                                + " holder=" + holder
+                                + " knotAlive=" + originalKnot.isAlive());
                 helper.assertTrue(engine.isWorking(), "fixture crank must be working before the network rebuild");
                 helper.assertTrue(Math.abs(engine.generatedSpeed()) > 0.0F,
                         "fixture crank must contribute rotation before the network rebuild");
