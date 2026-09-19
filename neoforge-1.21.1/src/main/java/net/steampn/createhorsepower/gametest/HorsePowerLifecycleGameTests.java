@@ -408,7 +408,7 @@ public final class HorsePowerLifecycleGameTests {
     public static void sharedOverstressedNetworkRecoversAfterFastCrankBranchLoss(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
         BlockPos origin = helper.absolutePos(BlockPos.ZERO);
-        int[] crankZ = {2, 7, 12, 17};
+        int[] crankZ = {4, 9, 14, 19};
 
         BlockPos[] crankPositions = new BlockPos[4];
         BlockPos[] branchShaftPositions = new BlockPos[4];
@@ -434,17 +434,17 @@ public final class HorsePowerLifecycleGameTests {
         // gearbox sign conventions are the same for every crank.
         for (int i = 0; i < crankZ.length; i++) {
             int z = crankZ[i];
-            BlockPos crankPos = origin.offset(2, 4, z);
-            BlockPos branchShaft = origin.offset(2, 3, z);
+            BlockPos crankPos = origin.offset(4, 4, z);
+            BlockPos branchShaft = origin.offset(4, 3, z);
             crankPositions[i] = crankPos;
             branchShaftPositions[i] = branchShaft;
 
             level.setBlock(crankPos, BlockRegister.HORSE_CRANK.get().defaultBlockState(), 3);
             level.setBlock(branchShaft, shaftY, 3);
-            level.setBlock(origin.offset(2, 2, z), branchGearbox, 3);
-            level.setBlock(origin.offset(3, 2, z), shaftX, 3);
-            level.setBlock(origin.offset(4, 2, z), shaftX, 3);
-            level.setBlock(origin.offset(5, 2, z), busGearbox, 3);
+            level.setBlock(origin.offset(6, 2, z), branchGearbox, 3);
+            level.setBlock(origin.offset(7, 2, z), shaftX, 3);
+            level.setBlock(origin.offset(6, 2, z), shaftX, 3);
+            level.setBlock(origin.offset(7, 2, z), busGearbox, 3);
         }
 
         // Continuous Z-axis bus between the four branch gearboxes.
@@ -457,20 +457,20 @@ public final class HorsePowerLifecycleGameTests {
                 }
             }
             if (!branchJunction) {
-                level.setBlock(origin.offset(5, 2, z), shaftZ, 3);
+                level.setBlock(origin.offset(7, 2, z), shaftZ, 3);
             }
         }
 
         // Six rows x six presses = 36 real Create stress consumers. The rows
         // snake through Y-axis gearboxes so every press is in the same graph.
-        level.setBlock(origin.offset(6, 2, crankZ[1]), shaftX, 3);
+        level.setBlock(origin.offset(8, 2, crankZ[1]), shaftX, 3);
         for (int row = 0; row < 6; row++) {
             int z = crankZ[1] + row;
-            for (int x = 7; x <= 12; x++) {
+            for (int x = 9; x <= 14; x++) {
                 level.setBlock(origin.offset(x, 2, z), pressX, 3);
             }
             if (row < 5) {
-                int turnX = (row & 1) == 0 ? 13 : 6;
+                int turnX = (row & 1) == 0 ? 15 : 8;
                 level.setBlock(origin.offset(turnX, 2, z), busGearbox, 3);
                 level.setBlock(origin.offset(turnX, 2, z + 1), busGearbox, 3);
             }
@@ -509,7 +509,7 @@ public final class HorsePowerLifecycleGameTests {
 
                     helper.runAfterDelay(12, () -> {
                 KineticBlockEntity stressProbe =
-                        requireKinetic(helper, level, origin.offset(7, 2, crankZ[1]), "stress-bank press");
+                        requireKinetic(helper, level, origin.offset(9, 2, crankZ[1]), "stress-bank press");
                 helper.assertFalse(stressProbe.isOverStressed(),
                         "three normal cranks must start with a sustainable shared network");
 
@@ -524,6 +524,7 @@ public final class HorsePowerLifecycleGameTests {
                             .append(", resolved=").append(engine.isWorkerResolved())
                             .append(", eligible=").append(engine.isWorkerEligible())
                             .append(", path=").append(engine.hasValidWorkingBlocks)
+                            .append(", invalidPath=").append(engine.getInvalidBlockCount())
                             .append(", assigned=").append(workers[i] != null && engine.isAssignedWorker(workers[i].horse().getUUID()))
                             .append(", generated=").append(engine.generatedSpeed())
                             .append(", speed=").append(cranks[i].getSpeed())
@@ -556,7 +557,7 @@ public final class HorsePowerLifecycleGameTests {
 
                 helper.runAfterDelay(12, () -> {
                     KineticBlockEntity overloadedProbe =
-                            requireKinetic(helper, level, origin.offset(7, 2, crankZ[1]), "overloaded stress-bank press");
+                            requireKinetic(helper, level, origin.offset(9, 2, crankZ[1]), "overloaded stress-bank press");
                     HorseCrankEngine fastEngine = cranks[0].engine();
                     helper.assertTrue(fastEngine.isWorking() && fastEngine.isAssignedWorker(workers[0].horse().getUUID()),
                             "fast crank must remain actively attached while driving the overload transition");
@@ -589,7 +590,7 @@ public final class HorsePowerLifecycleGameTests {
 
                     helper.runAfterDelay(20, () -> {
                         KineticBlockEntity recoveredProbe =
-                                requireKinetic(helper, level, origin.offset(7, 2, crankZ[1]), "recovered stress-bank press");
+                                requireKinetic(helper, level, origin.offset(9, 2, crankZ[1]), "recovered stress-bank press");
                         var recoveredNetwork = recoveredProbe.getOrCreateNetwork();
                         float recoveredStress = recoveredNetwork.calculateStress();
                         float recoveredCapacity = recoveredNetwork.calculateCapacity();
