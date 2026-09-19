@@ -918,8 +918,21 @@ public class HorseCrankEngine {
         //
         // Never steal a live/pending foreign leash: those are genuine
         // reassignment signals and must continue through the normal stale
-        // assignment / detach path.
-        if (!ownsAttachment(mob) || mob.isLeashed() || holder != null) {
+        // assignment / detach path. A dead knot at this exact crank is
+        // different: NeoForge can leave that discarded entity referenced for
+        // part of a tick after the knot itself has died, and that stale holder
+        // is precisely the transient state we need to repair.
+        if (!ownsAttachment(mob)) {
+            return false;
+        }
+        if (holder == null) {
+            if (mob.isLeashed()) {
+                // Unresolved/pending leash data may belong to another entity.
+                return false;
+            }
+        } else if (!(holder instanceof LeashFenceKnotEntity staleKnot)
+                || !staleKnot.blockPosition().equals(host.pos())
+                || staleKnot.isAlive()) {
             return false;
         }
 
