@@ -406,13 +406,26 @@ public final class HorsePowerLifecycleGameTests {
 
         for (int i = 0; i < positions.length; i++) {
             helper.setBlock(positions[i], BlockRegister.HORSE_CRANK.get());
-            horses[i] = helper.spawn(EntityType.HORSE, positions[i].offset(0, 0, 1));
+
+            Horse horse = EntityType.HORSE.create(level);
+            helper.assertTrue(horse != null, "fixture worker " + i + " must be creatable");
+            BlockPos worldHorsePos = helper.absolutePos(positions[i].offset(0, 0, 1));
+            horse.moveTo(
+                    worldHorsePos.getX() + 0.5D,
+                    worldHorsePos.getY(),
+                    worldHorsePos.getZ() + 0.5D,
+                    0.0F,
+                    0.0F
+            );
+            helper.assertTrue(level.addFreshEntity(horse),
+                    "fixture worker " + i + " must register in the server level");
+            horses[i] = horse;
         }
 
         helper.runAfterDelay(5, () -> {
             for (int i = 0; i < positions.length; i++) {
                 helper.assertTrue(level.getEntity(horses[i].getUUID()) == horses[i],
-                        "fixture worker " + i + " must be registered in the server entity index");
+                        "fixture worker " + i + " must remain registered in the server entity index");
 
                 cranks[i] = requireCrank(helper, positions[i]);
                 for (BlockPos offset : HorseCrankEngine.generateOffsetsForRadius(HorseCrankEngine.DEFAULT_RADIUS)) {
