@@ -369,7 +369,15 @@ public final class HorsePowerLifecycleGameTests {
                                 + " holderMatches=" + (holder == originalKnot)
                                 + " holder=" + holder
                                 + " knotAlive=" + originalKnot.isAlive());
-                helper.assertTrue(engine.isWorking(), "fixture crank must be working before the network rebuild");
+                helper.assertTrue(engine.isWorking(),
+                        "fixture crank must be working before the network rebuild"
+                                + " canPhysicallyWork=" + engine.canPhysicallyWork()
+                                + " workerResolved=" + engine.isWorkerResolved()
+                                + " workerEligible=" + engine.isWorkerEligible()
+                                + " pathValid=" + engine.hasValidWorkingBlocks
+                                + " stoppedByRedstone=" + engine.isStoppedByRedstone()
+                                + " effectiveRpm=" + engine.getEffectiveBaseRpm()
+                                + " generatedSpeed=" + engine.generatedSpeed());
                 helper.assertTrue(Math.abs(engine.generatedSpeed()) > 0.0F,
                         "fixture crank must contribute rotation before the network rebuild");
 
@@ -431,8 +439,20 @@ public final class HorsePowerLifecycleGameTests {
 
             helper.runAfterDelay(2, () -> {
                 for (int i = 0; i < cranks.length; i++) {
-                    helper.assertTrue(cranks[i].engine().isWorkerResolved(),
-                            "all four workers must resolve before the branch-loss transition");
+                    HorseCrankEngine current = cranks[i].engine();
+                    var currentHolder = horses[i].getLeashHolder();
+                    var worldState = level.getBlockState(cranks[i].getBlockPos());
+                    helper.assertTrue(current.isWorkerResolved(),
+                            "all four workers must resolve before the branch-loss transition"
+                                    + " index=" + i
+                                    + " worldHasWorker=" + worldState.getValue(CrankProperties.HAS_WORKER)
+                                    + " assigned=" + current.isAssignedWorker(horses[i].getUUID())
+                                    + " markerOwned=" + WorkerAttachmentControl.isOwnedBy(
+                                            horses[i], cranks[i].getBlockPos(), current.crankInstanceUuid())
+                                    + " isLeashed=" + horses[i].isLeashed()
+                                    + " holderMatches=" + (currentHolder == knots[i])
+                                    + " holder=" + currentHolder
+                                    + " knotAlive=" + knots[i].isAlive());
                 }
 
                 level.destroyBlock(cranks[0].getBlockPos(), false);
