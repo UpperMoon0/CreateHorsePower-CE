@@ -304,7 +304,6 @@ public final class WorkerAttachmentControl {
                 Mob.class,
                 knot.getBoundingBox().inflate(32.0D),
                 candidate -> candidate.isAlive()
-                        && candidate.isLeashed()
                         && candidate.getLeashHolder() == knot
         ).isEmpty();
     }
