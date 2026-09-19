@@ -476,11 +476,11 @@ public final class HorsePowerLifecycleGameTests {
             }
         }
 
-        // Give every worker a complete valid gravel orbit without touching the
+        // Give every worker a complete non-falling path orbit without touching the
         // kinetic graph, which lives one block lower at Y=2.
         for (BlockPos crankPos : crankPositions) {
             for (BlockPos offset : HorseCrankEngine.generateOffsetsForRadius(HorseCrankEngine.DEFAULT_RADIUS)) {
-                level.setBlock(crankPos.offset(offset), Blocks.GRAVEL.defaultBlockState(), 3);
+                level.setBlock(crankPos.offset(offset), Blocks.COBBLESTONE.defaultBlockState(), 3);
             }
         }
 
