@@ -400,6 +400,12 @@ public final class HorsePowerLifecycleGameTests {
                 new BlockPos(1, 2, 4),
                 new BlockPos(4, 2, 4)
         };
+        BlockPos[] workerPositions = {
+                new BlockPos(2, 2, 1),
+                new BlockPos(3, 2, 1),
+                new BlockPos(2, 2, 4),
+                new BlockPos(3, 2, 4)
+        };
         AbstractHorseCrankBlockEntity[] cranks = new AbstractHorseCrankBlockEntity[4];
         Horse[] horses = new Horse[4];
         ServerLevel level = helper.getLevel();
@@ -409,7 +415,7 @@ public final class HorsePowerLifecycleGameTests {
 
             Horse horse = EntityType.HORSE.create(level);
             helper.assertTrue(horse != null, "fixture worker " + i + " must be creatable");
-            BlockPos worldHorsePos = helper.absolutePos(positions[i].offset(0, 0, 1));
+            BlockPos worldHorsePos = helper.absolutePos(workerPositions[i]);
             horse.moveTo(
                     worldHorsePos.getX() + 0.5D,
                     worldHorsePos.getY(),
