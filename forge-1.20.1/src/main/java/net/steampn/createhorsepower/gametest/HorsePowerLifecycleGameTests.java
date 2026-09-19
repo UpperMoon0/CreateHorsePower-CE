@@ -12,6 +12,7 @@ import net.minecraft.world.entity.decoration.LeashFenceKnotEntity;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.phys.AABB;
 import net.minecraftforge.gametest.GameTestHolder;
@@ -322,6 +323,57 @@ public final class HorsePowerLifecycleGameTests {
                 "current crank B cleanup must still release its own marker normally");
         helper.assertFalse(horse.isNoAi(),
                 "current crank B cleanup must restore the worker's original NoAI=false state");
+        helper.succeed();
+    }
+
+
+    @GameTest(template = "empty", timeoutTicks = 40)
+    public static void ownedWorkerLeashRepairKeepsCrankRunning(GameTestHelper helper) {
+        BlockPos localCrankPos = new BlockPos(4, 2, 4);
+        for (BlockPos offset : HorseCrankEngine.generateOffsetsForRadius(HorseCrankEngine.DEFAULT_RADIUS)) {
+            helper.setBlock(localCrankPos.offset(offset), Blocks.GRAVEL);
+        }
+
+        helper.setBlock(localCrankPos, BlockRegister.HORSE_CRANK.get());
+        AbstractHorseCrankBlockEntity crank = requireCrank(helper, localCrankPos);
+        HorseCrankEngine engine = crank.engine();
+        ServerLevel level = helper.getLevel();
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(6, 2, 4));
+
+        LeashFenceKnotEntity originalKnot = LeashFenceKnotEntity.getOrCreateKnot(level, crank.getBlockPos());
+        horse.setLeashedTo(originalKnot, true);
+        engine.attachWorker(horse, WorkerResolver.resolve(horse));
+        engine.afterHostTick();
+
+        helper.assertTrue(engine.isWorkerResolved(), "fixture worker must resolve before the network rebuild");
+        helper.assertTrue(engine.isWorking(), "fixture crank must be working before the network rebuild");
+        helper.assertTrue(Math.abs(engine.generatedSpeed()) > 0.0F,
+                "fixture crank must contribute rotation before the network rebuild");
+
+        // Reproduce the field failure boundary: the durable crank/worker
+        // ownership survives, but the vanilla knot/leash representation is
+        // lost while the kinetic network is being rebuilt after a branch
+        // breaks. Old behavior treated this as a detached worker and stopped
+        // generation permanently.
+        horse.dropLeash(true, false);
+        if (originalKnot.isAlive()) {
+            originalKnot.discard();
+        }
+        helper.assertFalse(horse.isLeashed(), "fixture must lose only the vanilla leash representation");
+        helper.assertTrue(WorkerAttachmentControl.isOwnedBy(
+                        horse, crank.getBlockPos(), engine.crankInstanceUuid()),
+                "durable worker ownership must still belong to the same crank");
+
+        engine.afterHostTick();
+
+        helper.assertTrue(engine.isWorkerResolved(),
+                "owned worker must remain resolved after the transient knot loss");
+        helper.assertTrue(engine.isWorking(),
+                "crank must continue working after repairing its owned worker leash");
+        helper.assertTrue(Math.abs(engine.generatedSpeed()) > 0.0F,
+                "crank must continue contributing rotation after the repair");
+        helper.assertTrue(CHPUtils.isLeashedToKnotAt(horse, crank.getBlockPos()),
+                "missing vanilla knot must be recreated for the exact owned worker");
         helper.succeed();
     }
 
