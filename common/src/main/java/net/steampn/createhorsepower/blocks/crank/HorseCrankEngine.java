@@ -897,14 +897,52 @@ public class HorseCrankEngine {
     }
 
     private boolean isWorkerAttachedToThisCrank(Mob mob) {
-        if (mob == null || !mob.isAlive() || !mob.isLeashed()) {
+        if (mob == null || !mob.isAlive()) {
             return false;
         }
+
         Entity holder = mob.getLeashHolder();
-        if (holder instanceof LeashFenceKnotEntity knot) {
-            return knot.blockPosition().equals(host.pos());
+        if (mob.isLeashed()
+                && holder instanceof LeashFenceKnotEntity knot
+                && knot.isAlive()
+                && knot.blockPosition().equals(host.pos())) {
+            return true;
         }
-        return false;
+
+        // The block entity assignment + persistent worker marker are the
+        // durable ownership record. Vanilla's fence-knot entity is only the
+        // physical leash representation and can disappear during aggressive
+        // kinetic/network rebuilds. If that representation vanished while the
+        // exact crank still owns the exact loaded worker, repair it instead of
+        // falsely transitioning the crank to "worker unavailable".
+        //
+        // Never steal a live/pending foreign leash: those are genuine
+        // reassignment signals and must continue through the normal stale
+        // assignment / detach path.
+        if (!ownsAttachment(mob) || mob.isLeashed() || holder != null) {
+            return false;
+        }
+
+        Level level = level();
+        if (!(level instanceof ServerLevel serverLevel)) {
+            return false;
+        }
+
+        LeashFenceKnotEntity repairedKnot = LeashFenceKnotEntity.getOrCreateKnot(serverLevel, host.pos());
+        mob.setLeashedTo(repairedKnot, true);
+        boolean repaired = mob.isLeashed() && mob.getLeashHolder() == repairedKnot;
+        if (repaired) {
+            CHPDiagnostics.event("attachment_leash_repaired", level, host.pos(), crankInstanceUuid, mob,
+                    "reason=owned_worker_missing_knot");
+        }
+        return repaired;
+    }
+
+    private boolean ownsAttachment(Mob mob) {
+        return host.hasWorkerProperty()
+                && workerUuid != null
+                && workerUuid.equals(mob.getUUID())
+                && WorkerAttachmentControl.isOwnedBy(mob, host.pos(), crankInstanceUuid);
     }
 
     @Nullable
