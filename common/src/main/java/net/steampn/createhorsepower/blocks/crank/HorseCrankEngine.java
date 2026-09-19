@@ -902,10 +902,12 @@ public class HorseCrankEngine {
         }
 
         Entity holder = mob.getLeashHolder();
-        if (mob.isLeashed()
-                && holder instanceof LeashFenceKnotEntity knot
+        if (holder instanceof LeashFenceKnotEntity knot
                 && knot.isAlive()
                 && knot.blockPosition().equals(host.pos())) {
+            // getLeashHolder() is the authoritative loaded relationship.
+            // On 1.21.1 the derived isLeashed() flag can lag behind holder
+            // restoration/update for part of a tick during network churn.
             return true;
         }
 
