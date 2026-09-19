@@ -349,16 +349,16 @@ public final class HorsePowerLifecycleGameTests {
             engine.attachWorker(horse, WorkerResolver.resolve(horse));
 
             helper.runAfterDelay(2, () -> {
-                BlockState worldState = level.getBlockState(crank.getBlockPos());
+                var worldState = level.getBlockState(crank.getBlockPos());
                 boolean worldHasWorker = worldState.hasProperty(CrankProperties.HAS_WORKER)
                         && worldState.getValue(CrankProperties.HAS_WORKER);
-                BlockState cachedState = crank.getBlockState();
+                var cachedState = crank.getBlockState();
                 boolean cachedHasWorker = cachedState.hasProperty(CrankProperties.HAS_WORKER)
                         && cachedState.getValue(CrankProperties.HAS_WORKER);
                 boolean assigned = engine.isAssignedWorker(horse.getUUID());
                 boolean markerOwned = WorkerAttachmentControl.isOwnedBy(
                         horse, crank.getBlockPos(), engine.crankInstanceUuid());
-                Entity holder = horse.getLeashHolder();
+                var holder = horse.getLeashHolder();
                 helper.assertTrue(engine.isWorkerResolved(),
                         "fixture worker must resolve before the network rebuild"
                                 + " worldHasWorker=" + worldHasWorker
