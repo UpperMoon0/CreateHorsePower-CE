@@ -441,8 +441,8 @@ public final class HorsePowerLifecycleGameTests {
 
             level.setBlock(crankPos, BlockRegister.HORSE_CRANK.get().defaultBlockState(), 3);
             level.setBlock(branchShaft, shaftY, 3);
-            level.setBlock(origin.offset(6, 2, z), branchGearbox, 3);
-            level.setBlock(origin.offset(7, 2, z), shaftX, 3);
+            level.setBlock(origin.offset(4, 2, z), branchGearbox, 3);
+            level.setBlock(origin.offset(5, 2, z), shaftX, 3);
             level.setBlock(origin.offset(6, 2, z), shaftX, 3);
             level.setBlock(origin.offset(7, 2, z), busGearbox, 3);
         }
