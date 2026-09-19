@@ -387,95 +387,212 @@ public final class HorsePowerLifecycleGameTests {
     }
 
     /**
-     * Four independently owned/working cranks are active, one complete source
-     * is removed, and the other three must continue without losing workers.
-     * Removing the whole source is a stronger lifecycle disruption than merely
-     * losing its connecting cog, while exercising the same isolation contract.
+     * End-to-end regression for the reported shared-network failure.
+     *
+     * Three normal horses first drive one real Create kinetic graph containing a
+     * 36-press stress bank at a sustainable 5 RPM. A fourth horse is then attached
+     * on its own vertical shaft branch with movement speed pinned to the configured
+     * maximum scaling clamp; that faster source raises the shared graph to ~10.625
+     * RPM and makes the same load genuinely overstressed. Severing only the fast
+     * crank's shaft branch must let Create tear down/rebuild the graph around the
+     * three surviving sources, return the stress/capacity relation to sustainable,
+     * and resume actual network rotation without losing any surviving worker.
      */
-    @GameTest(template = "empty", timeoutTicks = 120)
-    public static void fourCrankBranchLossKeepsThreeWorkersRunning(GameTestHelper helper) {
-        BlockPos[] positions = {
-                new BlockPos(1, 2, 1),
-                new BlockPos(4, 2, 1),
-                new BlockPos(1, 2, 4),
-                new BlockPos(4, 2, 4)
-        };
-        BlockPos[] workerPositions = {
-                new BlockPos(2, 2, 1),
-                new BlockPos(3, 2, 1),
-                new BlockPos(2, 2, 4),
-                new BlockPos(3, 2, 4)
-        };
-        AbstractHorseCrankBlockEntity[] cranks = new AbstractHorseCrankBlockEntity[4];
-        Horse[] horses = new Horse[4];
+    @GameTest(template = "empty", timeoutTicks = 240)
+    public static void sharedOverstressedNetworkRecoversAfterFastCrankBranchLoss(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
+        BlockPos origin = helper.absolutePos(BlockPos.ZERO);
+        int[] crankZ = {2, 7, 12, 17};
 
-        for (int i = 0; i < positions.length; i++) {
-            helper.setBlock(positions[i], BlockRegister.HORSE_CRANK.get());
+        BlockPos[] crankPositions = new BlockPos[4];
+        BlockPos[] branchShaftPositions = new BlockPos[4];
+        AbstractHorseCrankBlockEntity[] cranks = new AbstractHorseCrankBlockEntity[4];
+        FixtureWorker[] workers = new FixtureWorker[4];
 
-            Horse horse = EntityType.HORSE.create(level);
-            helper.assertTrue(horse != null, "fixture worker " + i + " must be creatable");
-            BlockPos worldHorsePos = helper.absolutePos(workerPositions[i]);
-            horse.moveTo(
-                    worldHorsePos.getX() + 0.5D,
-                    worldHorsePos.getY(),
-                    worldHorsePos.getZ() + 0.5D,
-                    0.0F,
-                    0.0F
-            );
-            helper.assertTrue(level.addFreshEntity(horse),
-                    "fixture worker " + i + " must register in the server level");
-            horses[i] = horse;
+        var shaftX = AllBlocks.SHAFT.getDefaultState()
+                .setValue(RotatedPillarKineticBlock.AXIS, Direction.Axis.X);
+        var shaftY = AllBlocks.SHAFT.getDefaultState()
+                .setValue(RotatedPillarKineticBlock.AXIS, Direction.Axis.Y);
+        var shaftZ = AllBlocks.SHAFT.getDefaultState()
+                .setValue(RotatedPillarKineticBlock.AXIS, Direction.Axis.Z);
+        // AXIS=Z leaves X/Y shaft faces open: vertical crank input -> east bus.
+        var branchGearbox = AllBlocks.GEARBOX.getDefaultState()
+                .setValue(RotatedPillarKineticBlock.AXIS, Direction.Axis.Z);
+        // AXIS=Y leaves X/Z faces open: shared north/south bus with east stress-bank branch.
+        var busGearbox = AllBlocks.GEARBOX.getDefaultState()
+                .setValue(RotatedPillarKineticBlock.AXIS, Direction.Axis.Y);
+        var pressX = AllBlocks.MECHANICAL_PRESS.getDefaultState()
+                .setValue(HorizontalKineticBlock.HORIZONTAL_FACING, Direction.EAST);
+
+        // Four identical branches all enter the west side of the shared bus, so
+        // gearbox sign conventions are the same for every crank.
+        for (int i = 0; i < crankZ.length; i++) {
+            int z = crankZ[i];
+            BlockPos crankPos = origin.offset(2, 4, z);
+            BlockPos branchShaft = origin.offset(2, 3, z);
+            crankPositions[i] = crankPos;
+            branchShaftPositions[i] = branchShaft;
+
+            level.setBlock(crankPos, BlockRegister.HORSE_CRANK.get().defaultBlockState(), 3);
+            level.setBlock(branchShaft, shaftY, 3);
+            level.setBlock(origin.offset(2, 2, z), branchGearbox, 3);
+            level.setBlock(origin.offset(3, 2, z), shaftX, 3);
+            level.setBlock(origin.offset(4, 2, z), shaftX, 3);
+            level.setBlock(origin.offset(5, 2, z), busGearbox, 3);
         }
 
-        helper.runAfterDelay(5, () -> {
-            for (int i = 0; i < positions.length; i++) {
-                helper.assertTrue(level.getEntity(horses[i].getUUID()) == horses[i],
-                        "fixture worker " + i + " must remain registered in the server entity index");
-
-                cranks[i] = requireCrank(helper, positions[i]);
-                for (BlockPos offset : HorseCrankEngine.generateOffsetsForRadius(HorseCrankEngine.DEFAULT_RADIUS)) {
-                    level.setBlock(cranks[i].getBlockPos().offset(offset), Blocks.GRAVEL.defaultBlockState(), 3);
+        // Continuous Z-axis bus between the four branch gearboxes.
+        for (int z = crankZ[0] + 1; z < crankZ[crankZ.length - 1]; z++) {
+            boolean branchJunction = false;
+            for (int junctionZ : crankZ) {
+                if (z == junctionZ) {
+                    branchJunction = true;
+                    break;
                 }
+            }
+            if (!branchJunction) {
+                level.setBlock(origin.offset(5, 2, z), shaftZ, 3);
+            }
+        }
 
-                LeashFenceKnotEntity knot =
-                        LeashFenceKnotEntity.getOrCreateKnot(level, cranks[i].getBlockPos());
-                horses[i].setLeashedTo(knot, false);
-                cranks[i].engine().attachWorker(horses[i], WorkerResolver.resolve(horses[i]));
+        // Six rows x six presses = 36 real Create stress consumers. The rows
+        // snake through Y-axis gearboxes so every press is in the same graph.
+        level.setBlock(origin.offset(6, 2, crankZ[1]), shaftX, 3);
+        for (int row = 0; row < 6; row++) {
+            int z = crankZ[1] + row;
+            for (int x = 7; x <= 12; x++) {
+                level.setBlock(origin.offset(x, 2, z), pressX, 3);
+            }
+            if (row < 5) {
+                int turnX = (row & 1) == 0 ? 13 : 6;
+                level.setBlock(origin.offset(turnX, 2, z), busGearbox, 3);
+                level.setBlock(origin.offset(turnX, 2, z + 1), busGearbox, 3);
+            }
+        }
+
+        // Give every worker a complete valid gravel orbit without touching the
+        // kinetic graph, which lives one block lower at Y=2.
+        for (BlockPos crankPos : crankPositions) {
+            for (BlockPos offset : HorseCrankEngine.generateOffsetsForRadius(HorseCrankEngine.DEFAULT_RADIUS)) {
+                level.setBlock(crankPos.offset(offset), Blocks.GRAVEL.defaultBlockState(), 3);
+            }
+        }
+
+        helper.runAfterDelay(8, () -> {
+            for (int i = 0; i < cranks.length; i++) {
+                BlockEntity be = level.getBlockEntity(crankPositions[i]);
+                helper.assertTrue(be instanceof AbstractHorseCrankBlockEntity,
+                        "fixture crank " + i + " must have a horse-crank block entity");
+                cranks[i] = (AbstractHorseCrankBlockEntity) be;
             }
 
-            helper.runAfterDelay(3, () -> {
-                for (int i = 0; i < cranks.length; i++) {
+            // Start with only the three normal sources. Their 5 RPM network is
+            // deliberately below capacity with the full 36-press load.
+            for (int i = 1; i < cranks.length; i++) {
+                workers[i] = attachFixtureHorse(helper, level, cranks[i], 0.225D);
+            }
+
+            helper.runAfterDelay(12, () -> {
+                KineticBlockEntity stressProbe =
+                        requireKinetic(helper, level, origin.offset(7, 2, crankZ[1]), "stress-bank press");
+                helper.assertFalse(stressProbe.isOverStressed(),
+                        "three normal cranks must start with a sustainable shared network");
+                helper.assertTrue(Math.abs(stressProbe.getSpeed()) > 0.0F,
+                        "sustainable shared network must have real non-zero rotation");
+
+                var initialNetwork = stressProbe.getOrCreateNetwork();
+                float initialStress = initialNetwork.calculateStress();
+                float initialCapacity = initialNetwork.calculateCapacity();
+                helper.assertTrue(initialStress > 0.0F && initialStress < initialCapacity,
+                        "fixture must begin below capacity, got stress=" + initialStress
+                                + " capacity=" + initialCapacity);
+
+                for (int i = 1; i < cranks.length; i++) {
                     HorseCrankEngine engine = cranks[i].engine();
-                    helper.assertTrue(engine.isAssignedWorker(horses[i].getUUID()),
-                            "fixture crank " + i + " must retain its assigned worker");
-                    helper.assertTrue(engine.isWorkerResolved(),
-                            "fixture crank " + i + " must resolve its worker");
-                    helper.assertTrue(engine.isWorking(),
-                            "fixture crank " + i + " must be working before branch loss");
-                    helper.assertTrue(Math.abs(engine.generatedSpeed()) > 0.0F,
-                            "fixture crank " + i + " must contribute rotation before branch loss");
+                    helper.assertTrue(engine.isWorking() && engine.isAssignedWorker(workers[i].horse().getUUID()),
+                            "normal crank " + i + " must be actively generating before fast source joins");
+                    helper.assertTrue(cranks[i].network != null && cranks[i].network.equals(stressProbe.network),
+                            "normal crank " + i + " must belong to the shared Create network");
                 }
 
-                level.destroyBlock(cranks[0].getBlockPos(), false);
+                // The fourth source is materially faster because the horse is
+                // pinned at 2.5x the profile speed reference (the default max clamp).
+                workers[0] = attachFixtureHorse(helper, level, cranks[0], 0.5625D);
 
-                helper.runAfterDelay(3, () -> {
-                    for (int i = 1; i < cranks.length; i++) {
-                        HorseCrankEngine engine = cranks[i].engine();
-                        helper.assertTrue(engine.isAssignedWorker(horses[i].getUUID()),
-                                "surviving crank " + i + " must retain its worker UUID");
-                        helper.assertTrue(engine.isWorkerResolved(),
-                                "surviving crank " + i + " must keep its worker resolved");
-                        helper.assertTrue(WorkerAttachmentControl.isOwnedBy(
-                                        horses[i], cranks[i].getBlockPos(), engine.crankInstanceUuid()),
-                                "surviving crank " + i + " must retain exact durable ownership");
-                        helper.assertTrue(engine.isWorking(),
-                                "surviving crank " + i + " must continue working after branch loss");
-                        helper.assertTrue(Math.abs(engine.generatedSpeed()) > 0.0F,
-                                "surviving crank " + i + " must continue contributing rotation");
-                        engine.detachWorker(false);
+                helper.runAfterDelay(12, () -> {
+                    KineticBlockEntity overloadedProbe =
+                            requireKinetic(helper, level, origin.offset(7, 2, crankZ[1]), "overloaded stress-bank press");
+                    HorseCrankEngine fastEngine = cranks[0].engine();
+                    helper.assertTrue(fastEngine.isWorking() && fastEngine.isAssignedWorker(workers[0].horse().getUUID()),
+                            "fast crank must remain actively attached while driving the overload transition");
+                    helper.assertTrue(fastEngine.generatedSpeed() > cranks[1].engine().generatedSpeed() * 1.5F,
+                            "fixture fast horse must materially outrun the normal horses");
+
+                    var overloadedNetwork = overloadedProbe.getOrCreateNetwork();
+                    float overloadedStress = overloadedNetwork.calculateStress();
+                    float overloadedCapacity = overloadedNetwork.calculateCapacity();
+                    helper.assertTrue(overloadedStress > overloadedCapacity,
+                            "fast source must genuinely overstress the shared Create network, got stress="
+                                    + overloadedStress + " capacity=" + overloadedCapacity);
+                    helper.assertTrue(overloadedProbe.isOverStressed(),
+                            "Create must mark the shared graph overstressed before branch loss");
+                    helper.assertTrue(Math.abs(overloadedProbe.getTheoreticalSpeed()) > 0.0F
+                                    && Math.abs(overloadedProbe.getSpeed()) == 0.0F,
+                            "overstressed graph must retain theoretical rotation while actual rotation is stopped");
+
+                    for (int i = 0; i < cranks.length; i++) {
+                        helper.assertTrue(cranks[i].network != null && cranks[i].network.equals(overloadedProbe.network),
+                                "all four crank sources must be members of one shared network before branch loss");
                     }
-                    helper.succeed();
+
+                    // Reproduce the field event: the crank remains present with
+                    // its horse attached; only its connecting shaft branch is lost.
+                    level.destroyBlock(branchShaftPositions[0], false);
+                    helper.assertTrue(level.getBlockState(branchShaftPositions[0]).isAir(),
+                            "fast crank branch shaft must actually be severed");
+
+                    helper.runAfterDelay(20, () -> {
+                        KineticBlockEntity recoveredProbe =
+                                requireKinetic(helper, level, origin.offset(7, 2, crankZ[1]), "recovered stress-bank press");
+                        var recoveredNetwork = recoveredProbe.getOrCreateNetwork();
+                        float recoveredStress = recoveredNetwork.calculateStress();
+                        float recoveredCapacity = recoveredNetwork.calculateCapacity();
+
+                        helper.assertFalse(recoveredProbe.isOverStressed(),
+                                "surviving three-source network must recover from the overloaded state");
+                        helper.assertTrue(recoveredStress > 0.0F && recoveredStress < recoveredCapacity,
+                                "surviving network must be genuinely sustainable after rebuild, got stress="
+                                        + recoveredStress + " capacity=" + recoveredCapacity);
+                        helper.assertTrue(Math.abs(recoveredProbe.getSpeed()) > 0.0F,
+                                "surviving kinetic network must resume actual non-zero rotation");
+
+                        for (int i = 1; i < cranks.length; i++) {
+                            HorseCrankEngine engine = cranks[i].engine();
+                            FixtureWorker worker = workers[i];
+                            helper.assertTrue(engine.isAssignedWorker(worker.horse().getUUID()),
+                                    "surviving crank " + i + " must retain its worker UUID");
+                            helper.assertTrue(engine.isWorkerResolved() && engine.isWorkerEligible(),
+                                    "surviving crank " + i + " must keep its worker resolved and eligible");
+                            helper.assertTrue(WorkerAttachmentControl.isOwnedBy(
+                                            worker.horse(), cranks[i].getBlockPos(), engine.crankInstanceUuid()),
+                                    "surviving crank " + i + " must retain exact durable ownership");
+                            helper.assertTrue(worker.horse().getLeashHolder() == worker.knot() && worker.knot().isAlive(),
+                                    "surviving crank " + i + " must retain its live crank leash");
+                            helper.assertTrue(engine.isWorking() && Math.abs(engine.generatedSpeed()) > 0.0F,
+                                    "surviving crank " + i + " must continue generating after network rebuild");
+                            helper.assertTrue(cranks[i].network != null && cranks[i].network.equals(recoveredProbe.network),
+                                    "surviving crank " + i + " must rejoin the recovered shared network");
+                            helper.assertTrue(Math.abs(cranks[i].getSpeed()) > 0.0F,
+                                    "surviving crank " + i + " must have actual, not merely requested, rotation");
+                        }
+
+                        for (int i = 0; i < cranks.length; i++) {
+                            if (workers[i] != null) {
+                                cranks[i].engine().detachWorker(false);
+                            }
+                        }
+                        helper.succeed();
+                    });
                 });
             });
         });
@@ -495,6 +612,51 @@ public final class HorsePowerLifecycleGameTests {
         helper.assertTrue(PathEvaluator.getPathStats(tfcGround).isPresent(),
                 "TFC grass must be valid crank footing without manual server config");
         helper.succeed();
+    }
+
+
+    private record FixtureWorker(Horse horse, LeashFenceKnotEntity knot) {}
+
+    private static FixtureWorker attachFixtureHorse(
+            GameTestHelper helper,
+            ServerLevel level,
+            AbstractHorseCrankBlockEntity crank,
+            double movementSpeed
+    ) {
+        Horse horse = EntityType.HORSE.create(level);
+        helper.assertTrue(horse != null, "fixture horse must be creatable");
+
+        var speedAttribute = horse.getAttribute(Attributes.MOVEMENT_SPEED);
+        var healthAttribute = horse.getAttribute(Attributes.MAX_HEALTH);
+        helper.assertTrue(speedAttribute != null && healthAttribute != null,
+                "fixture horse must expose movement-speed and max-health attributes");
+        speedAttribute.setBaseValue(movementSpeed);
+        healthAttribute.setBaseValue(22.0D);
+        horse.setHealth(horse.getMaxHealth());
+
+        BlockPos crankPos = crank.getBlockPos();
+        horse.moveTo(crankPos.getX() + 1.5D, crankPos.getY(), crankPos.getZ() + 0.5D, 0.0F, 0.0F);
+        helper.assertTrue(level.addFreshEntity(horse),
+                "fixture horse must register in the server level");
+
+        LeashFenceKnotEntity knot = LeashFenceKnotEntity.getOrCreateKnot(level, crankPos);
+        horse.setLeashedTo(knot, false);
+        var resolved = WorkerResolver.resolve(horse);
+        helper.assertTrue(resolved.isValid(), "fixture horse must resolve as a valid worker");
+        crank.engine().attachWorker(horse, resolved);
+        return new FixtureWorker(horse, knot);
+    }
+
+    private static KineticBlockEntity requireKinetic(
+            GameTestHelper helper,
+            ServerLevel level,
+            BlockPos worldPos,
+            String description
+    ) {
+        BlockEntity be = level.getBlockEntity(worldPos);
+        helper.assertTrue(be instanceof KineticBlockEntity,
+                description + " must have a Create kinetic block entity at " + worldPos);
+        return (KineticBlockEntity) be;
     }
 
     private static AbstractHorseCrankBlockEntity requireCrank(GameTestHelper helper, BlockPos localPos) {
