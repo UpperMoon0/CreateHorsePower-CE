@@ -74,7 +74,7 @@ public class CHPUtils {
         return !level.getEntitiesOfClass(
                 Mob.class,
                 new AABB(pos).inflate(WorkerStats.MAX_MOVEMENT_RADIUS + 4.0D),
-                mob -> mob.isAlive() && mob.getLeashHolder() == knot.get()
+                mob -> mob.isAlive() && mob.isLeashed() && mob.getLeashHolder() == knot.get()
         ).isEmpty();
     }
 
@@ -138,18 +138,16 @@ public class CHPUtils {
 
     /** True only when the loaded mob is currently attached to a knot at {@code pos}. */
     public static boolean isLeashedToKnotAt(Mob mob, BlockPos pos) {
-        if (!mob.isAlive()) return false;
+        if (!mob.isAlive() || !mob.isLeashed()) return false;
         Entity holder = mob.getLeashHolder();
-        return holder instanceof LeashFenceKnotEntity knot
-                && knot.isAlive()
-                && knot.blockPosition().equals(pos);
+        return holder instanceof LeashFenceKnotEntity knot && knot.blockPosition().equals(pos);
     }
 
     private static boolean hasLoadedMobAttachedToKnot(Level level, LeashFenceKnotEntity knot) {
         return !level.getEntitiesOfClass(
                 Mob.class,
                 knot.getBoundingBox().inflate(32.0D),
-                mob -> mob.isAlive() && mob.getLeashHolder() == knot
+                mob -> mob.isAlive() && mob.isLeashed() && mob.getLeashHolder() == knot
         ).isEmpty();
     }
 
