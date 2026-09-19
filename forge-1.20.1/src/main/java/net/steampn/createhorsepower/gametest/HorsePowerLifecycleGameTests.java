@@ -404,7 +404,7 @@ public final class HorsePowerLifecycleGameTests {
      * three surviving sources, return the stress/capacity relation to sustainable,
      * and resume actual network rotation without losing any surviving worker.
      */
-    @GameTest(template = "empty", timeoutTicks = 240)
+    @GameTest(template = "kinetic_network", timeoutTicks = 240)
     public static void sharedOverstressedNetworkRecoversAfterFastCrankBranchLoss(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
         BlockPos origin = helper.absolutePos(BlockPos.ZERO);
@@ -514,14 +514,10 @@ public final class HorsePowerLifecycleGameTests {
                         "three normal cranks must start with a sustainable shared network");
 
                 var initialNetwork = stressProbe.getOrCreateNetwork();
-                float initialStress = initialNetwork.calculateStress();
-                float initialCapacity = initialNetwork.calculateCapacity();
                 StringBuilder initialDiag = new StringBuilder()
                         .append("probe{speed=").append(stressProbe.getSpeed())
                         .append(", theoretical=").append(stressProbe.getTheoreticalSpeed())
-                        .append(", network=").append(stressProbe.network)
-                        .append(", stress=").append(initialStress)
-                        .append(", capacity=").append(initialCapacity).append('}');
+                        .append(", network=").append(stressProbe.network).append('}');
                 for (int i = 1; i < cranks.length; i++) {
                     HorseCrankEngine engine = cranks[i].engine();
                     initialDiag.append(" crank").append(i).append("{working=").append(engine.isWorking())
@@ -530,8 +526,13 @@ public final class HorsePowerLifecycleGameTests {
                             .append(", theoretical=").append(cranks[i].getTheoreticalSpeed())
                             .append(", network=").append(cranks[i].network).append('}');
                 }
+                helper.assertTrue(initialNetwork != null,
+                        "stress-bank probe must join the shared Create network; " + initialDiag);
+                float initialStress = initialNetwork.calculateStress();
+                float initialCapacity = initialNetwork.calculateCapacity();
                 helper.assertTrue(Math.abs(stressProbe.getSpeed()) > 0.0F,
-                        "sustainable shared network must have real non-zero rotation; " + initialDiag);
+                        "sustainable shared network must have real non-zero rotation; " + initialDiag
+                                + " stress=" + initialStress + " capacity=" + initialCapacity);
 
                 helper.assertTrue(initialStress > 0.0F && initialStress < initialCapacity,
                         "fixture must begin below capacity, got stress=" + initialStress
