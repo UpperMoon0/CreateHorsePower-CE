@@ -512,12 +512,27 @@ public final class HorsePowerLifecycleGameTests {
                         requireKinetic(helper, level, origin.offset(7, 2, crankZ[1]), "stress-bank press");
                 helper.assertFalse(stressProbe.isOverStressed(),
                         "three normal cranks must start with a sustainable shared network");
-                helper.assertTrue(Math.abs(stressProbe.getSpeed()) > 0.0F,
-                        "sustainable shared network must have real non-zero rotation");
 
                 var initialNetwork = stressProbe.getOrCreateNetwork();
                 float initialStress = initialNetwork.calculateStress();
                 float initialCapacity = initialNetwork.calculateCapacity();
+                StringBuilder initialDiag = new StringBuilder()
+                        .append("probe{speed=").append(stressProbe.getSpeed())
+                        .append(", theoretical=").append(stressProbe.getTheoreticalSpeed())
+                        .append(", network=").append(stressProbe.network)
+                        .append(", stress=").append(initialStress)
+                        .append(", capacity=").append(initialCapacity).append('}');
+                for (int i = 1; i < cranks.length; i++) {
+                    HorseCrankEngine engine = cranks[i].engine();
+                    initialDiag.append(" crank").append(i).append("{working=").append(engine.isWorking())
+                            .append(", generated=").append(engine.generatedSpeed())
+                            .append(", speed=").append(cranks[i].getSpeed())
+                            .append(", theoretical=").append(cranks[i].getTheoreticalSpeed())
+                            .append(", network=").append(cranks[i].network).append('}');
+                }
+                helper.assertTrue(Math.abs(stressProbe.getSpeed()) > 0.0F,
+                        "sustainable shared network must have real non-zero rotation; " + initialDiag);
+
                 helper.assertTrue(initialStress > 0.0F && initialStress < initialCapacity,
                         "fixture must begin below capacity, got stress=" + initialStress
                                 + " capacity=" + initialCapacity);
