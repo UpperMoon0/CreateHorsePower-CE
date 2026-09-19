@@ -377,6 +377,87 @@ public final class HorsePowerLifecycleGameTests {
         helper.succeed();
     }
 
+
+    @GameTest(template = "empty", timeoutTicks = 40)
+    public static void fourCrankBranchLossKeepsThreeOwnedWorkersAttached(GameTestHelper helper) {
+        BlockPos[] positions = {
+                new BlockPos(1, 1, 1),
+                new BlockPos(4, 1, 1),
+                new BlockPos(1, 1, 4),
+                new BlockPos(4, 1, 4)
+        };
+        AbstractHorseCrankBlockEntity[] cranks = new AbstractHorseCrankBlockEntity[4];
+        Horse[] horses = new Horse[4];
+        LeashFenceKnotEntity[] knots = new LeashFenceKnotEntity[4];
+        ServerLevel level = helper.getLevel();
+
+        for (int i = 0; i < positions.length; i++) {
+            helper.setBlock(positions[i], BlockRegister.HORSE_CRANK.get());
+            cranks[i] = requireCrank(helper, positions[i]);
+            horses[i] = helper.spawn(EntityType.HORSE, positions[i].offset(0, 0, 1));
+            knots[i] = LeashFenceKnotEntity.getOrCreateKnot(level, cranks[i].getBlockPos());
+            horses[i].setLeashedTo(knots[i], true);
+            cranks[i].engine().attachWorker(horses[i], WorkerResolver.resolve(horses[i]));
+            helper.assertTrue(WorkerAttachmentControl.isOwnedBy(
+                            horses[i], cranks[i].getBlockPos(), cranks[i].engine().crankInstanceUuid()),
+                    "each crank must begin with independent durable worker ownership");
+        }
+
+        level.destroyBlock(cranks[0].getBlockPos(), false);
+
+        for (int i = 1; i < cranks.length; i++) {
+            // Model the transient vanilla-knot loss seen while Create rebuilds
+            // the remaining kinetic network after the failed branch is gone.
+            horses[i].dropLeash(true, false);
+            if (knots[i].isAlive()) {
+                knots[i].discard();
+            }
+
+            for (int tick = 0; tick <= HorseCrankEngine.MISSING_ATTACHMENT_GRACE_TICKS + 1; tick++) {
+                cranks[i].engine().afterHostTick();
+            }
+
+            helper.assertTrue(cranks[i].engine().isWorkerResolved(),
+                    "surviving crank " + i + " must keep resolving its worker after branch loss");
+            helper.assertTrue(WorkerAttachmentControl.isOwnedBy(
+                            horses[i], cranks[i].getBlockPos(), cranks[i].engine().crankInstanceUuid()),
+                    "surviving crank " + i + " must keep its durable ownership marker");
+            helper.assertTrue(CHPUtils.isLeashedToKnotAt(horses[i], cranks[i].getBlockPos()),
+                    "surviving crank " + i + " must recreate only its own missing leash knot");
+        }
+
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 20)
+    public static void ownedMarkerDoesNotStealForeignLeash(GameTestHelper helper) {
+        BlockPos localCrankPos = new BlockPos(1, 1, 1);
+        helper.setBlock(localCrankPos, BlockRegister.HORSE_CRANK.get());
+        AbstractHorseCrankBlockEntity crank = requireCrank(helper, localCrankPos);
+        HorseCrankEngine engine = crank.engine();
+        ServerLevel level = helper.getLevel();
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(2, 1, 1));
+
+        LeashFenceKnotEntity ownKnot = LeashFenceKnotEntity.getOrCreateKnot(level, crank.getBlockPos());
+        horse.setLeashedTo(ownKnot, true);
+        engine.attachWorker(horse, WorkerResolver.resolve(horse));
+
+        BlockPos foreignPos = crank.getBlockPos().offset(3, 0, 0);
+        LeashFenceKnotEntity foreignKnot = LeashFenceKnotEntity.getOrCreateKnot(level, foreignPos);
+        horse.setLeashedTo(foreignKnot, true);
+        if (ownKnot.isAlive()) {
+            ownKnot.discard();
+        }
+
+        engine.afterHostTick();
+
+        helper.assertTrue(horse.getLeashHolder() == foreignKnot,
+                "self-healing must never steal a worker from a live foreign leash");
+        helper.assertFalse(engine.isWorkerResolved(),
+                "foreign reassignment must remain visible as an unresolved old crank assignment");
+        helper.succeed();
+    }
+
     @GameTest(template = "empty")
     public static void tfcHorseAndTerrainHaveBuiltinCompatibility(GameTestHelper helper) {
         EntityType<?> tfcHorse = BuiltInRegistries.ENTITY_TYPE.get(CHPApi.id("tfc", "horse"));
