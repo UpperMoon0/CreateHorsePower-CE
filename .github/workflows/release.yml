@@ -115,12 +115,11 @@ jobs:
             fi
           done
 
-          for c in "changelog/${nf_version}.md" "changelog/${forge_version}.md"; do
-            if [[ ! -f "$c" ]]; then
-              echo "Missing changelog for ${c}" >&2
-              exit 1
-            fi
-          done
+          changelog_path="changelog/${base_version}.md"
+          if [[ ! -f "$changelog_path" ]]; then
+            echo "Missing shared changelog: ${changelog_path}" >&2
+            exit 1
+          fi
 
           {
             echo "base_version=$base_version"
@@ -128,6 +127,7 @@ jobs:
             echo "forge_version=$forge_version"
             echo "nf_jar=$nf_jar"
             echo "forge_jar=$forge_jar"
+            echo "changelog_path=$changelog_path"
           } >> "$GITHUB_OUTPUT"
 
       # Tag creation is intentionally the LAST validation: a broken commit must
@@ -183,7 +183,7 @@ jobs:
         with:
           tag_name: v${{ steps.release_file.outputs.base_version }}
           name: Create Horse Power - CE v${{ steps.release_file.outputs.base_version }}
-          body: "See changelogs: [NeoForge 1.21.1](./changelog/${{ steps.release_file.outputs.nf_version }}.md), [Forge 1.20.1](./changelog/${{ steps.release_file.outputs.forge_version }}.md)"
+          body_path: ${{ steps.release_file.outputs.changelog_path }}
           files: |
             ${{ steps.release_file.outputs.nf_jar }}
             ${{ steps.release_file.outputs.forge_jar }}
@@ -202,6 +202,7 @@ jobs:
           FORGE_VERSION: ${{ steps.release_file.outputs.forge_version }}
           NF_JAR: ${{ steps.release_file.outputs.nf_jar }}
           FORGE_JAR: ${{ steps.release_file.outputs.forge_jar }}
+          CHANGELOG_PATH: ${{ steps.release_file.outputs.changelog_path }}
         run: |
           set -euo pipefail
           if [[ -z "${CURSEFORGE_API_TOKEN:-}" ]]; then
@@ -273,5 +274,5 @@ jobs:
             fi
           }
 
-          upload_file "$NF_JAR" "$NF_VERSION" '1.21.1' 'NeoForge' 'Java 21' "changelog/${NF_VERSION}.md"
-          upload_file "$FORGE_JAR" "$FORGE_VERSION" '1.20.1' 'Forge' 'Java 17' "changelog/${FORGE_VERSION}.md"
+          upload_file "$NF_JAR" "$NF_VERSION" '1.21.1' 'NeoForge' 'Java 21' "$CHANGELOG_PATH"
+          upload_file "$FORGE_JAR" "$FORGE_VERSION" '1.20.1' 'Forge' 'Java 17' "$CHANGELOG_PATH"

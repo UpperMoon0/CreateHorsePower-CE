@@ -274,10 +274,38 @@ tasks.register('verifySharedResources') {
     }
 }
 
+tasks.register('verifyChangelog') {
+    group = 'verification'
+    description = 'Validates the single shared changelog file for the current mod version.'
+    doLast {
+        def version = providers.gradleProperty('mod_version').orNull?.trim()
+        if (!version) {
+            throw new GradleException('mod_version is missing from gradle.properties')
+        }
+
+        def changelog = file("changelog/${version}.md")
+        if (!changelog.isFile()) {
+            throw new GradleException("Missing shared changelog: changelog/${version}.md")
+        }
+
+        def legacyFiles = fileTree('changelog').matching {
+            include '1.20.1-*.md'
+            include '1.21.1-*.md'
+        }.files
+        if (!legacyFiles.isEmpty()) {
+            def paths = legacyFiles.collect { project.relativePath(it) }.sort().join(', ')
+            throw new GradleException(
+                    "Per-Minecraft changelogs are no longer supported; use changelog/<mod_version>.md. Found: ${paths}")
+        }
+
+        println "verifyChangelog: changelog/${version}.md exists and no per-Minecraft changelogs remain"
+    }
+}
+
 tasks.register('verify') {
     group = 'verification'
     description = 'Full aggregate verification: parity, builds, unit tests, and loader smoke tests for every version.'
-    dependsOn 'verifySharedSources', 'verifySharedResources', 'buildAll', 'testAllVersions', 'runtimeSmokeAll'
+    dependsOn 'verifySharedSources', 'verifySharedResources', 'verifyChangelog', 'buildAll', 'testAllVersions', 'runtimeSmokeAll'
     // Deterministic ordering for release builds running "cleanAll verify".
     mustRunAfter 'cleanAll'
 }
