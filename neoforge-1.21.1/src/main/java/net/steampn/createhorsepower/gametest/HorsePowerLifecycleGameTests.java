@@ -616,6 +616,27 @@ public final class HorsePowerLifecycleGameTests {
                         helper.assertTrue(Math.abs(recoveredProbe.getSpeed()) > 0.0F,
                                 "surviving kinetic network must resume actual non-zero rotation");
 
+                        // The severed crank still physically exists with its horse
+                        // attached; only its shaft branch left the shared graph.
+                        // Prove Create did not retain stale membership/capacity while
+                        // CHP independently preserves the worker lifecycle state.
+                        HorseCrankEngine severedEngine = cranks[0].engine();
+                        FixtureWorker severedWorker = workers[0];
+                        helper.assertTrue(cranks[0].network == null
+                                        || !cranks[0].network.equals(recoveredProbe.network),
+                                "severed crank must not remain in the recovered shared network");
+                        helper.assertTrue(severedEngine.isAssignedWorker(severedWorker.horse().getUUID()),
+                                "severed crank must retain its worker UUID when only its shaft is broken");
+                        helper.assertTrue(severedEngine.isWorkerResolved() && severedEngine.isWorkerEligible(),
+                                "severed crank worker must remain resolved and eligible while disconnected");
+                        helper.assertTrue(WorkerAttachmentControl.isOwnedBy(
+                                        severedWorker.horse(), cranks[0].getBlockPos(),
+                                        severedEngine.crankInstanceUuid()),
+                                "severed crank must retain exact durable worker ownership");
+                        helper.assertTrue(severedWorker.horse().getLeashHolder() == severedWorker.knot()
+                                        && severedWorker.knot().isAlive(),
+                                "severed crank must retain its live crank leash");
+
                         for (int i = 1; i < cranks.length; i++) {
                             HorseCrankEngine engine = cranks[i].engine();
                             FixtureWorker worker = workers[i];
