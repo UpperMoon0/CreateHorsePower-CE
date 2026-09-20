@@ -87,7 +87,8 @@ public final class HorsePowerLifecycleGameTests {
         level.addFreshEntity(reloaded);
         WorkerRecoveryQueue.enqueue(reloaded, level);
 
-        helper.runAfterDelay(3, () -> {
+        helper.succeedWhen(() -> {
+            WorkerRecoveryQueue.process(level);
             helper.assertFalse(WorkerAttachmentControl.hasMarker(reloaded),
                     "durable detach recovery must clear the attachment marker");
             helper.assertFalse(WorkerActivityControl.hasMarker(reloaded),
@@ -102,7 +103,6 @@ public final class HorsePowerLifecycleGameTests {
                     .size();
             helper.assertTrue(droppedLeads == 0,
                     "detach(false) must remain no-drop after old crank destruction/replacement");
-            helper.succeed();
         });
     }
 
@@ -119,7 +119,7 @@ public final class HorsePowerLifecycleGameTests {
                 "fixture must create CHP-owned NoAI false->true state");
         WorkerRecoveryQueue.enqueue(horse, level);
 
-        helper.runAfterDelay(2, () -> {
+        helper.succeedWhen(() -> {
             WorkerRecoveryQueue.expireForTesting(horse.getUUID());
             WorkerRecoveryQueue.process(level);
 
@@ -131,7 +131,6 @@ public final class HorsePowerLifecycleGameTests {
                     "timed-out recovery must restore CHP-owned NoAI false->true state");
             helper.assertFalse(WorkerRecoveryQueue.isPendingForTesting(horse.getUUID()),
                     "timed-out recovery must terminate instead of remaining pending forever");
-            helper.succeed();
         });
     }
 
@@ -162,7 +161,7 @@ public final class HorsePowerLifecycleGameTests {
                 "recovery age must survive worker unload/reload instead of resetting to zero");
         WorkerRecoveryQueue.advanceRecoveryAgeForTesting(reloaded, 600L);
 
-        helper.runAfterDelay(2, () -> {
+        helper.succeedWhen(() -> {
             WorkerRecoveryQueue.process(level);
             helper.assertFalse(level.hasChunkAt(oldCrankPos),
                     "reload-spanning timeout must not force-load the old crank chunk");
@@ -172,7 +171,6 @@ public final class HorsePowerLifecycleGameTests {
                     "reload-spanning timeout must restore CHP-owned NoAI");
             helper.assertFalse(WorkerRecoveryQueue.isPendingForTesting(workerUuid),
                     "reload-spanning timeout must terminate recovery");
-            helper.succeed();
         });
     }
 
