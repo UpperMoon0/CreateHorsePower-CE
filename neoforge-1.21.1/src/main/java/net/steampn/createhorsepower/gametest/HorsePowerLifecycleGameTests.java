@@ -172,25 +172,30 @@ public final class HorsePowerLifecycleGameTests {
             delayedCrank.engine().setCrankInstanceUuidForTesting(delayedCrankUuid);
             delayedCrank.engine().setWorkerUuidForTesting(workerUuid);
 
-            WorkerRecoveryQueue.process(level);
+            // Recovery is intentionally driven by the loader's normal
+            // post-level-tick hook. Do not call WorkerRecoveryQueue.process()
+            // synchronously here: Forge and NeoForge differ in same-phase
+            // chunk/block-entity visibility, while gameplay recovery always
+            // occurs on a subsequent server tick.
+            helper.runAfterDelay(2, () -> {
+                helper.assertFalse(WorkerRecoveryQueue.isPendingForTesting(workerUuid),
+                        "recovery must complete after the matching live crank becomes inspectable");
+                helper.assertTrue(delayedCrank.engine().isAssignedWorker(workerUuid),
+                        "matching delayed crank must still claim the reloaded worker");
+                helper.assertTrue(WorkerAttachmentControl.isOwnedBy(
+                                reloaded, delayedCrankPos, delayedCrankUuid),
+                        "live crank recovery must preserve exact attachment ownership");
+                helper.assertTrue(WorkerActivityControl.isOwnedBy(
+                                reloaded, delayedCrankPos, delayedCrankUuid),
+                        "live crank recovery must preserve exact AI-suppression ownership");
+                helper.assertTrue(reloaded.isNoAi(),
+                        "a still-live crank must keep the worker AI suppressed");
 
-            helper.assertFalse(WorkerRecoveryQueue.isPendingForTesting(workerUuid),
-                    "recovery must complete once the matching live crank becomes inspectable");
-            helper.assertTrue(delayedCrank.engine().isAssignedWorker(workerUuid),
-                    "matching delayed crank must still claim the reloaded worker");
-            helper.assertTrue(WorkerAttachmentControl.isOwnedBy(
-                            reloaded, delayedCrankPos, delayedCrankUuid),
-                    "live crank recovery must preserve exact attachment ownership");
-            helper.assertTrue(WorkerActivityControl.isOwnedBy(
-                            reloaded, delayedCrankPos, delayedCrankUuid),
-                    "live crank recovery must preserve exact AI-suppression ownership");
-            helper.assertTrue(reloaded.isNoAi(),
-                    "a still-live crank must keep the worker AI suppressed");
-
-            WorkerActivityControl.releaseFromMarker(reloaded);
-            WorkerAttachmentControl.clearIfOwnedBy(reloaded, delayedCrankPos, delayedCrankUuid);
-            level.destroyBlock(delayedCrankPos, false);
-            helper.succeed();
+                WorkerActivityControl.releaseFromMarker(reloaded);
+                WorkerAttachmentControl.clearIfOwnedBy(reloaded, delayedCrankPos, delayedCrankUuid);
+                level.destroyBlock(delayedCrankPos, false);
+                helper.succeed();
+            });
         });
     }
 
