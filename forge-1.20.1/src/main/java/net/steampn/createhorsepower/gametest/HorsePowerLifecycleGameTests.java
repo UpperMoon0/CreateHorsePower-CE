@@ -87,7 +87,7 @@ public final class HorsePowerLifecycleGameTests {
         level.addFreshEntity(reloaded);
         WorkerRecoveryQueue.enqueue(reloaded, level);
 
-        helper.runAfterDelay(3, () -> {
+        helper.succeedWhen(() -> {
             helper.assertFalse(WorkerAttachmentControl.hasMarker(reloaded),
                     "durable detach recovery must clear the attachment marker");
             helper.assertFalse(WorkerActivityControl.hasMarker(reloaded),
@@ -102,7 +102,6 @@ public final class HorsePowerLifecycleGameTests {
                     .size();
             helper.assertTrue(droppedLeads == 0,
                     "detach(false) must remain no-drop after old crank destruction/replacement");
-            helper.succeed();
         });
     }
 
