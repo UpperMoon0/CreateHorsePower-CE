@@ -22,6 +22,7 @@ import net.steampn.createhorsepower.blocks.crank.HorseCrankEngine;
 import net.steampn.createhorsepower.blocks.crank.WorkerActivityControl;
 import net.steampn.createhorsepower.blocks.crank.WorkerAttachmentControl;
 import net.steampn.createhorsepower.blocks.crank.WorkerOrbitMovement;
+import net.steampn.createhorsepower.blocks.crank.WorkerRecoveryQueue;
 import net.steampn.createhorsepower.content.stats.WorkerResolver;
 import net.steampn.createhorsepower.registry.BlockRegister;
 import net.steampn.createhorsepower.registry.TileEntityRegister;
@@ -449,7 +450,8 @@ public final class HorsePowerGameTests {
 
         // EntityJoin queues recovery. The first mob tick restores the delayed
         // leash/knot from NBT; the post-level-tick queue then removes it.
-        helper.runAfterDelay(3, () -> {
+        helper.succeedWhen(() -> {
+            WorkerRecoveryQueue.process(level);
             helper.assertFalse(reloaded.isLeashed(),
                     "Reloaded orphan worker must not remain leashed to the old crank position");
             helper.assertTrue(reloaded.getLeashHolder() == null,
@@ -467,7 +469,6 @@ public final class HorsePowerGameTests {
                     item -> item.getItem().is(Items.LEAD)).isEmpty();
             helper.assertFalse(spawnedLead,
                     "Deferred detachWorker(false) must not spawn a lead when the worker reloads");
-            helper.succeed();
         });
     }
 

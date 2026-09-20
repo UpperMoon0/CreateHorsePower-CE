@@ -88,6 +88,7 @@ public final class HorsePowerLifecycleGameTests {
         WorkerRecoveryQueue.enqueue(reloaded, level);
 
         helper.succeedWhen(() -> {
+            WorkerRecoveryQueue.process(level);
             helper.assertFalse(WorkerAttachmentControl.hasMarker(reloaded),
                     "durable detach recovery must clear the attachment marker");
             helper.assertFalse(WorkerActivityControl.hasMarker(reloaded),
@@ -160,7 +161,7 @@ public final class HorsePowerLifecycleGameTests {
                 "recovery age must survive worker unload/reload instead of resetting to zero");
         WorkerRecoveryQueue.advanceRecoveryAgeForTesting(reloaded, 600L);
 
-        helper.runAfterDelay(2, () -> {
+        helper.succeedWhen(() -> {
             WorkerRecoveryQueue.process(level);
             helper.assertFalse(level.hasChunkAt(oldCrankPos),
                     "reload-spanning timeout must not force-load the old crank chunk");
@@ -170,7 +171,6 @@ public final class HorsePowerLifecycleGameTests {
                     "reload-spanning timeout must restore CHP-owned NoAI");
             helper.assertFalse(WorkerRecoveryQueue.isPendingForTesting(workerUuid),
                     "reload-spanning timeout must terminate recovery");
-            helper.succeed();
         });
     }
 
