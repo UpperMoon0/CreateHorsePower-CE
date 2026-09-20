@@ -118,7 +118,7 @@ public final class HorsePowerLifecycleGameTests {
                 "fixture must create CHP-owned NoAI false->true state");
         WorkerRecoveryQueue.enqueue(horse, level);
 
-        helper.runAfterDelay(2, () -> {
+        helper.succeedWhen(() -> {
             WorkerRecoveryQueue.expireForTesting(horse.getUUID());
             WorkerRecoveryQueue.process(level);
 
@@ -130,7 +130,6 @@ public final class HorsePowerLifecycleGameTests {
                     "timed-out recovery must restore CHP-owned NoAI false->true state");
             helper.assertFalse(WorkerRecoveryQueue.isPendingForTesting(horse.getUUID()),
                     "timed-out recovery must terminate instead of remaining pending forever");
-            helper.succeed();
         });
     }
 
