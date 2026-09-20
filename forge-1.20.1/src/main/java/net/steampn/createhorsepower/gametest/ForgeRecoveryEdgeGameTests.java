@@ -31,7 +31,7 @@ import java.util.UUID;
 public final class ForgeRecoveryEdgeGameTests {
     private ForgeRecoveryEdgeGameTests() {}
 
-    @GameTest(template = "empty", timeoutTicks = 20)
+    @GameTest(template = "empty", timeoutTicks = 20, batch = "chp_recovery_timeout_no_leash")
     public static void timeoutWithoutSerializedLeashDoesNotSpawnLead(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
         Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(2, 1, 2));
@@ -47,25 +47,33 @@ public final class ForgeRecoveryEdgeGameTests {
         horse.getPersistentData().put(WorkerAttachmentControl.MARKER_KEY, marker);
 
         WorkerRecoveryQueue.enqueue(horse, level);
-        WorkerRecoveryQueue.expireForTesting(horse.getUUID());
+        int enqueuedTickCount = horse.tickCount;
 
-        helper.succeedWhen(() -> {
-            WorkerRecoveryQueue.process(level);
-            helper.assertFalse(WorkerAttachmentControl.hasMarker(horse),
-                    "timed-out orphan recovery must clear stale attachment ownership");
-            helper.assertFalse(horse.isLeashed(),
-                    "timed-out recovery must not invent a live leash for an unleaded worker");
-            helper.assertFalse(level.hasChunkAt(oldCrankPos),
-                    "timed-out recovery must not force-load the old crank chunk");
+        helper.startSequence()
+                .thenExecute(() -> {
+                    helper.assertTrue(level.getEntity(horse.getUUID()) == horse,
+                            "queued worker must be visible in the level UUID index");
+                    // These tests exercise timeout semantics, not vanilla entity ticking.
+                    // Advance only the queue eligibility sentinel deterministically.
+                    horse.tickCount = enqueuedTickCount + 1;
+                    WorkerRecoveryQueue.expireForTesting(horse.getUUID());
+                    WorkerRecoveryQueue.process(level);
+                    helper.assertFalse(WorkerAttachmentControl.hasMarker(horse),
+                            "timed-out orphan recovery must clear stale attachment ownership");
+                    helper.assertFalse(horse.isLeashed(),
+                            "timed-out recovery must not invent a live leash for an unleaded worker");
+                    helper.assertFalse(level.hasChunkAt(oldCrankPos),
+                            "timed-out recovery must not force-load the old crank chunk");
 
-            long droppedLeads = level.getEntitiesOfClass(
-                    ItemEntity.class,
-                    new AABB(horse.blockPosition()).inflate(6.0D),
-                    item -> item.getItem().is(Items.LEAD)
-            ).size();
-            helper.assertTrue(droppedLeads == 0,
-                    "a stale CHP marker without serialized vanilla leash data must not manufacture a lead");
-        });
+                    long droppedLeads = level.getEntitiesOfClass(
+                            ItemEntity.class,
+                            new AABB(horse.blockPosition()).inflate(6.0D),
+                            item -> item.getItem().is(Items.LEAD)
+                    ).size();
+                    helper.assertTrue(droppedLeads == 0,
+                            "a stale CHP marker without serialized vanilla leash data must not manufacture a lead");
+                })
+                .thenSucceed();
     }
 
     @GameTest(template = "empty", timeoutTicks = 20)
@@ -216,7 +224,7 @@ public final class ForgeRecoveryEdgeGameTests {
         helper.succeed();
     }
 
-    @GameTest(template = "empty", timeoutTicks = 20)
+    @GameTest(template = "empty", timeoutTicks = 20, batch = "chp_recovery_timeout_foreign_activity")
     public static void attachmentTimeoutPreservesForeignActivityWithClonedUuid(GameTestHelper helper) {
         BlockPos localCurrentCrank = new BlockPos(0, 1, 0);
         helper.setBlock(localCurrentCrank, BlockRegister.HORSE_CRANK.get());
@@ -224,7 +232,8 @@ public final class ForgeRecoveryEdgeGameTests {
         ServerLevel level = helper.getLevel();
         Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(2, 1, 2));
         UUID clonedUuid = UUID.randomUUID();
-        BlockPos staleAttachmentPos = horse.blockPosition().offset(1024, 0, 1024);
+        // Keep this timeout fixture outside chunks touched by neighboring GameTest batches.
+        BlockPos staleAttachmentPos = horse.blockPosition().offset(16384, 0, 16384);
 
         helper.assertFalse(level.hasChunkAt(staleAttachmentPos),
                 "stale attachment crank chunk must begin unloaded");
@@ -234,26 +243,34 @@ public final class ForgeRecoveryEdgeGameTests {
                 "current crank fixture must own the worker's activity suppression");
         WorkerAttachmentControl.markAttached(horse, staleAttachmentPos, clonedUuid);
         WorkerRecoveryQueue.enqueue(horse, level);
-        WorkerRecoveryQueue.expireForTesting(horse.getUUID());
+        int enqueuedTickCount = horse.tickCount;
 
-        helper.succeedWhen(() -> {
-            WorkerRecoveryQueue.process(level);
-            helper.assertFalse(WorkerAttachmentControl.hasMarker(horse),
-                    "timed-out stale attachment marker must be removed");
-            helper.assertTrue(WorkerActivityControl.isOwnedBy(
-                            horse, currentCrank.getBlockPos(), clonedUuid),
-                    "attachment timeout must preserve a different-position activity owner even with the same UUID");
-            helper.assertTrue(horse.isNoAi(),
-                    "attachment timeout must not restore AI while the current crank still owns suppression");
-            helper.assertFalse(WorkerRecoveryQueue.isPendingForTesting(horse.getUUID()),
-                    "timed-out stale attachment recovery must leave the queue");
-            helper.assertFalse(level.hasChunkAt(staleAttachmentPos),
-                    "timeout must not force-load the stale attachment crank chunk");
+        helper.startSequence()
+                .thenExecute(() -> {
+                    helper.assertTrue(level.getEntity(horse.getUUID()) == horse,
+                            "queued worker must be visible in the level UUID index");
+                    // These tests exercise timeout semantics, not vanilla entity ticking.
+                    // Advance only the queue eligibility sentinel deterministically.
+                    horse.tickCount = enqueuedTickCount + 1;
+                    WorkerRecoveryQueue.expireForTesting(horse.getUUID());
+                    WorkerRecoveryQueue.process(level);
+                    helper.assertFalse(WorkerAttachmentControl.hasMarker(horse),
+                            "timed-out stale attachment marker must be removed");
+                    helper.assertTrue(WorkerActivityControl.isOwnedBy(
+                                    horse, currentCrank.getBlockPos(), clonedUuid),
+                            "attachment timeout must preserve a different-position activity owner even with the same UUID");
+                    helper.assertTrue(horse.isNoAi(),
+                            "attachment timeout must not restore AI while the current crank still owns suppression");
+                    helper.assertFalse(WorkerRecoveryQueue.isPendingForTesting(horse.getUUID()),
+                            "timed-out stale attachment recovery must leave the queue");
+                    helper.assertFalse(level.hasChunkAt(staleAttachmentPos),
+                            "timeout must not force-load the stale attachment crank chunk");
 
-            WorkerActivityControl.release(horse, true);
-            helper.assertFalse(horse.isNoAi(),
-                    "explicit current-owner cleanup must still restore the original AI state");
-        });
+                    WorkerActivityControl.release(horse, true);
+                    helper.assertFalse(horse.isNoAi(),
+                            "explicit current-owner cleanup must still restore the original AI state");
+                })
+                .thenSucceed();
     }
 
     @GameTest(template = "empty", timeoutTicks = 20)
@@ -309,7 +326,7 @@ public final class ForgeRecoveryEdgeGameTests {
         helper.succeed();
     }
 
-    @GameTest(template = "empty", timeoutTicks = 20)
+    @GameTest(template = "empty", timeoutTicks = 30, batch = "chp_recovery_foreign_leash")
     public static void recoveryPreservesDelayedForeignEntityLeash(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
         Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(2, 1, 2));
@@ -325,41 +342,61 @@ public final class ForgeRecoveryEdgeGameTests {
         horse.saveWithoutId(savedHorse);
         foreignHolder.saveWithoutId(savedHolder);
         UUID workerUuid = horse.getUUID();
+        UUID holderUuid = foreignHolder.getUUID();
         horse.discard();
         foreignHolder.discard();
 
-        Horse reloaded = EntityType.HORSE.create(level);
-        helper.assertTrue(reloaded != null, "horse must be creatable for delayed-leash regression");
-        reloaded.load(savedHorse);
-        level.addFreshEntity(reloaded);
-        CHPApi.deferredDetaches().put(level, workerUuid,
-                new DeferredDetachStore.Entry(staleCrankPos, staleCrankUuid, false));
-        WorkerRecoveryQueue.enqueue(reloaded, level);
-
+        Horse[] reloadedHolder = new Horse[1];
         Horse[] restoredHolder = new Horse[1];
-        helper.succeedWhen(() -> {
-            WorkerRecoveryQueue.process(level);
 
-            CompoundTag afterRecovery = new CompoundTag();
-            reloaded.saveWithoutId(afterRecovery);
-            helper.assertFalse(WorkerAttachmentControl.hasMarker(reloaded),
-                    "matching durable recovery must clear only CHP attachment ownership");
-            helper.assertTrue(afterRecovery.contains("Leash")
-                            && afterRecovery.getCompound("Leash").hasUUID("UUID"),
-                    "unresolved foreign entity UUID leash must survive CHP recovery");
+        helper.startSequence()
+                .thenWaitUntil(() -> {
+                    helper.assertTrue(level.getEntity(workerUuid) == null,
+                            "discarded worker must leave the UUID index before reload");
+                    helper.assertTrue(level.getEntity(holderUuid) == null,
+                            "discarded foreign holder must leave the UUID index before reload");
+                })
+                .thenExecute(() -> {
+                    Horse reloaded = EntityType.HORSE.create(level);
+                    helper.assertTrue(reloaded != null,
+                            "horse must be creatable for delayed-leash regression");
+                    reloaded.load(savedHorse);
+                    helper.assertTrue(level.addFreshEntity(reloaded),
+                            "reloaded worker must register for delayed-leash regression");
+                    reloadedHolder[0] = reloaded;
 
-            if (restoredHolder[0] == null) {
-                Horse holder = EntityType.HORSE.create(level);
-                helper.assertTrue(holder != null, "foreign holder must be recreatable");
-                holder.load(savedHolder);
-                level.addFreshEntity(holder);
-                restoredHolder[0] = holder;
-            }
+                    CHPApi.deferredDetaches().put(level, workerUuid,
+                            new DeferredDetachStore.Entry(staleCrankPos, staleCrankUuid, false));
+                    WorkerRecoveryQueue.enqueue(reloaded, level);
+                    reloaded.tickCount++;
+                    WorkerRecoveryQueue.process(level);
 
-            helper.assertTrue(reloaded.getLeashHolder() == restoredHolder[0],
-                    "vanilla must still be able to resolve the preserved foreign UUID leash");
-            reloaded.dropLeash(true, false);
-        });
+                    CompoundTag afterRecovery = new CompoundTag();
+                    reloaded.saveWithoutId(afterRecovery);
+                    helper.assertFalse(WorkerAttachmentControl.hasMarker(reloaded),
+                            "matching durable recovery must clear only CHP attachment ownership");
+                    helper.assertTrue(afterRecovery.contains("Leash")
+                                    && afterRecovery.getCompound("Leash").hasUUID("UUID"),
+                            "unresolved foreign entity UUID leash must survive CHP recovery");
+
+                    Horse holder = EntityType.HORSE.create(level);
+                    helper.assertTrue(holder != null, "foreign holder must be recreatable");
+                    holder.load(savedHolder);
+                    helper.assertTrue(level.addFreshEntity(holder),
+                            "foreign holder must register after recovery");
+                    restoredHolder[0] = holder;
+                })
+                .thenExecute(() -> {
+                    Horse reloaded = reloadedHolder[0];
+                    helper.assertTrue(reloaded != null, "reloaded worker fixture must be initialized");
+                    // 1.20.1 restores persisted leash data from Mob.tickLeash(),
+                    // reached by Mob.tick(); baseTick() alone does not restore it.
+                    reloaded.tick();
+                    helper.assertTrue(reloaded.getLeashHolder() == restoredHolder[0],
+                            "vanilla must still be able to resolve the preserved foreign UUID leash");
+                    reloaded.dropLeash(true, false);
+                })
+                .thenSucceed();
     }
 
     private static AbstractHorseCrankBlockEntity requireCrank(GameTestHelper helper, BlockPos localPos) {

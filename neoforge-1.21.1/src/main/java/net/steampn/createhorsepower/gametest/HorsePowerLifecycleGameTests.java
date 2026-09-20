@@ -44,7 +44,7 @@ import java.util.UUID;
 public final class HorsePowerLifecycleGameTests {
     private HorsePowerLifecycleGameTests() {}
 
-    @GameTest(template = "empty", timeoutTicks = 20)
+    @GameTest(template = "empty", timeoutTicks = 20, batch = "chp_recovery_no_drop_reload")
     public static void durableNoDropDetachSurvivesCrankReplacement(GameTestHelper helper) {
         BlockPos localCrankPos = new BlockPos(0, 1, 0);
         helper.setBlock(localCrankPos, BlockRegister.HORSE_CRANK.get());
@@ -81,29 +81,42 @@ public final class HorsePowerLifecycleGameTests {
         helper.assertFalse(oldCrankUuid.equals(replacement.engine().crankInstanceUuid()),
                 "replacement crank must not inherit the old instance UUID");
 
-        Horse reloaded = EntityType.HORSE.create(level);
-        helper.assertTrue(reloaded != null, "horse must be creatable for reload regression");
-        reloaded.load(savedWorker);
-        level.addFreshEntity(reloaded);
-        WorkerRecoveryQueue.enqueue(reloaded, level);
-
-        helper.succeedWhen(() -> {
-            WorkerRecoveryQueue.process(level);
-            helper.assertFalse(WorkerAttachmentControl.hasMarker(reloaded),
-                    "durable detach recovery must clear the attachment marker");
-            helper.assertFalse(WorkerActivityControl.hasMarker(reloaded),
-                    "durable detach recovery must clear the CHP activity marker");
-            helper.assertFalse(reloaded.isNoAi(),
-                    "durable detach recovery must restore CHP-owned NoAI suppression");
-            helper.assertTrue(CHPApi.deferredDetaches().get(level, workerUuid) == null,
-                    "durable detach policy must be consumed after worker recovery");
-            long droppedLeads = level.getEntitiesOfClass(ItemEntity.class,
-                            new AABB(reloaded.blockPosition()).inflate(6.0D),
-                            item -> item.getItem().is(Items.LEAD))
-                    .size();
-            helper.assertTrue(droppedLeads == 0,
-                    "detach(false) must remain no-drop after old crank destruction/replacement");
-        });
+        Horse[] reloadedHolder = new Horse[1];
+        helper.startSequence()
+                .thenWaitUntil(() -> helper.assertTrue(level.getEntity(workerUuid) == null,
+                        "discarded worker must leave the level UUID index before reload"))
+                .thenExecute(() -> {
+                    Horse reloaded = EntityType.HORSE.create(level);
+                    helper.assertTrue(reloaded != null, "horse must be creatable for reload regression");
+                    reloaded.load(savedWorker);
+                    helper.assertTrue(level.addFreshEntity(reloaded),
+                            "reloaded worker must register for durable detach recovery");
+                    reloadedHolder[0] = reloaded;
+                    WorkerRecoveryQueue.enqueue(reloaded, level);
+                })
+                .thenExecute(() -> {
+                    Horse reloaded = reloadedHolder[0];
+                    helper.assertTrue(reloaded != null, "reloaded worker fixture must be initialized");
+                    helper.assertTrue(level.getEntity(workerUuid) == reloaded,
+                            "reloaded worker must be visible in the level UUID index");
+                    reloaded.tickCount++;
+                    WorkerRecoveryQueue.process(level);
+                    helper.assertFalse(WorkerAttachmentControl.hasMarker(reloaded),
+                            "durable detach recovery must clear the attachment marker");
+                    helper.assertFalse(WorkerActivityControl.hasMarker(reloaded),
+                            "durable detach recovery must clear the CHP activity marker");
+                    helper.assertFalse(reloaded.isNoAi(),
+                            "durable detach recovery must restore CHP-owned NoAI suppression");
+                    helper.assertTrue(CHPApi.deferredDetaches().get(level, workerUuid) == null,
+                            "durable detach policy must be consumed after worker recovery");
+                    long droppedLeads = level.getEntitiesOfClass(ItemEntity.class,
+                                    new AABB(reloaded.blockPosition()).inflate(6.0D),
+                                    item -> item.getItem().is(Items.LEAD))
+                            .size();
+                    helper.assertTrue(droppedLeads == 0,
+                            "detach(false) must remain no-drop after old crank destruction/replacement");
+                })
+                .thenSucceed();
     }
 
     /**
@@ -131,75 +144,86 @@ public final class HorsePowerLifecycleGameTests {
         UUID workerUuid = horse.getUUID();
         horse.discard();
 
-        Horse reloaded = EntityType.HORSE.create(level);
-        helper.assertTrue(reloaded != null, "worker must be creatable for worker-first reload regression");
-        reloaded.load(savedWorker);
-        helper.assertTrue(level.addFreshEntity(reloaded),
-                "reloaded worker must register before the delayed crank chunk");
-        WorkerRecoveryQueue.enqueue(reloaded, level);
+        Horse[] reloadedHolder = new Horse[1];
+        helper.startSequence()
+                .thenWaitUntil(() -> helper.assertTrue(level.getEntity(workerUuid) == null,
+                        "discarded worker must leave the level UUID index before worker-first reload"))
+                .thenExecute(() -> {
+                    Horse reloaded = EntityType.HORSE.create(level);
+                    helper.assertTrue(reloaded != null,
+                            "worker must be creatable for worker-first reload regression");
+                    reloaded.load(savedWorker);
+                    helper.assertTrue(level.addFreshEntity(reloaded),
+                            "reloaded worker must register before the delayed crank chunk");
+                    helper.assertTrue(level.getEntity(workerUuid) == reloaded,
+                            "reloaded worker must own its UUID before recovery starts");
+                    reloadedHolder[0] = reloaded;
+                    WorkerRecoveryQueue.enqueue(reloaded, level);
 
-        helper.runAfterDelay(3, () -> {
-            WorkerRecoveryQueue.process(level);
+                    // GameTest fixture mobs are not guaranteed to receive a scheduled
+                    // Mob tick. Cross only the production queue's post-join eligibility
+                    // sentinel so this test exercises recovery, not scheduler timing.
+                    reloaded.tickCount++;
+                    WorkerRecoveryQueue.process(level);
 
-            helper.assertFalse(level.hasChunkAt(delayedCrankPos),
-                    "deferred recovery must not force-load the live crank chunk");
-            helper.assertTrue(WorkerRecoveryQueue.isPendingForTesting(workerUuid),
-                    "worker-first recovery must remain queued while the crank chunk is unavailable");
-            helper.assertTrue(WorkerAttachmentControl.isOwnedBy(
-                            reloaded, delayedCrankPos, delayedCrankUuid),
-                    "deferred recovery must preserve the valid attachment marker");
-            helper.assertTrue(WorkerActivityControl.isOwnedBy(
-                            reloaded, delayedCrankPos, delayedCrankUuid),
-                    "deferred recovery must preserve the valid AI-suppression marker");
-            helper.assertTrue(reloaded.isNoAi(),
-                    "deferred recovery must keep CHP-owned AI suppression active");
+                    helper.assertFalse(level.hasChunkAt(delayedCrankPos),
+                            "deferred recovery must not force-load the live crank chunk");
+                    helper.assertTrue(WorkerRecoveryQueue.isPendingForTesting(workerUuid),
+                            "worker-first recovery must remain queued while the crank chunk is unavailable");
+                    helper.assertTrue(WorkerAttachmentControl.isOwnedBy(
+                                    reloaded, delayedCrankPos, delayedCrankUuid),
+                            "deferred recovery must preserve the valid attachment marker");
+                    helper.assertTrue(WorkerActivityControl.isOwnedBy(
+                                    reloaded, delayedCrankPos, delayedCrankUuid),
+                            "deferred recovery must preserve the valid AI-suppression marker");
+                    helper.assertTrue(reloaded.isNoAi(),
+                            "deferred recovery must keep CHP-owned AI suppression active");
 
-            // Simulate the neighboring crank chunk arriving later. getChunk()
-            // is intentional here: the assertion above proves recovery itself
-            // did not load it.
-            level.getChunk(delayedCrankPos.getX() >> 4, delayedCrankPos.getZ() >> 4);
-            helper.assertTrue(level.hasChunkAt(delayedCrankPos),
-                    "fixture must explicitly load the delayed crank chunk");
-            level.setBlock(delayedCrankPos,
-                    BlockRegister.HORSE_CRANK.get().defaultBlockState()
-                            .setValue(CrankProperties.HAS_WORKER, true),
-                    3);
-            BlockEntity delayedBlockEntity = level.getBlockEntity(delayedCrankPos);
-            helper.assertTrue(delayedBlockEntity instanceof AbstractHorseCrankBlockEntity,
-                    "delayed chunk must expose the original horse crank block entity");
-            AbstractHorseCrankBlockEntity delayedCrank =
-                    (AbstractHorseCrankBlockEntity) delayedBlockEntity;
-            delayedCrank.engine().setCrankInstanceUuidForTesting(delayedCrankUuid);
-            delayedCrank.engine().setWorkerUuidForTesting(workerUuid);
+                    // Simulate the neighboring crank chunk arriving later. getChunk()
+                    // is intentional here: the assertion above proves recovery itself
+                    // did not load it.
+                    level.getChunk(delayedCrankPos.getX() >> 4, delayedCrankPos.getZ() >> 4);
+                    helper.assertTrue(level.hasChunkAt(delayedCrankPos),
+                            "fixture must explicitly load the delayed crank chunk");
+                    level.setBlock(delayedCrankPos,
+                            BlockRegister.HORSE_CRANK.get().defaultBlockState()
+                                    .setValue(CrankProperties.HAS_WORKER, true),
+                            3);
+                    BlockEntity delayedBlockEntity = level.getBlockEntity(delayedCrankPos);
+                    helper.assertTrue(delayedBlockEntity instanceof AbstractHorseCrankBlockEntity,
+                            "delayed chunk must expose the original horse crank block entity");
+                    AbstractHorseCrankBlockEntity delayedCrank =
+                            (AbstractHorseCrankBlockEntity) delayedBlockEntity;
+                    delayedCrank.engine().setCrankInstanceUuidForTesting(delayedCrankUuid);
+                    delayedCrank.engine().setWorkerUuidForTesting(workerUuid);
 
-            // Recovery is intentionally driven by the loader's normal
-            // post-level-tick hook. Do not call WorkerRecoveryQueue.process()
-            // synchronously here: Forge and NeoForge differ in same-phase
-            // chunk/block-entity visibility, while gameplay recovery always
-            // occurs on a subsequent server tick.
-            helper.runAfterDelay(2, () -> {
-                helper.assertFalse(WorkerRecoveryQueue.isPendingForTesting(workerUuid),
-                        "recovery must complete after the matching live crank becomes inspectable");
-                helper.assertTrue(delayedCrank.engine().isAssignedWorker(workerUuid),
-                        "matching delayed crank must still claim the reloaded worker");
-                helper.assertTrue(WorkerAttachmentControl.isOwnedBy(
-                                reloaded, delayedCrankPos, delayedCrankUuid),
-                        "live crank recovery must preserve exact attachment ownership");
-                helper.assertTrue(WorkerActivityControl.isOwnedBy(
-                                reloaded, delayedCrankPos, delayedCrankUuid),
-                        "live crank recovery must preserve exact AI-suppression ownership");
-                helper.assertTrue(reloaded.isNoAi(),
-                        "a still-live crank must keep the worker AI suppressed");
+                    // This is the next production queue pass after the crank becomes
+                    // inspectable. It must recognize the exact live crank and finish.
+                    WorkerRecoveryQueue.process(level);
 
-                WorkerActivityControl.releaseFromMarker(reloaded);
-                WorkerAttachmentControl.clearIfOwnedBy(reloaded, delayedCrankPos, delayedCrankUuid);
-                level.destroyBlock(delayedCrankPos, false);
-                helper.succeed();
-            });
-        });
+                    helper.assertFalse(WorkerRecoveryQueue.isPendingForTesting(workerUuid),
+                            "recovery must complete after the matching live crank becomes inspectable");
+                    helper.assertTrue(level.getBlockEntity(delayedCrankPos) == delayedCrank,
+                            "delayed crank block entity must remain live while recovery completes");
+                    helper.assertTrue(delayedCrank.engine().isAssignedWorker(workerUuid),
+                            "matching delayed crank must still claim the reloaded worker");
+                    helper.assertTrue(WorkerAttachmentControl.isOwnedBy(
+                                    reloaded, delayedCrankPos, delayedCrankUuid),
+                            "live crank recovery must preserve exact attachment ownership");
+                    helper.assertTrue(WorkerActivityControl.isOwnedBy(
+                                    reloaded, delayedCrankPos, delayedCrankUuid),
+                            "live crank recovery must preserve exact AI-suppression ownership");
+                    helper.assertTrue(reloaded.isNoAi(),
+                            "a still-live crank must keep the worker AI suppressed");
+
+                    WorkerActivityControl.releaseFromMarker(reloaded);
+                    WorkerAttachmentControl.clearIfOwnedBy(reloaded, delayedCrankPos, delayedCrankUuid);
+                    level.destroyBlock(delayedCrankPos, false);
+                })
+                .thenSucceed();
     }
 
-    @GameTest(template = "empty", timeoutTicks = 20)
+    @GameTest(template = "empty", timeoutTicks = 20, batch = "chp_recovery_timeout_noai")
     public static void recoveryTimeoutRestoresOwnedNoAiWithoutLoadingOldCrank(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
         Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(2, 1, 2));
@@ -211,23 +235,31 @@ public final class HorsePowerLifecycleGameTests {
         helper.assertTrue(changedNoAi && horse.isNoAi(),
                 "fixture must create CHP-owned NoAI false->true state");
         WorkerRecoveryQueue.enqueue(horse, level);
+        int enqueuedTickCount = horse.tickCount;
 
-        helper.succeedWhen(() -> {
-            WorkerRecoveryQueue.expireForTesting(horse.getUUID());
-            WorkerRecoveryQueue.process(level);
+        helper.startSequence()
+                .thenExecute(() -> {
+                    helper.assertTrue(level.getEntity(horse.getUUID()) == horse,
+                            "queued worker must be visible in the level UUID index");
+                    // These tests exercise timeout semantics, not vanilla entity ticking.
+                    // Advance only the queue eligibility sentinel deterministically.
+                    horse.tickCount = enqueuedTickCount + 1;
+                    WorkerRecoveryQueue.expireForTesting(horse.getUUID());
+                    WorkerRecoveryQueue.process(level);
 
-            helper.assertFalse(level.hasChunkAt(oldCrankPos),
-                    "bounded recovery must not force-load the old crank chunk");
-            helper.assertFalse(WorkerActivityControl.hasMarker(horse),
-                    "timed-out recovery must clear the CHP activity marker");
-            helper.assertFalse(horse.isNoAi(),
-                    "timed-out recovery must restore CHP-owned NoAI false->true state");
-            helper.assertFalse(WorkerRecoveryQueue.isPendingForTesting(horse.getUUID()),
-                    "timed-out recovery must terminate instead of remaining pending forever");
-        });
+                    helper.assertFalse(level.hasChunkAt(oldCrankPos),
+                            "bounded recovery must not force-load the old crank chunk");
+                    helper.assertFalse(WorkerActivityControl.hasMarker(horse),
+                            "timed-out recovery must clear the CHP activity marker");
+                    helper.assertFalse(horse.isNoAi(),
+                            "timed-out recovery must restore CHP-owned NoAI false->true state");
+                    helper.assertFalse(WorkerRecoveryQueue.isPendingForTesting(horse.getUUID()),
+                            "timed-out recovery must terminate instead of remaining pending forever");
+                })
+                .thenSucceed();
     }
 
-    @GameTest(template = "empty", timeoutTicks = 20)
+    @GameTest(template = "empty", timeoutTicks = 20, batch = "chp_recovery_timeout_reload_age")
     public static void recoveryTimeoutAgeSurvivesWorkerReload(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
         Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(2, 1, 2));
@@ -245,26 +277,46 @@ public final class HorsePowerLifecycleGameTests {
         UUID workerUuid = horse.getUUID();
         horse.discard();
 
-        Horse reloaded = EntityType.HORSE.create(level);
-        helper.assertTrue(reloaded != null, "horse must be creatable for recovery reload regression");
-        reloaded.load(savedWorker);
-        level.addFreshEntity(reloaded);
-        WorkerRecoveryQueue.enqueue(reloaded, level);
-        helper.assertTrue(WorkerRecoveryQueue.recoveryAgeForTesting(reloaded, level.getGameTime()) >= 600L,
-                "recovery age must survive worker unload/reload instead of resetting to zero");
-        WorkerRecoveryQueue.advanceRecoveryAgeForTesting(reloaded, 600L);
+        Horse[] reloadedHolder = new Horse[1];
+        int[] enqueuedTickCount = new int[1];
 
-        helper.succeedWhen(() -> {
-            WorkerRecoveryQueue.process(level);
-            helper.assertFalse(level.hasChunkAt(oldCrankPos),
-                    "reload-spanning timeout must not force-load the old crank chunk");
-            helper.assertFalse(WorkerActivityControl.hasMarker(reloaded),
-                    "600 + reload + 600 ticks must expire the CHP activity marker");
-            helper.assertFalse(reloaded.isNoAi(),
-                    "reload-spanning timeout must restore CHP-owned NoAI");
-            helper.assertFalse(WorkerRecoveryQueue.isPendingForTesting(workerUuid),
-                    "reload-spanning timeout must terminate recovery");
-        });
+        helper.startSequence()
+                .thenWaitUntil(() -> helper.assertTrue(level.getEntity(workerUuid) == null,
+                        "discarded worker must leave the level UUID index before recovery reload"))
+                .thenExecute(() -> {
+                    Horse reloaded = EntityType.HORSE.create(level);
+                    helper.assertTrue(reloaded != null,
+                            "horse must be creatable for recovery reload regression");
+                    reloaded.load(savedWorker);
+                    helper.assertTrue(level.addFreshEntity(reloaded),
+                            "reloaded worker must register for recovery timeout regression");
+                    reloadedHolder[0] = reloaded;
+                    WorkerRecoveryQueue.enqueue(reloaded, level);
+                    enqueuedTickCount[0] = reloaded.tickCount;
+                    helper.assertTrue(
+                            WorkerRecoveryQueue.recoveryAgeForTesting(reloaded, level.getGameTime()) >= 600L,
+                            "recovery age must survive worker unload/reload instead of resetting to zero");
+                    WorkerRecoveryQueue.advanceRecoveryAgeForTesting(reloaded, 600L);
+                })
+                .thenExecute(() -> {
+                    Horse reloaded = reloadedHolder[0];
+                    helper.assertTrue(reloaded != null, "reloaded worker fixture must be initialized");
+                    helper.assertTrue(level.getEntity(workerUuid) == reloaded,
+                            "reloaded worker must be visible in the level UUID index");
+                    // Recovery age is the subject here; advance the queue's one-tick
+                    // eligibility sentinel directly instead of depending on Mob ticking.
+                    reloaded.tickCount = enqueuedTickCount[0] + 1;
+                    WorkerRecoveryQueue.process(level);
+                    helper.assertFalse(level.hasChunkAt(oldCrankPos),
+                            "reload-spanning timeout must not force-load the old crank chunk");
+                    helper.assertFalse(WorkerActivityControl.hasMarker(reloaded),
+                            "600 + reload + 600 ticks must expire the CHP activity marker");
+                    helper.assertFalse(reloaded.isNoAi(),
+                            "reload-spanning timeout must restore CHP-owned NoAI");
+                    helper.assertFalse(WorkerRecoveryQueue.isPendingForTesting(workerUuid),
+                            "reload-spanning timeout must terminate recovery");
+                })
+                .thenSucceed();
     }
 
     @GameTest(template = "empty", timeoutTicks = 20)
@@ -293,7 +345,7 @@ public final class HorsePowerLifecycleGameTests {
         helper.succeed();
     }
 
-    @GameTest(template = "empty", timeoutTicks = 20)
+    @GameTest(template = "empty", timeoutTicks = 20, batch = "chp_recovery_supersede")
     public static void newAttachmentSupersedesDurableDetachIntent(GameTestHelper helper) {
         BlockPos localCrankPos = new BlockPos(0, 1, 0);
         helper.setBlock(localCrankPos, BlockRegister.HORSE_CRANK.get());
