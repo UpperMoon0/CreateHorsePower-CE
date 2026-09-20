@@ -158,7 +158,8 @@ public final class HorsePowerLifecycleGameTests {
                     helper.assertTrue(level.getEntity(workerUuid) == reloaded,
                             "reloaded worker must own its UUID before recovery starts");
                     reloadedHolder[0] = reloaded;
-                    WorkerRecoveryQueue.enqueue(reloaded, level);
+                    helper.assertTrue(WorkerRecoveryQueue.isPendingForTesting(workerUuid),
+                            "EntityJoinLevel must queue the marked worker without a test-only enqueue");
 
                     // GameTest fixture mobs are not guaranteed to receive a scheduled
                     // Mob tick. Cross only the production queue's post-join eligibility
@@ -219,6 +220,92 @@ public final class HorsePowerLifecycleGameTests {
                     WorkerActivityControl.releaseFromMarker(reloaded);
                     WorkerAttachmentControl.clearIfOwnedBy(reloaded, delayedCrankPos, delayedCrankUuid);
                     level.destroyBlock(delayedCrankPos, false);
+                })
+                .thenSucceed();
+    }
+
+    /**
+     * Regression for #4's complementary orphan path: the worker rejoins before
+     * its recorded crank chunk, recovery defers without force-loading it, then
+     * the chunk becomes inspectable with no matching owner. The very next normal
+     * recovery pass must consume stale ownership immediately rather than waiting
+     * for the bounded 1200-tick timeout.
+     */
+    @GameTest(template = "empty", timeoutTicks = 80, batch = "chp_worker_first_orphan_recovery")
+    public static void workerFirstRecoveryConsumesOrphanWhenDelayedChunkLoads(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(2, 1, 2));
+        BlockPos delayedCrankPos = horse.blockPosition().offset(1536, 0, 1536);
+        UUID delayedCrankUuid = UUID.randomUUID();
+
+        helper.assertFalse(level.hasChunkAt(delayedCrankPos),
+                "delayed orphan crank chunk must begin unloaded");
+        helper.assertTrue(WorkerActivityControl.acquire(horse, delayedCrankPos, delayedCrankUuid),
+                "fixture must create CHP-owned NoAI suppression");
+        WorkerAttachmentControl.markAttached(horse, delayedCrankPos, delayedCrankUuid);
+
+        CompoundTag savedWorker = new CompoundTag();
+        horse.saveWithoutId(savedWorker);
+        UUID workerUuid = horse.getUUID();
+        horse.discard();
+
+        Horse[] reloadedHolder = new Horse[1];
+        helper.startSequence()
+                .thenWaitUntil(() -> helper.assertTrue(level.getEntity(workerUuid) == null,
+                        "discarded worker must leave the level UUID index before orphan reload"))
+                .thenExecute(() -> {
+                    Horse reloaded = EntityType.HORSE.create(level);
+                    helper.assertTrue(reloaded != null,
+                            "worker must be creatable for worker-first orphan regression");
+                    reloaded.load(savedWorker);
+                    helper.assertTrue(level.addFreshEntity(reloaded),
+                            "reloaded worker must register before the delayed orphan chunk");
+                    helper.assertTrue(level.getEntity(workerUuid) == reloaded,
+                            "reloaded worker must own its UUID before orphan recovery starts");
+                    reloadedHolder[0] = reloaded;
+                    helper.assertTrue(WorkerRecoveryQueue.isPendingForTesting(workerUuid),
+                            "EntityJoinLevel must queue the marked worker without a test-only enqueue");
+
+                    // Cross only the queue's post-join eligibility sentinel; no
+                    // timeout helper is used anywhere in this regression.
+                    reloaded.tickCount++;
+                    WorkerRecoveryQueue.process(level);
+
+                    helper.assertFalse(level.hasChunkAt(delayedCrankPos),
+                            "deferred orphan recovery must not force-load the recorded crank chunk");
+                    helper.assertTrue(WorkerRecoveryQueue.isPendingForTesting(workerUuid),
+                            "orphan recovery must remain queued while the crank chunk is unavailable");
+                    helper.assertTrue(WorkerAttachmentControl.isOwnedBy(
+                                    reloaded, delayedCrankPos, delayedCrankUuid),
+                            "deferred orphan recovery must preserve attachment ownership");
+                    helper.assertTrue(WorkerActivityControl.isOwnedBy(
+                                    reloaded, delayedCrankPos, delayedCrankUuid),
+                            "deferred orphan recovery must preserve AI-suppression ownership");
+                    helper.assertTrue(reloaded.isNoAi(),
+                            "deferred orphan recovery must keep CHP-owned NoAI active");
+
+                    // The fixture, not recovery, makes the old owner location
+                    // inspectable. Deliberately do not recreate the crank.
+                    level.getChunk(delayedCrankPos.getX() >> 4, delayedCrankPos.getZ() >> 4);
+                    helper.assertTrue(level.hasChunkAt(delayedCrankPos),
+                            "fixture must explicitly load the delayed orphan chunk");
+                    helper.assertTrue(level.getBlockEntity(delayedCrankPos) == null,
+                            "delayed owner must still be absent when the chunk becomes inspectable");
+                    helper.assertTrue(
+                            WorkerRecoveryQueue.recoveryAgeForTesting(reloaded, level.getGameTime())
+                                    < WorkerRecoveryQueue.RECOVERY_TIMEOUT_TICKS,
+                            "fixture must still be below the timeout boundary before immediate orphan recovery");
+
+                    WorkerRecoveryQueue.process(level);
+
+                    helper.assertFalse(WorkerRecoveryQueue.isPendingForTesting(workerUuid),
+                            "inspectable missing owner must complete recovery on the next normal pass");
+                    helper.assertFalse(WorkerAttachmentControl.hasMarker(reloaded),
+                            "immediate orphan recovery must clear stale attachment ownership");
+                    helper.assertFalse(WorkerActivityControl.hasMarker(reloaded),
+                            "immediate orphan recovery must clear stale AI-suppression ownership");
+                    helper.assertFalse(reloaded.isNoAi(),
+                            "immediate orphan recovery must restore the original NoAI=false state");
                 })
                 .thenSucceed();
     }
