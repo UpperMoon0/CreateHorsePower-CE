@@ -44,7 +44,7 @@ jobs:
       # Minecraft toolchain/bootstrap. Configuration-on-demand keeps this root-
       # only file comparison from configuring Forge/NeoForge subprojects.
       - name: Verify shared source and resource parity
-        run: ./gradlew verifySharedSources verifySharedResources --configure-on-demand --stacktrace --no-daemon
+        run: ./gradlew verifySharedSources verifySharedResources verifyChangelog --configure-on-demand --stacktrace --no-daemon
 
   platform-runtime:
     name: ${{ matrix.name }} build + GameTests
