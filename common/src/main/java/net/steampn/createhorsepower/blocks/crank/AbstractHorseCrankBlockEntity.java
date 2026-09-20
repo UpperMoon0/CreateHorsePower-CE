@@ -48,12 +48,18 @@ public abstract class AbstractHorseCrankBlockEntity extends GeneratingKineticBlo
 
     @Override
     public BlockState blockState() {
-        return this.getBlockState();
+        // BlockEntity#getBlockState() can lag behind a same-block property
+        // update performed through Level#setBlock(). Worker attachment toggles
+        // HAS_WORKER that way, and Create's kinetic rebuilds can widen the
+        // window where the BE cache is stale. Gameplay reconciliation must use
+        // the authoritative world state or it can erase a perfectly valid
+        // worker assignment on the very next tick.
+        return this.level != null ? this.level.getBlockState(this.worldPosition) : this.getBlockState();
     }
 
     @Override
     public boolean hasWorkerProperty() {
-        BlockState state = getBlockState();
+        BlockState state = blockState();
         return state.hasProperty(CrankProperties.HAS_WORKER) && state.getValue(CrankProperties.HAS_WORKER);
     }
 
