@@ -49,7 +49,8 @@ public final class ForgeRecoveryEdgeGameTests {
         WorkerRecoveryQueue.enqueue(horse, level);
         WorkerRecoveryQueue.expireForTesting(horse.getUUID());
 
-        helper.runAfterDelay(3, () -> {
+        helper.succeedWhen(() -> {
+            WorkerRecoveryQueue.process(level);
             helper.assertFalse(WorkerAttachmentControl.hasMarker(horse),
                     "timed-out orphan recovery must clear stale attachment ownership");
             helper.assertFalse(horse.isLeashed(),
@@ -64,7 +65,6 @@ public final class ForgeRecoveryEdgeGameTests {
             ).size();
             helper.assertTrue(droppedLeads == 0,
                     "a stale CHP marker without serialized vanilla leash data must not manufacture a lead");
-            helper.succeed();
         });
     }
 
@@ -236,7 +236,7 @@ public final class ForgeRecoveryEdgeGameTests {
         WorkerRecoveryQueue.enqueue(horse, level);
         WorkerRecoveryQueue.expireForTesting(horse.getUUID());
 
-        helper.runAfterDelay(3, () -> {
+        helper.succeedWhen(() -> {
             WorkerRecoveryQueue.process(level);
             helper.assertFalse(WorkerAttachmentControl.hasMarker(horse),
                     "timed-out stale attachment marker must be removed");
@@ -253,7 +253,6 @@ public final class ForgeRecoveryEdgeGameTests {
             WorkerActivityControl.release(horse, true);
             helper.assertFalse(horse.isNoAi(),
                     "explicit current-owner cleanup must still restore the original AI state");
-            helper.succeed();
         });
     }
 
@@ -337,7 +336,10 @@ public final class ForgeRecoveryEdgeGameTests {
                 new DeferredDetachStore.Entry(staleCrankPos, staleCrankUuid, false));
         WorkerRecoveryQueue.enqueue(reloaded, level);
 
-        helper.runAfterDelay(3, () -> {
+        Horse[] restoredHolder = new Horse[1];
+        helper.succeedWhen(() -> {
+            WorkerRecoveryQueue.process(level);
+
             CompoundTag afterRecovery = new CompoundTag();
             reloaded.saveWithoutId(afterRecovery);
             helper.assertFalse(WorkerAttachmentControl.hasMarker(reloaded),
@@ -346,17 +348,17 @@ public final class ForgeRecoveryEdgeGameTests {
                             && afterRecovery.getCompound("Leash").hasUUID("UUID"),
                     "unresolved foreign entity UUID leash must survive CHP recovery");
 
-            Horse restoredHolder = EntityType.HORSE.create(level);
-            helper.assertTrue(restoredHolder != null, "foreign holder must be recreatable");
-            restoredHolder.load(savedHolder);
-            level.addFreshEntity(restoredHolder);
+            if (restoredHolder[0] == null) {
+                Horse holder = EntityType.HORSE.create(level);
+                helper.assertTrue(holder != null, "foreign holder must be recreatable");
+                holder.load(savedHolder);
+                level.addFreshEntity(holder);
+                restoredHolder[0] = holder;
+            }
 
-            helper.runAfterDelay(6, () -> {
-                helper.assertTrue(reloaded.getLeashHolder() == restoredHolder,
-                        "vanilla must still be able to resolve the preserved foreign UUID leash");
-                reloaded.dropLeash(true, false);
-                helper.succeed();
-            });
+            helper.assertTrue(reloaded.getLeashHolder() == restoredHolder[0],
+                    "vanilla must still be able to resolve the preserved foreign UUID leash");
+            reloaded.dropLeash(true, false);
         });
     }
 

@@ -893,6 +893,18 @@ public class HorseCrankEngine {
             cachedWorkerMob = mob;
             return mob;
         }
+
+        // A freshly-added worker can be valid and attached before the level's
+        // UUID index exposes it (observed on NeoForge GameTest servers). The
+        // cached reference is safe only while it is still the same live entity
+        // in this level; unloaded/discarded cached entities remain rejected.
+        Mob cached = cachedWorkerMob;
+        if (cached != null
+                && cached.level() == serverLevel
+                && !cached.isRemoved()
+                && aiSuppressedWorkerUuid.equals(cached.getUUID())) {
+            return cached;
+        }
         return null;
     }
 
