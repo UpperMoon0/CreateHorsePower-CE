@@ -106,6 +106,94 @@ public final class HorsePowerLifecycleGameTests {
         });
     }
 
+    /**
+     * Regression for #4: the worker can rejoin the level before the chunk that
+     * contains its still-live crank. Recovery must remain queued without
+     * force-loading that chunk, then recognize the original crank once its
+     * chunk becomes available instead of clearing valid attachment/activity
+     * ownership or restoring AI.
+     */
+    @GameTest(template = "empty", timeoutTicks = 80, batch = "chp_worker_first_recovery")
+    public static void workerFirstRecoveryRetriesWhenLiveCrankChunkLoads(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(2, 1, 2));
+        BlockPos delayedCrankPos = horse.blockPosition().offset(1024, 0, 1024);
+        UUID delayedCrankUuid = UUID.randomUUID();
+
+        helper.assertFalse(level.hasChunkAt(delayedCrankPos),
+                "delayed crank chunk must begin unloaded");
+        helper.assertTrue(WorkerActivityControl.acquire(horse, delayedCrankPos, delayedCrankUuid),
+                "fixture must create CHP-owned NoAI suppression");
+        WorkerAttachmentControl.markAttached(horse, delayedCrankPos, delayedCrankUuid);
+
+        CompoundTag savedWorker = new CompoundTag();
+        horse.saveWithoutId(savedWorker);
+        UUID workerUuid = horse.getUUID();
+        horse.discard();
+
+        Horse reloaded = EntityType.HORSE.create(level);
+        helper.assertTrue(reloaded != null, "worker must be creatable for worker-first reload regression");
+        reloaded.load(savedWorker);
+        helper.assertTrue(level.addFreshEntity(reloaded),
+                "reloaded worker must register before the delayed crank chunk");
+        WorkerRecoveryQueue.enqueue(reloaded, level);
+
+        helper.runAfterDelay(3, () -> {
+            WorkerRecoveryQueue.process(level);
+
+            helper.assertFalse(level.hasChunkAt(delayedCrankPos),
+                    "deferred recovery must not force-load the live crank chunk");
+            helper.assertTrue(WorkerRecoveryQueue.isPendingForTesting(workerUuid),
+                    "worker-first recovery must remain queued while the crank chunk is unavailable");
+            helper.assertTrue(WorkerAttachmentControl.isOwnedBy(
+                            reloaded, delayedCrankPos, delayedCrankUuid),
+                    "deferred recovery must preserve the valid attachment marker");
+            helper.assertTrue(WorkerActivityControl.isOwnedBy(
+                            reloaded, delayedCrankPos, delayedCrankUuid),
+                    "deferred recovery must preserve the valid AI-suppression marker");
+            helper.assertTrue(reloaded.isNoAi(),
+                    "deferred recovery must keep CHP-owned AI suppression active");
+
+            // Simulate the neighboring crank chunk arriving later. getChunk()
+            // is intentional here: the assertion above proves recovery itself
+            // did not load it.
+            level.getChunk(delayedCrankPos.getX() >> 4, delayedCrankPos.getZ() >> 4);
+            helper.assertTrue(level.hasChunkAt(delayedCrankPos),
+                    "fixture must explicitly load the delayed crank chunk");
+            level.setBlock(delayedCrankPos,
+                    BlockRegister.HORSE_CRANK.get().defaultBlockState()
+                            .setValue(CrankProperties.HAS_WORKER, true),
+                    3);
+            BlockEntity delayedBlockEntity = level.getBlockEntity(delayedCrankPos);
+            helper.assertTrue(delayedBlockEntity instanceof AbstractHorseCrankBlockEntity,
+                    "delayed chunk must expose the original horse crank block entity");
+            AbstractHorseCrankBlockEntity delayedCrank =
+                    (AbstractHorseCrankBlockEntity) delayedBlockEntity;
+            delayedCrank.engine().setCrankInstanceUuidForTesting(delayedCrankUuid);
+            delayedCrank.engine().setWorkerUuidForTesting(workerUuid);
+
+            WorkerRecoveryQueue.process(level);
+
+            helper.assertFalse(WorkerRecoveryQueue.isPendingForTesting(workerUuid),
+                    "recovery must complete once the matching live crank becomes inspectable");
+            helper.assertTrue(delayedCrank.engine().isAssignedWorker(workerUuid),
+                    "matching delayed crank must still claim the reloaded worker");
+            helper.assertTrue(WorkerAttachmentControl.isOwnedBy(
+                            reloaded, delayedCrankPos, delayedCrankUuid),
+                    "live crank recovery must preserve exact attachment ownership");
+            helper.assertTrue(WorkerActivityControl.isOwnedBy(
+                            reloaded, delayedCrankPos, delayedCrankUuid),
+                    "live crank recovery must preserve exact AI-suppression ownership");
+            helper.assertTrue(reloaded.isNoAi(),
+                    "a still-live crank must keep the worker AI suppressed");
+
+            WorkerActivityControl.releaseFromMarker(reloaded);
+            WorkerAttachmentControl.clearIfOwnedBy(reloaded, delayedCrankPos, delayedCrankUuid);
+            level.destroyBlock(delayedCrankPos, false);
+            helper.succeed();
+        });
+    }
+
     @GameTest(template = "empty", timeoutTicks = 20)
     public static void recoveryTimeoutRestoresOwnedNoAiWithoutLoadingOldCrank(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
