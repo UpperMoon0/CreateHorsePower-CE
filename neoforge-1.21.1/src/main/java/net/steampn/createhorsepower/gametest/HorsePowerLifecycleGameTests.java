@@ -341,20 +341,26 @@ public final class HorsePowerLifecycleGameTests {
      * trusted that stale BE cache and immediately cleared workerUuid even though
      * the world state, leash, and persistent ownership marker were all valid.
      */
-    @GameTest(template = "empty", timeoutTicks = 80)
+    @GameTest(template = "kinetic_network", timeoutTicks = 80, batch = "chp_stale_worker_state")
     public static void attachmentSurvivesStaleBlockEntityWorkerState(GameTestHelper helper) {
-        BlockPos localCrankPos = new BlockPos(2, 2, 2);
+        BlockPos localCrankPos = new BlockPos(4, 4, 4);
         helper.setBlock(localCrankPos, BlockRegister.HORSE_CRANK.get());
+
+        // Keep the focused stale-state regression physically deterministic too:
+        // the path exists before the horse spawns, every tile is supported, and
+        // the whole fixture stays inside the declared GameTest structure.
+        for (BlockPos offset : HorseCrankEngine.generateOffsetsForRadius(HorseCrankEngine.DEFAULT_RADIUS)) {
+            BlockPos localPathPos = localCrankPos.offset(offset);
+            helper.setBlock(localPathPos.below(), Blocks.BEDROCK);
+            helper.setBlock(localPathPos, Blocks.COBBLESTONE);
+        }
+
         ServerLevel level = helper.getLevel();
-        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(3, 2, 2));
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(7, 4, 4));
 
         helper.runAfterDelay(5, () -> {
             AbstractHorseCrankBlockEntity crank = requireCrank(helper, localCrankPos);
             HorseCrankEngine engine = crank.engine();
-
-            for (BlockPos offset : HorseCrankEngine.generateOffsetsForRadius(HorseCrankEngine.DEFAULT_RADIUS)) {
-                level.setBlock(crank.getBlockPos().offset(offset), Blocks.GRAVEL.defaultBlockState(), 3);
-            }
 
             LeashFenceKnotEntity knot =
                     LeashFenceKnotEntity.getOrCreateKnot(level, crank.getBlockPos());
@@ -378,7 +384,7 @@ public final class HorsePowerLifecycleGameTests {
                 helper.assertTrue(engine.isWorkerEligible(),
                         "valid horse must remain eligible after reconciliation");
                 helper.assertTrue(engine.hasValidWorkingBlocks,
-                        "absolute gravel fixture must provide a valid worker path");
+                        "supported cobblestone fixture must provide a valid worker path");
                 helper.assertTrue(engine.isWorking(),
                         "crank must continue working after attachment reconciliation");
                 helper.assertTrue(Math.abs(engine.generatedSpeed()) > 0.0F,
