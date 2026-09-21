@@ -15,6 +15,7 @@ import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.Blocks;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 import net.steampn.createhorsepower.blocks.crank.AbstractHorseCrankBlockEntity;
@@ -23,7 +24,9 @@ import net.steampn.createhorsepower.blocks.crank.WorkerActivityControl;
 import net.steampn.createhorsepower.blocks.crank.WorkerAttachmentControl;
 import net.steampn.createhorsepower.blocks.crank.WorkerOrbitMovement;
 import net.steampn.createhorsepower.blocks.crank.WorkerRecoveryQueue;
+import net.steampn.createhorsepower.config.Config;
 import net.steampn.createhorsepower.content.stats.WorkerResolver;
+import net.steampn.createhorsepower.content.stats.WorkerStats;
 import net.steampn.createhorsepower.registry.BlockRegister;
 import net.steampn.createhorsepower.registry.TileEntityRegister;
 import net.steampn.createhorsepower.utils.CHPUtils;
@@ -629,6 +632,75 @@ public final class HorsePowerGameTests {
         helper.assertFalse(engine.ownsWorkerAiSuppressionForTesting(),
                 "Engine must not own any suppression after detaching B");
         helper.succeed();
+    }
+
+
+    /**
+     * Production-shape regression for TFG: a 16 RPM / 32 SU worker on the
+     * default Great ice path keeps the 2x RPM path bonus while path stress
+     * scaling is disabled, leaving final stress capacity at exactly 32 SU.
+     *
+     * The worker profile is injected directly so Forge's live config file
+     * watcher cannot race the fixture's base output values. The path toggle,
+     * block resolution, evaluator, crank update, and serialized output are
+     * still exercised through the real runtime path.
+     */
+    @GameTest(template = "empty")
+    public static void disabledPathStressScalingKeeps32SuWhileGreatPathBoostsRpm(GameTestHelper helper) {
+        boolean oldStressScaling = Config.ENABLE_PATH_STRESS_SCALING.get();
+
+        try {
+            Config.ENABLE_PATH_STRESS_SCALING.set(false);
+
+            BlockPos localCrankPos = new BlockPos(4, 2, 4);
+            BlockPos[] offsets = HorseCrankEngine.generateOffsetsForRadius(2.5f);
+            for (BlockPos offset : offsets) {
+                helper.setBlock(localCrankPos.offset(offset), Blocks.ICE);
+            }
+
+            helper.setBlock(localCrankPos, BlockRegister.HORSE_CRANK.get());
+            AbstractHorseCrankBlockEntity crank = requireCrank(helper, localCrankPos);
+            HorseCrankEngine engine = crank.engine();
+            Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(6, 2, 4));
+
+            WorkerStats fixtureStats = new WorkerStats(
+                    16.0f, 32.0f, 2.5f,
+                    0.0f, WorkerStats.DEFAULT_SPEED_REF,
+                    0.0f, WorkerStats.DEFAULT_HEALTH_REF,
+                    false, false
+            );
+            WorkerResolver.ResolvedWorker fixture = new WorkerResolver.ResolvedWorker(
+                    fixtureStats, 16.0f, 32.0f, 0.0f, 0.0f, true);
+            engine.attachWorker(horse, fixture);
+
+            CompoundTag state = new CompoundTag();
+            engine.write(state, false);
+
+            helper.assertTrue(state.getBoolean("HasValidWorkingBlocks"),
+                    "Great path ring must be valid for the attached horse");
+            assertNear(helper, 16.0f, state.getFloat("EffectiveBaseRpm"),
+                    "fixture base RPM must reach the real crank engine");
+            assertNear(helper, 32.0f, state.getFloat("EffectiveBaseStress"),
+                    "fixture base stress must reach the real crank engine");
+            assertNear(helper, 2.0f, state.getFloat("RpmModifier"),
+                    "Great path must keep its 2x RPM multiplier");
+            assertNear(helper, 1.0f, state.getFloat("PathStressModifier"),
+                    "disabled path stress scaling must leave crank path stress neutral");
+
+            float finalStress = state.getFloat("EffectiveBaseStress") * state.getFloat("PathStressModifier");
+            assertNear(helper, 32.0f, finalStress,
+                    "32 SU base must remain exactly 32 SU on a Great path");
+        } finally {
+            Config.ENABLE_PATH_STRESS_SCALING.set(oldStressScaling);
+        }
+
+        helper.succeed();
+    }
+
+
+    private static void assertNear(GameTestHelper helper, float expected, float actual, String message) {
+        helper.assertTrue(Math.abs(expected - actual) < 1.0e-4f,
+                message + " (expected " + expected + ", got " + actual + ")");
     }
 
     private static AbstractHorseCrankBlockEntity requireCrank(GameTestHelper helper, BlockPos pos) {

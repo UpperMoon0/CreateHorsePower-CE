@@ -41,7 +41,13 @@ public interface ScriptHooks {
         return new float[]{1.0f, 1.0f};
     }
 
+    /**
+     * Returns the final absolute path speed/stress multipliers after script
+     * mutation. Unlike outputCalculated, these values are not multiplicative
+     * factors: the event starts from the evaluator result and scripts may
+     * replace those values.
+     */
     default float[] firePathEvaluated(BlockPos pos, Level level, PathEvaluator.Result result) {
-        return new float[]{1.0f, 1.0f};
+        return new float[]{result.speedMultiplier(), result.stressMultiplier()};
     }
 }

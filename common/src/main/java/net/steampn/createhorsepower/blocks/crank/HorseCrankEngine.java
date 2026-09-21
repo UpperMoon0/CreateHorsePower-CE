@@ -1065,9 +1065,12 @@ public class HorseCrankEngine {
         float speedMult = evalResult.speedMultiplier();
         float stressMult = evalResult.stressMultiplier();
 
-        float[] scriptMods = CHPApi.scripts().firePathEvaluated(host.pos(), level, evalResult);
-        speedMult *= scriptMods[0];
-        stressMult *= scriptMods[1];
+        // pathEvaluated exposes the evaluated multipliers as mutable absolute
+        // values. The hook returns their final values; multiplying them again
+        // would square the path effect on NeoForge even when no script listens.
+        float[] scriptValues = CHPApi.scripts().firePathEvaluated(host.pos(), level, evalResult);
+        speedMult = scriptValues[0];
+        stressMult = scriptValues[1];
 
         boolean valid = evalResult.isValid();
         int invalidCount = evalResult.invalidBlocks();
