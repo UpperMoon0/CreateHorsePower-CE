@@ -87,6 +87,6 @@ public final class OptionalIntegrations implements ScriptHooks {
         if (KUBE_JS_LOADED) {
             return KubeJSCompat.firePathEvaluated(pos, level, result);
         }
-        return new float[]{1.0f, 1.0f};
+        return new float[]{result.speedMultiplier(), result.stressMultiplier()};
     }
 }
