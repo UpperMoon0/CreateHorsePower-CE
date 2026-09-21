@@ -30,7 +30,46 @@ public class PathEvaluator {
             return Result.INVALID;
         }
 
-        int total = offsets.length;
+        PathStats[] resolvedStats = new PathStats[offsets.length];
+        for (int i = 0; i < offsets.length; i++) {
+            BlockPos targetPos = centerPos.offset(offsets[i]);
+            if (!level.hasChunkAt(targetPos)) {
+                continue;
+            }
+            resolvedStats[i] = getPathStats(level.getBlockState(targetPos).getBlock()).orElse(null);
+        }
+
+        return evaluateResolvedPathStats(
+                resolvedStats,
+                CHPApi.config().pathEvaluationMode(),
+                CHPApi.config().minimumPathCoverage(),
+                (float) CHPApi.config().poorMultiplier(),
+                (float) CHPApi.config().normalMultiplier(),
+                (float) CHPApi.config().greatMultiplier(),
+                CHPApi.config().enablePathStressScaling()
+        );
+    }
+
+    /**
+     * Aggregates already-resolved path profiles. Keeping the arithmetic here
+     * makes evaluation-mode and policy behavior testable without mutating a
+     * live loader config file; the world-facing evaluator above remains the
+     * sole owner of block/profile resolution and runtime config lookup.
+     */
+    static Result evaluateResolvedPathStats(
+            PathStats[] resolvedStats,
+            PathEvaluationMode mode,
+            double minimumCoverage,
+            float poorMultiplier,
+            float normalMultiplier,
+            float greatMultiplier,
+            boolean enableStressScaling
+    ) {
+        if (resolvedStats == null || resolvedStats.length == 0) {
+            return Result.INVALID;
+        }
+
+        int total = resolvedStats.length;
         int validCount = 0;
         int invalidCount = 0;
 
@@ -42,47 +81,37 @@ public class PathEvaluator {
         boolean hasPoor = false;
         boolean allGreat = true;
 
-        for (BlockPos offset : offsets) {
-            BlockPos targetPos = centerPos.offset(offset);
-            if (!level.hasChunkAt(targetPos)) {
+        for (PathStats stats : resolvedStats) {
+            if (stats == null) {
                 invalidCount++;
                 allGreat = false;
                 continue;
             }
-            BlockState state = level.getBlockState(targetPos);
-            Optional<PathStats> statsOpt = getPathStats(state.getBlock());
 
-            if (statsOpt.isPresent()) {
-                PathStats stats = statsOpt.get();
-                validCount++;
-                totalSpeedMultiplier += stats.speedMultiplier();
-                totalStressMultiplier += stats.stressMultiplier();
+            validCount++;
+            totalSpeedMultiplier += stats.speedMultiplier();
+            totalStressMultiplier += stats.stressMultiplier();
 
-                if (stats.speedMultiplier() < minSpeedMultiplier) {
-                    minSpeedMultiplier = stats.speedMultiplier();
-                }
-                if (stats.stressMultiplier() < minStressMultiplier) {
-                    minStressMultiplier = stats.stressMultiplier();
-                }
+            if (stats.speedMultiplier() < minSpeedMultiplier) {
+                minSpeedMultiplier = stats.speedMultiplier();
+            }
+            if (stats.stressMultiplier() < minStressMultiplier) {
+                minStressMultiplier = stats.stressMultiplier();
+            }
 
-                if (stats.speedMultiplier() < 1.0f) {
-                    hasPoor = true;
-                }
-                if (stats.speedMultiplier() < 1.2f) {
-                    allGreat = false;
-                }
-            } else {
-                invalidCount++;
+            if (stats.speedMultiplier() < 1.0f) {
+                hasPoor = true;
+            }
+            if (stats.speedMultiplier() < 1.2f) {
                 allGreat = false;
             }
         }
 
         double coverage = (double) validCount / (double) total;
-        if (coverage < CHPApi.config().minimumPathCoverage() || validCount == 0) {
+        if (coverage < minimumCoverage || validCount == 0) {
             return new Result(false, 0.0f, 0.0f, validCount, invalidCount, total, 0);
         }
 
-        var mode = CHPApi.config().pathEvaluationMode();
         float finalSpeed;
         float finalStress;
 
@@ -93,13 +122,13 @@ public class PathEvaluator {
             }
             case LEGACY -> {
                 if (hasPoor) {
-                    finalSpeed = (float) CHPApi.config().poorMultiplier();
+                    finalSpeed = poorMultiplier;
                     finalStress = 0.90f;
                 } else if (allGreat && invalidCount == 0) {
-                    finalSpeed = (float) CHPApi.config().greatMultiplier();
+                    finalSpeed = greatMultiplier;
                     finalStress = 1.10f;
                 } else {
-                    finalSpeed = (float) CHPApi.config().normalMultiplier();
+                    finalSpeed = normalMultiplier;
                     finalStress = 1.00f;
                 }
             }
@@ -113,7 +142,7 @@ public class PathEvaluator {
             }
         }
 
-        finalStress = applyPathStressScalingPolicy(finalStress, CHPApi.config().enablePathStressScaling());
+        finalStress = applyPathStressScalingPolicy(finalStress, enableStressScaling);
 
         int efficiency = Math.round(finalSpeed * 100.0f);
         return new Result(true, finalSpeed, finalStress, validCount, invalidCount, total, efficiency);
