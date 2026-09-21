@@ -265,6 +265,8 @@ Available server events:
 | `outputCalculated` | No | `worker`, `crankPos`, `level`, `baseRpm`, `baseStress`, `setRpmMultiplier()`, `setStressMultiplier()` |
 | `pathEvaluated` | No | `crankPos`, `level`, `result`, `validBlocks`, `invalidBlocks`, `efficiencyPercent`, `setSpeedMultiplier()`, `setStressMultiplier()` |
 
+`pathEvaluated` setters replace the evaluator's final path multipliers. They are absolute values, not extra multiplicative factors; reading `event.speedMultiplier` or `event.stressMultiplier` returns the current evaluated value before any script adjustment.
+
 KubeJS is optional. Without it, NeoForge Data Maps, tags, config, attachment, movement, and generation continue normally.
 
 ---
