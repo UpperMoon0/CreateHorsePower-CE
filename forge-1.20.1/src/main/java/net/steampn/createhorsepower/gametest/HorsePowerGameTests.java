@@ -14,7 +14,7 @@ import net.minecraft.world.entity.decoration.LeashFenceKnotEntity;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.AABB;
-import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntity;\nimport net.minecraft.world.level.block.Blocks;
 import net.minecraftforge.gametest.GameTestHolder;
 import net.minecraftforge.gametest.PrefixGameTestTemplate;
 import net.steampn.createhorsepower.blocks.crank.AbstractHorseCrankBlockEntity;
@@ -22,7 +22,7 @@ import net.steampn.createhorsepower.blocks.crank.HorseCrankEngine;
 import net.steampn.createhorsepower.blocks.crank.WorkerActivityControl;
 import net.steampn.createhorsepower.blocks.crank.WorkerAttachmentControl;
 import net.steampn.createhorsepower.blocks.crank.WorkerOrbitMovement;
-import net.steampn.createhorsepower.blocks.crank.WorkerRecoveryQueue;
+import net.steampn.createhorsepower.blocks.crank.WorkerRecoveryQueue;\nimport net.steampn.createhorsepower.config.Config;\nimport net.steampn.createhorsepower.content.path.PathEvaluationMode;\nimport net.steampn.createhorsepower.content.path.PathEvaluator;
 import net.steampn.createhorsepower.content.stats.WorkerResolver;
 import net.steampn.createhorsepower.registry.BlockRegister;
 import net.steampn.createhorsepower.registry.TileEntityRegister;
@@ -629,6 +629,169 @@ public final class HorsePowerGameTests {
         helper.assertFalse(engine.ownsWorkerAiSuppressionForTesting(),
                 "Engine must not own any suppression after detaching B");
         helper.succeed();
+    }
+
+
+    /**
+     * Regression for #11/#12: the path-stress policy must be applied by the
+     * real evaluator after every evaluation mode without changing path speed,
+     * validity, coverage accounting, or efficiency.
+     */
+    @GameTest(template = "empty")
+    public static void pathStressScalingTogglePreservesEvaluationAcrossAllModes(GameTestHelper helper) {
+        PathEvaluationMode oldMode = Config.PATH_EVALUATION_MODE.get();
+        boolean oldStressScaling = Config.ENABLE_PATH_STRESS_SCALING.get();
+        double oldCoverage = Config.MINIMUM_PATH_COVERAGE.get();
+        double oldGreatMultiplier = Config.GREAT_MULTIPLIER.get();
+        java.util.List<? extends String> oldGreatPath = java.util.List.copyOf(Config.GREAT_PATH.get());
+
+        BlockPos localCenter = new BlockPos(4, 2, 4);
+        BlockPos[] offsets = HorseCrankEngine.generateOffsetsForRadius(2.5f);
+        for (BlockPos offset : offsets) {
+            helper.setBlock(localCenter.offset(offset), Blocks.ICE);
+        }
+        BlockPos absoluteCenter = helper.absolutePos(localCenter);
+
+        try {
+            Config.MINIMUM_PATH_COVERAGE.set(1.0);
+            Config.GREAT_MULTIPLIER.set(2.0);
+            Config.GREAT_PATH.set(java.util.List.of("minecraft:ice"));
+
+            for (PathEvaluationMode mode : PathEvaluationMode.values()) {
+                Config.PATH_EVALUATION_MODE.set(mode);
+
+                Config.ENABLE_PATH_STRESS_SCALING.set(true);
+                PathEvaluator.Result enabled = PathEvaluator.evaluate(helper.getLevel(), absoluteCenter, offsets);
+
+                Config.ENABLE_PATH_STRESS_SCALING.set(false);
+                PathEvaluator.Result disabled = PathEvaluator.evaluate(helper.getLevel(), absoluteCenter, offsets);
+
+                helper.assertTrue(enabled.isValid(), mode + ": enabled Great path must be valid");
+                helper.assertTrue(disabled.isValid(), mode + ": disabled Great path must stay valid");
+                assertNear(helper, 2.0f, enabled.speedMultiplier(), mode + ": enabled Great path RPM multiplier");
+                assertNear(helper, enabled.speedMultiplier(), disabled.speedMultiplier(),
+                        mode + ": disabling stress scaling must not change RPM");
+                assertNear(helper, 1.10f, enabled.stressMultiplier(),
+                        mode + ": enabled policy must preserve Great-path stress");
+                assertNear(helper, 1.00f, disabled.stressMultiplier(),
+                        mode + ": disabled policy must neutralize Great-path stress");
+
+                helper.assertTrue(enabled.validBlocks() == offsets.length,
+                        mode + ": enabled evaluator must count every path block");
+                helper.assertTrue(disabled.validBlocks() == enabled.validBlocks(),
+                        mode + ": disabling stress scaling must not change valid-block coverage");
+                helper.assertTrue(disabled.invalidBlocks() == enabled.invalidBlocks(),
+                        mode + ": disabling stress scaling must not change invalid-block coverage");
+                helper.assertTrue(disabled.totalBlocks() == enabled.totalBlocks(),
+                        mode + ": disabling stress scaling must not change total coverage");
+                helper.assertTrue(disabled.efficiencyPercent() == enabled.efficiencyPercent(),
+                        mode + ": disabling stress scaling must not change path efficiency");
+            }
+
+            // Coverage failure must remain a coverage failure regardless of stress policy.
+            helper.setBlock(localCenter.offset(offsets[0]), Blocks.AIR);
+            for (PathEvaluationMode mode : PathEvaluationMode.values()) {
+                Config.PATH_EVALUATION_MODE.set(mode);
+
+                Config.ENABLE_PATH_STRESS_SCALING.set(true);
+                PathEvaluator.Result enabled = PathEvaluator.evaluate(helper.getLevel(), absoluteCenter, offsets);
+
+                Config.ENABLE_PATH_STRESS_SCALING.set(false);
+                PathEvaluator.Result disabled = PathEvaluator.evaluate(helper.getLevel(), absoluteCenter, offsets);
+
+                helper.assertFalse(enabled.isValid(), mode + ": incomplete path must fail 100% coverage");
+                helper.assertFalse(disabled.isValid(), mode + ": stress toggle must not bypass coverage");
+                helper.assertTrue(disabled.validBlocks() == enabled.validBlocks(),
+                        mode + ": coverage accounting must be policy-independent");
+                helper.assertTrue(disabled.invalidBlocks() == enabled.invalidBlocks(),
+                        mode + ": invalid-block accounting must be policy-independent");
+            }
+        } finally {
+            Config.PATH_EVALUATION_MODE.set(oldMode);
+            Config.ENABLE_PATH_STRESS_SCALING.set(oldStressScaling);
+            Config.MINIMUM_PATH_COVERAGE.set(oldCoverage);
+            Config.GREAT_MULTIPLIER.set(oldGreatMultiplier);
+            Config.GREAT_PATH.set(oldGreatPath);
+        }
+
+        helper.succeed();
+    }
+
+    /**
+     * Production-shape regression for TFG: a horse configured to 16 base RPM
+     * and 32 base SU on a Great path keeps the 2x RPM path bonus while path
+     * stress scaling is disabled, leaving final stress capacity at exactly
+     * the configured 32 SU.
+     */
+    @GameTest(template = "empty")
+    public static void disabledPathStressScalingKeeps32SuWhileGreatPathBoostsRpm(GameTestHelper helper) {
+        int oldBaseRpm = Config.BASE_CREATURE_RPM.get();
+        int oldLargeStress = Config.LARGE_CREATURE_STRESS.get();
+        boolean oldIndividualStats = Config.ENABLE_INDIVIDUAL_ANIMAL_STATS.get();
+        PathEvaluationMode oldMode = Config.PATH_EVALUATION_MODE.get();
+        boolean oldStressScaling = Config.ENABLE_PATH_STRESS_SCALING.get();
+        double oldCoverage = Config.MINIMUM_PATH_COVERAGE.get();
+        double oldGreatMultiplier = Config.GREAT_MULTIPLIER.get();
+        java.util.List<? extends String> oldGreatPath = java.util.List.copyOf(Config.GREAT_PATH.get());
+
+        try {
+            Config.BASE_CREATURE_RPM.set(16);
+            Config.LARGE_CREATURE_STRESS.set(32);
+            Config.ENABLE_INDIVIDUAL_ANIMAL_STATS.set(false);
+            Config.PATH_EVALUATION_MODE.set(PathEvaluationMode.WEIGHTED_AVERAGE);
+            Config.ENABLE_PATH_STRESS_SCALING.set(false);
+            Config.MINIMUM_PATH_COVERAGE.set(1.0);
+            Config.GREAT_MULTIPLIER.set(2.0);
+            Config.GREAT_PATH.set(java.util.List.of("minecraft:ice"));
+
+            BlockPos localCrankPos = new BlockPos(4, 2, 4);
+            BlockPos[] offsets = HorseCrankEngine.generateOffsetsForRadius(2.5f);
+            for (BlockPos offset : offsets) {
+                helper.setBlock(localCrankPos.offset(offset), Blocks.ICE);
+            }
+
+            helper.setBlock(localCrankPos, BlockRegister.HORSE_CRANK.get());
+            AbstractHorseCrankBlockEntity crank = requireCrank(helper, localCrankPos);
+            HorseCrankEngine engine = crank.engine();
+            Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(6, 2, 4));
+
+            engine.attachWorker(horse, WorkerResolver.resolve(horse));
+
+            CompoundTag state = new CompoundTag();
+            engine.write(state, false);
+
+            helper.assertTrue(state.getBoolean("HasValidWorkingBlocks"),
+                    "Great path ring must be valid for the attached horse");
+            assertNear(helper, 16.0f, state.getFloat("EffectiveBaseRpm"),
+                    "legacy base RPM override must reach the real crank engine");
+            assertNear(helper, 32.0f, state.getFloat("EffectiveBaseStress"),
+                    "legacy large-worker stress override must reach the real crank engine");
+            assertNear(helper, 2.0f, state.getFloat("RpmModifier"),
+                    "Great path must keep its 2x RPM multiplier");
+            assertNear(helper, 1.0f, state.getFloat("PathStressModifier"),
+                    "disabled path stress scaling must leave crank path stress neutral");
+
+            float finalStress = state.getFloat("EffectiveBaseStress") * state.getFloat("PathStressModifier");
+            assertNear(helper, 32.0f, finalStress,
+                    "32 SU configured base must remain exactly 32 SU on a Great path");
+        } finally {
+            Config.BASE_CREATURE_RPM.set(oldBaseRpm);
+            Config.LARGE_CREATURE_STRESS.set(oldLargeStress);
+            Config.ENABLE_INDIVIDUAL_ANIMAL_STATS.set(oldIndividualStats);
+            Config.PATH_EVALUATION_MODE.set(oldMode);
+            Config.ENABLE_PATH_STRESS_SCALING.set(oldStressScaling);
+            Config.MINIMUM_PATH_COVERAGE.set(oldCoverage);
+            Config.GREAT_MULTIPLIER.set(oldGreatMultiplier);
+            Config.GREAT_PATH.set(oldGreatPath);
+        }
+
+        helper.succeed();
+    }
+
+
+    private static void assertNear(GameTestHelper helper, float expected, float actual, String message) {
+        helper.assertTrue(Math.abs(expected - actual) < 1.0e-4f,
+                message + " (expected " + expected + ", got " + actual + ")");
     }
 
     private static AbstractHorseCrankBlockEntity requireCrank(GameTestHelper helper, BlockPos pos) {
