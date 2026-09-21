@@ -370,6 +370,8 @@ largeCreatures = ["minecraft:horse"]
 [path]
     # Options: WEIGHTED_AVERAGE, WORST_BLOCK, LEGACY
     evaluationMode = "WEIGHTED_AVERAGE"
+    # Set false when path quality should change RPM/validity but not stress capacity.
+    enableStressScaling = true
     minimumCoverage = 1.0
     checkIntervalTicks = 40
 
@@ -383,6 +385,8 @@ largeCreatures = ["minecraft:horse"]
 `workerGroundSpeedScale` converts the mob's movement-speed attribute into a visual ground speed in blocks/second. The result is clamped between `minWorkerGroundSpeed` and `maxWorkerGroundSpeed`; angular movement is then derived as `linearSpeed / radius`, so workers at different configured radii retain the same ground speed.
 
 These settings affect presentation/movement only. `rpm`, `speed_scaling`, path `speed_multiplier`, and KubeJS output changes continue to control mechanical output independently.
+
+`path.enableStressScaling` defaults to `true` for backward compatibility. Set it to `false` to keep path speed/RPM multipliers, validity, and coverage rules while forcing the path stress multiplier to `1.0`. This is useful for packs that want road quality to change travel speed without changing the worker tier's configured SU capacity.
 
 ### Debug logging
 

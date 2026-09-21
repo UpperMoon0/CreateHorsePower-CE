@@ -113,8 +113,14 @@ public class PathEvaluator {
             }
         }
 
+        finalStress = applyPathStressScalingPolicy(finalStress, CHPApi.config().enablePathStressScaling());
+
         int efficiency = Math.round(finalSpeed * 100.0f);
         return new Result(true, finalSpeed, finalStress, validCount, invalidCount, total, efficiency);
+    }
+
+    static float applyPathStressScalingPolicy(float pathStressMultiplier, boolean enabled) {
+        return enabled ? pathStressMultiplier : 1.0f;
     }
 
     public static Optional<PathStats> getPathStats(Block block) {
