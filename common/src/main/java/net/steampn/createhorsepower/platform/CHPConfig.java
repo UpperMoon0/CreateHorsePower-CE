@@ -71,6 +71,8 @@ public interface CHPConfig {
 
     PathEvaluationMode pathEvaluationMode();
 
+    boolean enablePathStressScaling();
+
     double minimumPathCoverage();
 
     int checkIntervalTicks();

@@ -61,6 +61,7 @@ public class Config implements CHPConfig {
     // PATH (1.2+)
     // ==========================================
     public static final ModConfigSpec.EnumValue<PathEvaluationMode> PATH_EVALUATION_MODE;
+    public static final ModConfigSpec.BooleanValue ENABLE_PATH_STRESS_SCALING;
     public static final ModConfigSpec.DoubleValue MINIMUM_PATH_COVERAGE;
     public static final ModConfigSpec.IntValue CHECK_INTERVAL_TICKS;
 
@@ -179,6 +180,9 @@ public class Config implements CHPConfig {
         PATH_EVALUATION_MODE = BUILDER
                 .comment("Path calculation mode: WEIGHTED_AVERAGE (averages all track blocks), WORST_BLOCK (limited by slowest block), LEGACY (all great = great, any poor = poor).")
                 .defineEnum("evaluationMode", PathEvaluationMode.WEIGHTED_AVERAGE);
+        ENABLE_PATH_STRESS_SCALING = BUILDER
+                .comment("Whether path quality modifies stress capacity. Disable to keep path RPM and validity behavior while holding stress at the worker's configured base value.")
+                .define("enableStressScaling", true);
         MINIMUM_PATH_COVERAGE = BUILDER
                 .comment("Required fraction of valid path blocks required (0.0 to 1.0). Default 1.0 means full circle required.")
                 .defineInRange("minimumCoverage", 1.0, 0.0, 1.0);
@@ -235,6 +239,7 @@ public class Config implements CHPConfig {
     @Override public double maxWorkerGroundSpeed() { return MAX_WORKER_GROUND_SPEED.get(); }
     @Override public boolean debugLogging() { return DEBUG_LOGGING.get(); }
     @Override public PathEvaluationMode pathEvaluationMode() { return PATH_EVALUATION_MODE.get(); }
+    @Override public boolean enablePathStressScaling() { return ENABLE_PATH_STRESS_SCALING.get(); }
     @Override public double minimumPathCoverage() { return MINIMUM_PATH_COVERAGE.get(); }
     @Override public int checkIntervalTicks() { return CHECK_INTERVAL_TICKS.get(); }
     @Override public RedstoneMode defaultRedstoneMode() { return DEFAULT_REDSTONE_MODE.get(); }

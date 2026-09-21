@@ -43,4 +43,18 @@ class PathEvaluatorPrecedenceTest {
 
         assertSame(bundled, result.orElseThrow());
     }
+
+    @Test
+    void pathStressScalingPolicyPreservesExistingMultipliersWhenEnabled() {
+        assertEquals(0.90f, PathEvaluator.applyPathStressScalingPolicy(0.90f, true));
+        assertEquals(1.00f, PathEvaluator.applyPathStressScalingPolicy(1.00f, true));
+        assertEquals(1.10f, PathEvaluator.applyPathStressScalingPolicy(1.10f, true));
+    }
+
+    @Test
+    void pathStressScalingPolicyCanNeutralizePathStressWithoutChangingSpeedPolicy() {
+        assertEquals(1.00f, PathEvaluator.applyPathStressScalingPolicy(0.90f, false));
+        assertEquals(1.00f, PathEvaluator.applyPathStressScalingPolicy(1.00f, false));
+        assertEquals(1.00f, PathEvaluator.applyPathStressScalingPolicy(1.10f, false));
+    }
 }
