@@ -1,0 +1,1313 @@
+package net.steampn.createhorsepower.blocks.crank;
+
+import net.minecraft.ChatFormatting;
+import net.minecraft.core.BlockPos;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.item.ItemStack;
+import net.steampn.createhorsepower.content.attachment.AttachmentMode;
+import net.steampn.createhorsepower.content.attachment.AttachmentProfile;
+import net.steampn.createhorsepower.content.attachment.AttachmentProfileRegistry;
+import net.steampn.createhorsepower.content.machine.AnimalPowerMachinePolicy;
+import net.steampn.createhorsepower.content.machine.WorkerAssignments;
+import net.steampn.createhorsepower.platform.DeferredDetachStore;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
+import net.steampn.createhorsepower.content.crank.RedstoneMode;
+import net.steampn.createhorsepower.content.path.PathEvaluator;
+import net.steampn.createhorsepower.content.stats.WorkerResolver;
+import net.steampn.createhorsepower.content.stats.WorkerStats;
+import net.steampn.createhorsepower.platform.CHPApi;
+import net.steampn.createhorsepower.utils.CHPUtils;
+import net.steampn.createhorsepower.utils.CHPDiagnostics;
+import org.jetbrains.annotations.Nullable;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+/**
+ * Loader-neutral animal-power behaviour. Assignment, attachment, activity, movement, work-area and output state live here;
+ * the platform block entities delegate lifecycle + Create wiring to this class.
+ */
+public class AnimalPowerEngine {
+    /** Bridges the engine to the hosting block entity / world. */
+    public interface Host {
+        @Nullable Level level();
+
+        BlockPos pos();
+
+        BlockState blockState();
+
+        boolean hasWorkerProperty();
+
+        void setWorkerPresent(boolean present);
+
+        void setBlockState(BlockState state);
+
+        float theoreticalSpeed();
+
+        void refreshKinetic();
+
+        void syncToClient();
+
+        void markDirty();
+
+        void clearKineticInfo();
+
+        void requestSpeedUpdate();
+
+        void setLastCapacityProvided(float capacity);
+    }
+
+    public static final float DEFAULT_RADIUS = 2.5f;
+    public static final int MISSING_ATTACHMENT_GRACE_TICKS = 10;
+    public static final int MISSING_WORKER_GRACE_TICKS = 80;
+
+    private final Host host;
+    private final AnimalPowerMachinePolicy machinePolicy;
+    private final WorkerAssignments assignments;
+
+    public boolean hasValidWorkingBlocks = false;
+    private float rpmModifier = 1.0f;
+    private float pathStressModifier = 1.0f;
+    private float generationDirection = 1.0f;
+    private boolean needsLegacyDirectionResolution = false;
+    private boolean suppressGeneration = false;
+    private boolean resolvingLegacyDirection = false;
+    private boolean workerResolved = false;
+    private boolean workerEligible = false;
+    private boolean isWorking = false;
+    private boolean scriptVetoed = false;
+
+    private float effectiveBaseRpm = 4.0f;
+    private float effectiveBaseStress = 256.0f;
+    private float workerRadius = DEFAULT_RADIUS;
+    private AttachmentMode attachmentMode = AttachmentMode.VANILLA_LEASH;
+    private String attachmentProfileId = "createhorsepower:legacy_vanilla_leash";
+    private float attachmentRadiusLimit = WorkerStats.MAX_MOVEMENT_RADIUS;
+    private float attachmentOutputMultiplier = 1.0f;
+    private BlockPos[] cachedOffsets;
+    private float cachedOffsetsRadius = Float.NaN;
+    private float speedBonusPercent = 0.0f;
+    private float healthBonusPercent = 0.0f;
+    private int efficiencyPercent = 100;
+    private int invalidBlockCount = 0;
+    private String cachedWorkerName = "";
+
+    private RedstoneMode redstoneMode;
+    private boolean lastRedstoneState = false;
+
+    @Nullable
+    private Mob cachedWorkerMob;
+    @Nullable
+    private UUID workerUuid;
+    @Nullable
+    private BlockPos lastKnownWorkerPos;
+    private int missingWorkerTicks = 0;
+    private long lastPathCheckTick = -1;
+    private int statRefreshTimer = 0;
+    private long nextWorkStartRetryTick = 0;
+    private long nextFallbackWorkerSearchTick = 0;
+    private double workerOrbitAngle = Double.NaN;
+    private double visualGroundSpeed = 0.0D;
+    /** This crank owns the persistent CHP activity marker on the worker. */
+    private boolean ownsWorkerActivityMarker = false;
+    /** This crank changed NoAI from false to true and must restore that transition. */
+    private boolean ownsWorkerAiSuppression = false;
+    @Nullable
+    private UUID aiSuppressedWorkerUuid;
+    private final Map<UUID, Boolean> deferredDetachPolicies = new HashMap<>();
+
+    /**
+     * Random, persistent UUID component of this crank's identity. Saving and
+     * reloading preserves it, while replacement at the same coordinates gets a
+     * new value. Ownership always combines it with {@link Host#pos()} because
+     * vanilla /clone and NBT tooling can duplicate persisted block-entity UUIDs.
+     */
+    private UUID crankInstanceUuid = UUID.randomUUID();
+
+    public AnimalPowerEngine(Host host, RedstoneMode defaultMode, AnimalPowerMachinePolicy machinePolicy) {
+        this.host = host;
+        this.redstoneMode = defaultMode;
+        this.machinePolicy = machinePolicy;
+        this.assignments = new WorkerAssignments(machinePolicy.maxWorkers());
+    }
+
+    public static BlockPos[] generateOffsetsForRadius(float radius) {
+        List<BlockPos> offsets = new java.util.ArrayList<>();
+        int rInt = (int) Math.ceil(radius + 1.0f);
+        double minSq = Math.max(0.5, (radius - 0.75) * (radius - 0.75));
+        double maxSq = (radius + 0.75) * (radius + 0.75);
+        for (int z = -rInt; z <= rInt; z++) {
+            for (int x = -rInt; x <= rInt; x++) {
+                double distSq = x * x + z * z;
+                if (distSq >= minSq && distSq <= maxSq) {
+                    offsets.add(new BlockPos(x, -1, z));
+                }
+            }
+        }
+        return offsets.toArray(new BlockPos[0]);
+    }
+
+    @Nullable
+    private Level level() {
+        return host.level();
+    }
+
+    public boolean isStoppedByRedstone() {
+        Level level = level();
+        if (level == null) return false;
+        boolean signal = level.hasNeighborSignal(host.pos());
+        return switch (redstoneMode) {
+            case HIGH_STOPS -> signal;
+            case HIGH_RUNS -> !signal;
+            case IGNORE -> false;
+        };
+    }
+
+    public RedstoneMode getRedstoneMode() {
+        return redstoneMode;
+    }
+
+    public void setRedstoneMode(RedstoneMode mode) {
+        this.redstoneMode = mode;
+        Level level = level();
+        if (level != null && !level.isClientSide()) {
+            host.refreshKinetic();
+            host.syncToClient();
+        }
+    }
+
+    public RedstoneMode cycleRedstoneMode() {
+        RedstoneMode next = redstoneMode.next();
+        setRedstoneMode(next);
+        return next;
+    }
+
+    public boolean isWorkerResolved() {
+        return workerResolved;
+    }
+
+    public boolean isWorkerEligible() {
+        return workerEligible;
+    }
+
+    public boolean isScriptVetoed() {
+        return scriptVetoed;
+    }
+
+    public boolean isWorking() {
+        return isWorking;
+    }
+
+    public boolean canPhysicallyWork() {
+        return host.hasWorkerProperty()
+                && workerResolved
+                && workerEligible
+                && hasValidWorkingBlocks
+                && !isStoppedByRedstone()
+                && !suppressGeneration
+                && (effectiveBaseRpm * rpmModifier > 0);
+    }
+
+    public float generatedSpeed() {
+        if (!isWorking || !canPhysicallyWork()) {
+            return 0.0F;
+        }
+        return effectiveBaseRpm * rpmModifier * generationDirection;
+    }
+
+    public float addedStressCapacity() {
+        if (!isWorking || !canPhysicallyWork()) return 0;
+
+        float speed = generatedSpeed();
+        if (speed == 0) return 0;
+
+        float capacity = effectiveBaseStress * pathStressModifier;
+        capacity = Math.abs(capacity / Math.abs(speed));
+        host.setLastCapacityProvided(capacity);
+        return capacity;
+    }
+
+    /** Appends CE status lines to the goggle tooltip. */
+    public boolean buildGoggleTooltip(List<Component> tooltip) {
+        tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.header").withStyle(ChatFormatting.GOLD));
+
+        if (!host.hasWorkerProperty()) {
+            tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.no_worker").withStyle(ChatFormatting.GRAY));
+            return true;
+        }
+
+        if (isStoppedByRedstone()) {
+            tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.stopped_redstone").withStyle(ChatFormatting.RED));
+        } else if (!workerResolved) {
+            tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.worker_unloaded").withStyle(ChatFormatting.YELLOW));
+        } else if (!workerEligible) {
+            tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.worker_ineligible").withStyle(ChatFormatting.RED));
+        } else if (!hasValidWorkingBlocks) {
+            tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.invalid_path", invalidBlockCount).withStyle(ChatFormatting.RED));
+        } else if (scriptVetoed) {
+            tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.vetoed").withStyle(ChatFormatting.YELLOW));
+        } else if (isWorking) {
+            tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.working").withStyle(ChatFormatting.GREEN));
+        }
+
+        if (!cachedWorkerName.isEmpty()) {
+            tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.worker", cachedWorkerName).withStyle(ChatFormatting.WHITE));
+        }
+
+        tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.path_efficiency", efficiencyPercent + "%").withStyle(ChatFormatting.GRAY));
+
+        if (speedBonusPercent != 0) {
+            tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.speed_bonus", String.format("%+.1f%%", speedBonusPercent)).withStyle(ChatFormatting.AQUA));
+        }
+        if (healthBonusPercent != 0) {
+            tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.health_bonus", String.format("%+.1f%%", healthBonusPercent)).withStyle(ChatFormatting.LIGHT_PURPLE));
+        }
+
+        tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.redstone_mode", redstoneMode.getDisplayName()).withStyle(ChatFormatting.DARK_GRAY));
+        return true;
+    }
+
+    public double renderBoundingBoxInflate() {
+        return Math.max(4.0D, workerRadius + 2.0D);
+    }
+
+    public float workerRadius() {
+        return workerRadius;
+    }
+
+    /** Persistent UUID component of this crank's composite position + UUID identity. */
+    public UUID crankInstanceUuid() {
+        return crankInstanceUuid;
+    }
+
+    /**
+     * Test-only override for {@link #crankInstanceUuid}. Replaces the random
+     * initial UUID with the supplied one so GameTests can assert the
+     * marker-orphan / marker-foreign behaviour deterministically.
+     */
+    public void setCrankInstanceUuidForTesting(UUID uuid) {
+        this.crankInstanceUuid = uuid;
+    }
+
+    /** {@code true} when this crank currently considers the given mob UUID its worker. */
+    public boolean isAssignedWorker(UUID uuid) {
+        return assignments.contains(uuid);
+    }
+
+    public AnimalPowerMachinePolicy machinePolicy() {
+        return machinePolicy;
+    }
+
+    public WorkerAssignments assignments() {
+        return assignments;
+    }
+
+    public AttachmentMode attachmentMode() {
+        return attachmentMode;
+    }
+
+    public String attachmentProfileId() {
+        return attachmentProfileId;
+    }
+
+    /**
+     * Test-only override for the worker's UUID, so GameTests can simulate
+     * a live crank that still claims a specific mob.
+     */
+    public void setWorkerUuidForTesting(UUID uuid) {
+        this.workerUuid = uuid;
+        this.assignments.clear();
+        if (uuid != null) this.assignments.assign(uuid, lastKnownWorkerPos);
+    }
+
+    /** Test-only introspection: whether this crank currently owns the worker activity marker. */
+    public boolean ownsWorkerActivityMarkerForTesting() {
+        return ownsWorkerActivityMarker;
+    }
+
+    /** Test-only introspection: whether this crank currently owns worker AI suppression. */
+    public boolean ownsWorkerAiSuppressionForTesting() {
+        return ownsWorkerAiSuppression;
+    }
+
+    /** Test-only introspection: the worker UUID whose activity marker this crank owns. */
+    @Nullable
+    public UUID aiSuppressedWorkerUuidForTesting() {
+        return aiSuppressedWorkerUuid;
+    }
+
+    /**
+     * Test-only override for the cached worker reference. Simulates the
+     * state after a chunk unload/BE reload, where the engine still owns AI
+     * suppression (restored from NBT) but holds no entity reference.
+     */
+    public void setCachedWorkerMobForTesting(@Nullable Mob mob) {
+        this.cachedWorkerMob = mob;
+    }
+
+    /**
+     * Test-only entry point that runs the same AI-control decision the
+     * working tick performs ({@link #controlWorkerAi}), without requiring a
+     * full kinetic network around the crank.
+     */
+    public void controlWorkerAiForTesting(Mob mob) {
+        controlWorkerAi(mob);
+    }
+
+    // ==========================================
+    // NBT (CompoundTag API is identical on 1.20.1 and 1.21.1)
+    // ==========================================
+
+    public void write(CompoundTag compound, boolean clientPacket) {
+        compound.putFloat("RpmModifier", rpmModifier);
+        compound.putFloat("PathStressModifier", pathStressModifier);
+        compound.putBoolean("HasValidWorkingBlocks", hasValidWorkingBlocks);
+        compound.putFloat("GenerationDirection", generationDirection);
+        compound.putString("RedstoneMode", redstoneMode.getSerializedName());
+        compound.putFloat("EffectiveBaseRpm", effectiveBaseRpm);
+        compound.putFloat("EffectiveBaseStress", effectiveBaseStress);
+        compound.putFloat("WorkerRadius", workerRadius);
+        compound.putString("AnimalPowerMachine", machinePolicy.id().toString());
+        compound.putString("AttachmentMode", attachmentMode.serializedName());
+        compound.putString("AttachmentProfile", attachmentProfileId);
+        compound.putFloat("AttachmentRadiusLimit", attachmentRadiusLimit);
+        compound.putFloat("AttachmentOutputMultiplier", attachmentOutputMultiplier);
+        compound.putUUID("CrankInstanceUUID", crankInstanceUuid);
+
+        if (workerUuid != null) {
+            compound.putUUID("WorkerUUID", workerUuid);
+        }
+        if (lastKnownWorkerPos != null) {
+            compound.putLong("WorkerPos", lastKnownWorkerPos.asLong());
+        }
+        assignments.write(compound);
+        if (Double.isFinite(workerOrbitAngle)) {
+            compound.putDouble("WorkerOrbitAngle", workerOrbitAngle);
+        } else {
+            compound.remove("WorkerOrbitAngle");
+        }
+        if (ownsWorkerActivityMarker && aiSuppressedWorkerUuid != null) {
+            compound.putBoolean("OwnsWorkerActivityMarker", true);
+            compound.putBoolean("OwnsWorkerAiSuppression", ownsWorkerAiSuppression);
+            compound.putUUID("AiSuppressedWorkerUUID", aiSuppressedWorkerUuid);
+        } else {
+            compound.remove("OwnsWorkerActivityMarker");
+            compound.remove("OwnsWorkerAiSuppression");
+            compound.remove("AiSuppressedWorkerUUID");
+        }
+        if (!deferredDetachPolicies.isEmpty()) {
+            CompoundTag policies = new CompoundTag();
+            deferredDetachPolicies.forEach((uuid, dropLead) -> policies.putBoolean(uuid.toString(), dropLead));
+            compound.put("DeferredDetachPolicies", policies);
+        } else {
+            compound.remove("DeferredDetachPolicies");
+        }
+
+        if (clientPacket) {
+            compound.putBoolean("WorkerResolved", workerResolved);
+            compound.putBoolean("WorkerEligible", workerEligible);
+            compound.putBoolean("IsWorking", isWorking);
+            compound.putBoolean("ScriptVetoed", scriptVetoed);
+            compound.putFloat("SpeedBonusPercent", speedBonusPercent);
+            compound.putFloat("HealthBonusPercent", healthBonusPercent);
+            compound.putInt("EfficiencyPercent", efficiencyPercent);
+            compound.putInt("InvalidBlockCount", invalidBlockCount);
+            compound.putString("CachedWorkerName", cachedWorkerName);
+        }
+    }
+
+    public void read(CompoundTag compound, boolean clientPacket) {
+        if (compound.contains("RpmModifier")) rpmModifier = compound.getFloat("RpmModifier");
+        if (compound.contains("PathStressModifier")) pathStressModifier = compound.getFloat("PathStressModifier");
+        if (compound.contains("HasValidWorkingBlocks")) hasValidWorkingBlocks = compound.getBoolean("HasValidWorkingBlocks");
+        if (compound.contains("EffectiveBaseRpm")) effectiveBaseRpm = compound.getFloat("EffectiveBaseRpm");
+        if (compound.contains("EffectiveBaseStress")) effectiveBaseStress = compound.getFloat("EffectiveBaseStress");
+        if (compound.contains("WorkerRadius")) {
+            float savedRadius = compound.getFloat("WorkerRadius");
+            workerRadius = Float.isFinite(savedRadius)
+                    ? Math.max(WorkerStats.MIN_MOVEMENT_RADIUS, Math.min(WorkerStats.MAX_MOVEMENT_RADIUS, savedRadius))
+                    : WorkerStats.DEFAULT.movementRadius();
+        }
+
+        if (compound.contains("AttachmentMode")) {
+            attachmentMode = AttachmentProfileRegistry.persistedModeOrDefault(compound.getString("AttachmentMode"));
+        } else {
+            attachmentMode = AttachmentMode.VANILLA_LEASH;
+        }
+        if (compound.contains("AttachmentProfile")) attachmentProfileId = compound.getString("AttachmentProfile");
+        if (compound.contains("AttachmentRadiusLimit")) {
+            float savedLimit = compound.getFloat("AttachmentRadiusLimit");
+            if (Float.isFinite(savedLimit)) attachmentRadiusLimit = Math.max(WorkerStats.MIN_MOVEMENT_RADIUS,
+                    Math.min(WorkerStats.MAX_MOVEMENT_RADIUS, savedLimit));
+        }
+        if (compound.contains("AttachmentOutputMultiplier")) {
+            float savedMultiplier = compound.getFloat("AttachmentOutputMultiplier");
+            if (Float.isFinite(savedMultiplier) && savedMultiplier > 0.0f) attachmentOutputMultiplier = savedMultiplier;
+        }
+        if (compound.contains("RedstoneMode")) {
+            String modeStr = compound.getString("RedstoneMode");
+            for (RedstoneMode mode : RedstoneMode.values()) {
+                if (mode.getSerializedName().equalsIgnoreCase(modeStr)) {
+                    redstoneMode = mode;
+                    break;
+                }
+            }
+        } else if (!clientPacket) {
+            // Pre-1.2 crank from 1.1 save: redstone never affected it.
+            redstoneMode = RedstoneMode.IGNORE;
+        }
+
+        if (compound.hasUUID("CrankInstanceUUID")) {
+            crankInstanceUuid = compound.getUUID("CrankInstanceUUID");
+        }
+
+        if (compound.contains("GenerationDirection")) {
+            generationDirection = compound.getFloat("GenerationDirection");
+            if (generationDirection == 0) generationDirection = 1.0f;
+        } else {
+            needsLegacyDirectionResolution = true;
+        }
+
+        if (compound.hasUUID("WorkerUUID")) {
+            workerUuid = compound.getUUID("WorkerUUID");
+        }
+        if (compound.contains("WorkerPos")) {
+            lastKnownWorkerPos = BlockPos.of(compound.getLong("WorkerPos"));
+        }
+        boolean readAssignments = assignments.read(compound);
+        if (readAssignments && assignments.primary() != null) {
+            workerUuid = assignments.primary().workerUuid();
+            lastKnownWorkerPos = assignments.primary().lastKnownPos();
+        } else if (workerUuid != null) {
+            assignments.clear();
+            assignments.assign(workerUuid, lastKnownWorkerPos);
+        }
+        workerOrbitAngle = compound.contains("WorkerOrbitAngle")
+                ? compound.getDouble("WorkerOrbitAngle")
+                : Double.NaN;
+        if (!Double.isFinite(workerOrbitAngle)) {
+            workerOrbitAngle = Double.NaN;
+        }
+        boolean hasAiWorkerUuid = compound.hasUUID("AiSuppressedWorkerUUID");
+        boolean legacyOwnedSuppression = hasAiWorkerUuid && compound.getBoolean("OwnsWorkerAiSuppression");
+        ownsWorkerActivityMarker = hasAiWorkerUuid
+                && (compound.getBoolean("OwnsWorkerActivityMarker") || legacyOwnedSuppression);
+        ownsWorkerAiSuppression = ownsWorkerActivityMarker && compound.getBoolean("OwnsWorkerAiSuppression");
+        aiSuppressedWorkerUuid = ownsWorkerActivityMarker
+                ? compound.getUUID("AiSuppressedWorkerUUID")
+                : null;
+        deferredDetachPolicies.clear();
+        if (compound.contains("DeferredDetachPolicies")) {
+            CompoundTag policies = compound.getCompound("DeferredDetachPolicies");
+            for (String key : policies.getAllKeys()) {
+                try {
+                    deferredDetachPolicies.put(UUID.fromString(key), policies.getBoolean(key));
+                } catch (IllegalArgumentException ignored) {
+                    // Ignore malformed legacy/manual data instead of breaking BE load.
+                }
+            }
+        }
+
+        if (clientPacket) {
+            workerResolved = compound.getBoolean("WorkerResolved");
+            workerEligible = compound.getBoolean("WorkerEligible");
+            isWorking = compound.getBoolean("IsWorking");
+            scriptVetoed = compound.getBoolean("ScriptVetoed");
+            speedBonusPercent = compound.getFloat("SpeedBonusPercent");
+            healthBonusPercent = compound.getFloat("HealthBonusPercent");
+            efficiencyPercent = compound.getInt("EfficiencyPercent");
+            invalidBlockCount = compound.getInt("InvalidBlockCount");
+            cachedWorkerName = compound.getString("CachedWorkerName");
+        } else {
+            workerResolved = false;
+            workerEligible = false;
+            isWorking = false;
+            scriptVetoed = false;
+        }
+    }
+
+    // ==========================================
+    // Worker lifecycle
+    // ==========================================
+
+    public void attachWorker(Mob worker, WorkerResolver.ResolvedWorker profile) {
+        attachWorker(worker, profile, AttachmentProfileRegistry.legacyVanilla(), ItemStack.EMPTY);
+    }
+
+    public void attachWorker(Mob worker, WorkerResolver.ResolvedWorker profile,
+                             AttachmentProfile attachment, ItemStack attachmentStack) {
+        restoreWorkerAi();
+        // Defensive cleanup: only a marker from a *different* crank should be
+        // cleared on attach. Position + instance UUID form the identity, so a
+        // copied crank UUID at another position is still foreign.
+        if (WorkerActivityControl.hasForeignMarker(worker, host.pos(), crankInstanceUuid)) {
+            WorkerActivityControl.releaseFromMarker(worker);
+        }
+        this.attachmentMode = attachment.mode();
+        this.attachmentProfileId = attachment.id().toString();
+        this.attachmentRadiusLimit = attachment.maxWorkingRadius();
+        this.attachmentOutputMultiplier = attachment.outputMultiplier();
+        WorkerAttachmentControl.markAttached(worker, host.pos(), crankInstanceUuid, attachment, attachmentStack);
+        this.cachedWorkerMob = worker;
+        this.workerUuid = worker.getUUID();
+        this.lastKnownWorkerPos = worker.blockPosition();
+        this.assignments.clear();
+        this.assignments.assign(workerUuid, lastKnownWorkerPos);
+        this.missingWorkerTicks = 0;
+        this.statRefreshTimer = 0;
+        this.nextWorkStartRetryTick = 0;
+        this.nextFallbackWorkerSearchTick = 0;
+        this.scriptVetoed = false;
+        this.workerResolved = true;
+        this.workerEligible = profile.isValid();
+        this.workerOrbitAngle = Double.NaN;
+        double movementAttribute = worker.getAttributes().hasAttribute(Attributes.MOVEMENT_SPEED)
+                ? worker.getAttributeValue(Attributes.MOVEMENT_SPEED)
+                : WorkerStats.DEFAULT_SPEED_REF;
+        this.visualGroundSpeed = WorkerOrbitMovement.groundSpeedBlocksPerSecond(
+                movementAttribute, CHPApi.config().workerGroundSpeedScale(),
+                CHPApi.config().minWorkerGroundSpeed(), CHPApi.config().maxWorkerGroundSpeed());
+
+        applyProfile(worker, profile);
+
+        float existingSpeed = host.theoreticalSpeed();
+        if (existingSpeed != 0) {
+            this.generationDirection = Math.signum(existingSpeed);
+        } else {
+            this.generationDirection = 1.0f;
+        }
+
+        Level level = level();
+        if (level != null && !level.isClientSide()) {
+            host.setWorkerPresent(true);
+            checkPathBlocks();
+            host.refreshKinetic();
+            host.syncToClient();
+            CHPApi.scripts().fireWorkerAttached(worker, host.pos(), level, profile);
+            CHPDiagnostics.event("worker_attached", level, host.pos(), crankInstanceUuid, worker,
+                    "rpm=" + effectiveBaseRpm + " stress=" + effectiveBaseStress + " radius=" + workerRadius
+                            + " machine=" + machinePolicy.id() + " profile_source=" + profile.source()
+                            + " machine_override=" + profile.machineOverrideApplied() + " attachment=" + attachmentProfileId);
+        }
+    }
+
+    private void applyProfile(Mob worker, WorkerResolver.ResolvedWorker profile) {
+        if (!profile.isValid()) {
+            this.workerEligible = false;
+            this.effectiveBaseRpm = 0.0f;
+            this.effectiveBaseStress = 0.0f;
+            this.workerRadius = DEFAULT_RADIUS;
+            this.speedBonusPercent = 0.0f;
+            this.healthBonusPercent = 0.0f;
+            this.cachedWorkerName = worker.getName().getString();
+            return;
+        }
+
+        this.workerEligible = true;
+        this.effectiveBaseRpm = profile.effectiveRpm() * attachmentOutputMultiplier;
+        this.effectiveBaseStress = profile.effectiveStressCapacity() * attachmentOutputMultiplier;
+        this.workerRadius = Math.min(profile.baseStats().movementRadius(), attachmentRadiusLimit);
+        this.speedBonusPercent = profile.speedBonusPercent();
+        this.healthBonusPercent = profile.healthBonusPercent();
+        this.cachedWorkerName = worker.getName().getString();
+
+        Level level = level();
+        if (level != null && !level.isClientSide()) {
+            float[] scriptModifiers = CHPApi.scripts().fireOutputCalculated(worker, host.pos(), level, effectiveBaseRpm, effectiveBaseStress);
+            this.effectiveBaseRpm *= scriptModifiers[0];
+            this.effectiveBaseStress *= scriptModifiers[1];
+        }
+    }
+
+    public void detachWorker(boolean dropAttachment) {
+        Mob worker = cachedWorkerMob;
+        UUID detachedWorkerUuid = workerUuid != null ? workerUuid : worker != null ? worker.getUUID() : null;
+        Level level = level();
+        AttachmentMode detachedMode = attachmentMode;
+        CHPDiagnostics.event("worker_detach", level, host.pos(), crankInstanceUuid, worker,
+                "worker_uuid=" + detachedWorkerUuid + " drop_attachment=" + dropAttachment
+                        + " backend=" + detachedMode.serializedName());
+        rememberDeferredDetachPolicy(level, detachedWorkerUuid, dropAttachment);
+        if (level instanceof ServerLevel serverLevel && detachedWorkerUuid != null) {
+            persistDurableDetachPolicy(serverLevel, detachedWorkerUuid, dropAttachment);
+        }
+        stopWorking();
+
+        if (level != null && !level.isClientSide()) {
+            host.setWorkerPresent(false);
+            releaseAttachmentBackend(level, detachedWorkerUuid, worker, dropAttachment, detachedMode);
+            clearLoadedAttachmentMarker(level, detachedWorkerUuid, worker);
+            host.refreshKinetic();
+            host.syncToClient();
+            CHPApi.scripts().fireWorkerDetached(worker, host.pos(), level);
+        }
+        clearWorkerReferences();
+    }
+
+    public void onCrankRemoved() {
+        Mob worker = cachedWorkerMob;
+        UUID detachedWorkerUuid = workerUuid != null ? workerUuid : worker != null ? worker.getUUID() : null;
+        Level level = level();
+        AttachmentMode detachedMode = attachmentMode;
+        rememberDeferredDetachPolicy(level, detachedWorkerUuid, true);
+        if (level instanceof ServerLevel serverLevel && detachedWorkerUuid != null) {
+            persistDurableDetachPolicy(serverLevel, detachedWorkerUuid, true);
+        }
+        stopWorking();
+        if (level != null && !level.isClientSide()) {
+            releaseAttachmentBackend(level, detachedWorkerUuid, worker, true, detachedMode);
+            clearLoadedAttachmentMarker(level, detachedWorkerUuid, worker);
+            if (worker != null || detachedWorkerUuid != null) {
+                CHPApi.scripts().fireWorkerDetached(worker, host.pos(), level);
+            }
+        }
+        clearWorkerReferences();
+    }
+
+    private void releaseAttachmentBackend(Level level, @Nullable UUID workerUuid, @Nullable Mob cachedWorker,
+                                          boolean dropRequested, AttachmentMode mode) {
+        if (mode == AttachmentMode.VANILLA_LEASH) {
+            CHPUtils.cleanUpLeash(level, host.pos(), workerUuid, dropRequested);
+            return;
+        }
+        if (!(level instanceof ServerLevel serverLevel)) return;
+        Mob loaded = cachedWorker;
+        if (workerUuid != null) {
+            Entity indexed = serverLevel.getEntity(workerUuid);
+            if (indexed instanceof Mob mob) loaded = mob;
+        }
+        if (loaded != null && WorkerAttachmentControl.isOwnedBy(loaded, host.pos(), crankInstanceUuid)) {
+            WorkerAttachmentControl.releasePersistedAttachment(loaded, serverLevel, host.pos(), dropRequested);
+        }
+    }
+
+    private void persistDurableDetachPolicy(ServerLevel level, UUID detachedWorkerUuid, boolean dropRequested) {
+        DeferredDetachStore.Entry existing = CHPApi.deferredDetaches().get(level, detachedWorkerUuid);
+        Entity loaded = level.getEntity(detachedWorkerUuid);
+        if (loaded instanceof Mob) {
+            if (existing != null && existing.matches(host.pos(), crankInstanceUuid)) {
+                CHPApi.deferredDetaches().remove(level, detachedWorkerUuid);
+            }
+            consumeDeferredDetachPolicy(detachedWorkerUuid);
+            return;
+        }
+        if (existing != null && !existing.matches(host.pos(), crankInstanceUuid)) {
+            CHPDiagnostics.event("deferred_detach_preserved", level, host.pos(), crankInstanceUuid, null,
+                    "worker_uuid=" + detachedWorkerUuid + " existing_crank=" + existing.crankUuid());
+            consumeDeferredDetachPolicy(detachedWorkerUuid);
+            return;
+        }
+        CHPApi.deferredDetaches().put(level, detachedWorkerUuid,
+                new DeferredDetachStore.Entry(host.pos(), crankInstanceUuid, dropRequested));
+        consumeDeferredDetachPolicy(detachedWorkerUuid);
+        CHPDiagnostics.event("deferred_detach_persisted", level, host.pos(), crankInstanceUuid, null,
+                "worker_uuid=" + detachedWorkerUuid + " drop_attachment=" + dropRequested
+                        + " backend=" + attachmentMode.serializedName());
+    }
+
+    private void rememberDeferredDetachPolicy(@Nullable Level level, @Nullable UUID detachedWorkerUuid, boolean dropLead) {
+        if (detachedWorkerUuid == null || !(level instanceof ServerLevel serverLevel)) {
+            return;
+        }
+        Entity loaded = serverLevel.getEntity(detachedWorkerUuid);
+        if (loaded instanceof Mob) {
+            if (deferredDetachPolicies.remove(detachedWorkerUuid) != null) {
+                host.markDirty();
+            }
+            return;
+        }
+        deferredDetachPolicies.put(detachedWorkerUuid, dropLead);
+        host.markDirty();
+    }
+
+    public boolean hasDeferredDetachPolicy(UUID workerUuid) {
+        return workerUuid != null && deferredDetachPolicies.containsKey(workerUuid);
+    }
+
+    public boolean deferredDetachDropLead(UUID workerUuid) {
+        return deferredDetachPolicies.getOrDefault(workerUuid, true);
+    }
+
+    public void consumeDeferredDetachPolicy(UUID workerUuid) {
+        if (workerUuid == null || deferredDetachPolicies.remove(workerUuid) == null) {
+            return;
+        }
+        host.markDirty();
+        host.syncToClient();
+    }
+
+    private void clearLoadedAttachmentMarker(Level level, UUID workerUuid, @Nullable Mob cachedWorker) {
+        Mob loadedWorker = null;
+        if (workerUuid != null && level instanceof ServerLevel serverLevel) {
+            // The server entity index is authoritative; a cached reference may
+            // already represent an entity that was saved and unloaded.
+            Entity entity = serverLevel.getEntity(workerUuid);
+            if (entity instanceof Mob mob) {
+                loadedWorker = mob;
+            }
+        } else if (cachedWorker != null) {
+            loadedWorker = cachedWorker;
+        }
+        if (loadedWorker != null) {
+            WorkerAttachmentControl.clearIfOwnedBy(loadedWorker, host.pos(), crankInstanceUuid);
+        }
+    }
+
+    private void clearWorkerReferences() {
+        restoreWorkerAi();
+
+        // Permanent detach/removal: if the old worker was unavailable, its
+        // persistent marker remains on that worker for entity-load orphan
+        // recovery, but this BE must no longer claim marker or NoAI-transition
+        // ownership. Keeping a stale marker-ownership record here would make
+        // the next worker skip its own acquire. Safe even when restoreWorkerAi
+        // succeeded: these fields are already false/null.
+        this.ownsWorkerActivityMarker = false;
+        this.ownsWorkerAiSuppression = false;
+        this.aiSuppressedWorkerUuid = null;
+
+        // This BE is being detached/destroyed (break, invalid transition,
+        // or `onCrankRemoved`), so it must drop its local ownership record
+        // even if the worker is currently unloaded.
+        this.cachedWorkerMob = null;
+        this.workerUuid = null;
+        this.lastKnownWorkerPos = null;
+        this.assignments.clear();
+        this.attachmentMode = AttachmentMode.VANILLA_LEASH;
+        this.attachmentProfileId = "createhorsepower:legacy_vanilla_leash";
+        this.attachmentRadiusLimit = WorkerStats.MAX_MOVEMENT_RADIUS;
+        this.attachmentOutputMultiplier = 1.0f;
+        this.missingWorkerTicks = 0;
+        this.statRefreshTimer = 0;
+        this.nextWorkStartRetryTick = 0;
+        this.nextFallbackWorkerSearchTick = 0;
+        this.workerResolved = false;
+        this.workerEligible = false;
+        this.workerRadius = DEFAULT_RADIUS;
+        this.cachedWorkerName = "";
+        this.speedBonusPercent = 0.0f;
+        this.healthBonusPercent = 0.0f;
+        this.workerOrbitAngle = Double.NaN;
+        this.visualGroundSpeed = 0.0D;
+    }
+
+    // ==========================================
+    // Tick
+    // ==========================================
+
+    /** Work that must happen before Create's own kinetic block-entity tick. */
+    public void beforeHostTick() {
+        Level level = level();
+        if (level == null || level.isClientSide()) {
+            return;
+        }
+
+        if (needsLegacyDirectionResolution) {
+            needsLegacyDirectionResolution = false;
+            resolvingLegacyDirection = true;
+            suppressGeneration = true;
+            host.clearKineticInfo();
+            host.requestSpeedUpdate();
+        }
+
+        // Preserve the original lifecycle ordering: kinetic/redstone refreshes
+        // happen before Create evaluates this generator in its host tick.
+        boolean currentRedstone = level.hasNeighborSignal(host.pos());
+        if (currentRedstone != lastRedstoneState) {
+            lastRedstoneState = currentRedstone;
+            host.refreshKinetic();
+            host.syncToClient();
+        }
+    }
+
+    /** Work that historically happened after Create's own kinetic tick. */
+    public void afterHostTick() {
+        Level level = level();
+        if (level == null || level.isClientSide()) {
+            return;
+        }
+
+        if (resolvingLegacyDirection) {
+            resolvingLegacyDirection = false;
+            float networkSpeed = host.theoreticalSpeed();
+            generationDirection = (networkSpeed == 0) ? 1.0f : Math.signum(networkSpeed);
+            suppressGeneration = false;
+            host.refreshKinetic();
+        }
+
+        // 1. Reconcile attachment lifecycle
+        reconcileWorker();
+
+        // 2. Update path state on interval
+        int interval = CHPApi.config().checkIntervalTicks();
+        if (level.getGameTime() - lastPathCheckTick >= interval || lastPathCheckTick < 0) {
+            lastPathCheckTick = level.getGameTime();
+            checkPathBlocks();
+        }
+
+        // 3. Centralized working state transition with non-permanent beforeWorkStart check & cooldown
+        boolean canWork = canPhysicallyWork();
+        boolean wasWorking = this.isWorking;
+
+        if (canWork) {
+            if (!wasWorking) {
+                long time = level.getGameTime();
+                if (!scriptVetoed || time >= nextWorkStartRetryTick) {
+                    if (cachedWorkerMob != null && !CHPApi.scripts().fireBeforeWorkStart(cachedWorkerMob, host.pos(), level)) {
+                        this.scriptVetoed = true;
+                        this.isWorking = false;
+                        this.nextWorkStartRetryTick = time + 20;
+                        CHPDiagnostics.event("work_start_vetoed", level, host.pos(), crankInstanceUuid, cachedWorkerMob,
+                                "retry_tick=" + nextWorkStartRetryTick);
+                    } else {
+                        this.scriptVetoed = false;
+                        this.isWorking = true;
+                        CHPApi.scripts().fireWorkStarted(cachedWorkerMob, host.pos(), level);
+                        CHPDiagnostics.event("work_started", level, host.pos(), crankInstanceUuid, cachedWorkerMob,
+                                "mechanical_rpm=" + generatedSpeed() + " path_efficiency=" + efficiencyPercent);
+                    }
+                }
+            }
+        } else {
+            stopWorking();
+        }
+
+        if (wasWorking != this.isWorking) {
+            host.refreshKinetic();
+            host.syncToClient();
+        }
+
+        // 4. Move animal along track if active
+        if (isWorking && cachedWorkerMob != null) {
+            moveWorkerTo(cachedWorkerMob);
+        }
+    }
+
+    private void stopWorking() {
+        boolean wasWorking = this.isWorking;
+        this.isWorking = false;
+        this.scriptVetoed = false;
+        this.nextWorkStartRetryTick = 0;
+        this.workerOrbitAngle = Double.NaN;
+        restoreWorkerAi();
+
+        Level level = level();
+        if (wasWorking && level != null && !level.isClientSide()) {
+            CHPDiagnostics.event("work_stopped", level, host.pos(), crankInstanceUuid, cachedWorkerMob,
+                    "redstone=" + isStoppedByRedstone() + " path_valid=" + hasValidWorkingBlocks
+                            + " worker_resolved=" + workerResolved + " worker_eligible=" + workerEligible);
+            CHPApi.scripts().fireWorkStopped(host.pos(), level);
+        }
+    }
+
+    private void controlWorkerAi(Mob mob) {
+        UUID mobUuid = mob.getUUID();
+
+        if (ownsWorkerActivityMarker
+                && !mobUuid.equals(aiSuppressedWorkerUuid)) {
+            restoreWorkerAi();
+            // Do not transfer control while the previous marked worker is
+            // still unloaded; its original NoAI baseline must remain intact.
+            if (ownsWorkerActivityMarker) {
+                return;
+            }
+        }
+
+        UUID thisCrank = crankInstanceUuid;
+
+        if (WorkerActivityControl.hasForeignMarker(mob, host.pos(), thisCrank)) {
+            WorkerActivityControl.releaseFromMarker(mob);
+        }
+
+        boolean hasOwnedMarker = ownsWorkerActivityMarker
+                && mobUuid.equals(aiSuppressedWorkerUuid)
+                && WorkerActivityControl.isOwnedBy(mob, host.pos(), thisCrank);
+
+        if (!hasOwnedMarker) {
+            ownsWorkerAiSuppression = WorkerActivityControl.acquire(
+                    mob,
+                    host.pos(),
+                    thisCrank
+            );
+            ownsWorkerActivityMarker = true;
+            aiSuppressedWorkerUuid = mobUuid;
+            host.markDirty();
+        } else {
+            WorkerActivityControl.maintain(mob);
+        }
+    }
+
+    /**
+     * Clear this crank's activity marker and, only when CHP actually changed
+     * it, restore the worker's original {@code NoAI} state. Marker ownership
+     * is intentionally separate from NoAI-transition ownership so workers
+     * that already had {@code NoAI=true} are still cleaned up normally.
+     *
+     * <p>When the worker cannot be resolved (it is unloaded or in another
+     * chunk), local ownership is preserved so the saved marker baseline is
+     * not overwritten by a later same-crank reacquisition. If the loaded
+     * worker's marker has already moved to another crank identity, this stale
+     * crank relinquishes only its local bookkeeping and never mutates the new
+     * owner's marker or NoAI transition.
+     */
+    private void restoreWorkerAi() {
+        if (!ownsWorkerActivityMarker || aiSuppressedWorkerUuid == null) {
+            return;
+        }
+
+        Mob controlledWorker = resolveSuppressedWorker();
+        if (controlledWorker == null) {
+            // Worker is temporarily unavailable. KEEP ownership information.
+            // The worker marker also remains intact.
+            return;
+        }
+
+        BlockPos markerPos = WorkerActivityControl.markerCrankPos(controlledWorker);
+        UUID markerOwner = WorkerActivityControl.markerCrankUuid(controlledWorker);
+        if (markerOwnedByDifferentCrank(markerPos, markerOwner, host.pos(), crankInstanceUuid)) {
+            CHPDiagnostics.event("ai_suppression_ownership_relinquished", controlledWorker.level(), host.pos(),
+                    crankInstanceUuid, controlledWorker,
+                    "current_marker_pos=" + markerPos + " current_marker_owner=" + markerOwner);
+            ownsWorkerActivityMarker = false;
+            ownsWorkerAiSuppression = false;
+            aiSuppressedWorkerUuid = null;
+            host.markDirty();
+            return;
+        }
+
+        WorkerActivityControl.release(controlledWorker, ownsWorkerAiSuppression);
+        ownsWorkerActivityMarker = false;
+        ownsWorkerAiSuppression = false;
+        aiSuppressedWorkerUuid = null;
+        host.markDirty();
+    }
+
+    static boolean markerOwnedByDifferentCrank(
+            @Nullable BlockPos markerPos,
+            @Nullable UUID markerOwner,
+            BlockPos crankPos,
+            UUID crankUuid
+    ) {
+        if (markerOwner == null) {
+            return false;
+        }
+        if (!crankUuid.equals(markerOwner)) {
+            return true;
+        }
+        return markerPos != null && !crankPos.equals(markerPos);
+    }
+
+    @Nullable
+    private Mob resolveSuppressedWorker() {
+        Level level = level();
+        if (!(level instanceof ServerLevel serverLevel) || aiSuppressedWorkerUuid == null) {
+            return null;
+        }
+
+        // The level's entity index is authoritative: a cached Mob reference
+        // may point at an entity that has since been unloaded or discarded,
+        // and releasing AI state against a stale object would silently do
+        // nothing while the marker machinery believes restoration happened.
+        Entity entity = serverLevel.getEntity(aiSuppressedWorkerUuid);
+        if (entity instanceof Mob mob) {
+            cachedWorkerMob = mob;
+            return mob;
+        }
+
+        // A freshly-added worker can be valid and attached before the level's
+        // UUID index exposes it (observed on NeoForge GameTest servers). The
+        // cached reference is safe only while it is still the same live entity
+        // in this level; unloaded/discarded cached entities remain rejected.
+        Mob cached = cachedWorkerMob;
+        if (cached != null
+                && cached.level() == serverLevel
+                && !cached.isRemoved()
+                && aiSuppressedWorkerUuid.equals(cached.getUUID())) {
+            return cached;
+        }
+        return null;
+    }
+
+    private boolean isWorkerAttachedToThisCrank(Mob mob) {
+        return mob != null && mob.isAlive()
+                && WorkerAttachmentControl.isBackendAttached(mob, host.pos(), crankInstanceUuid, attachmentMode);
+    }
+
+    public boolean isWorkerAttachmentValid(Mob mob) {
+        return isWorkerAttachedToThisCrank(mob);
+    }
+
+    @Nullable
+    private Mob resolveWorker() {
+        Level level = level();
+        if (level == null) return null;
+
+        if (cachedWorkerMob != null && isWorkerAttachedToThisCrank(cachedWorkerMob)) {
+            // A cached reference is only trustworthy while the entity is
+            // still registered in the server level; an unloaded/discardable
+            // entity can keep its leash data but no longer exist as far as
+            // the world is concerned.
+            if (level instanceof ServerLevel serverLevel) {
+                if (serverLevel.getEntity(cachedWorkerMob.getUUID()) == cachedWorkerMob) {
+                    return cachedWorkerMob;
+                }
+                cachedWorkerMob = null;
+            } else {
+                return cachedWorkerMob;
+            }
+        }
+
+        if (workerUuid != null && level instanceof ServerLevel serverLevel) {
+            Entity ent = serverLevel.getEntity(workerUuid);
+            if (ent instanceof Mob mob && isWorkerAttachedToThisCrank(mob)) {
+                cachedWorkerMob = mob;
+                lastKnownWorkerPos = mob.blockPosition();
+                return mob;
+            }
+        }
+
+        long gameTime = level.getGameTime();
+        if (gameTime < nextFallbackWorkerSearchTick) {
+            return null;
+        }
+        nextFallbackWorkerSearchTick = gameTime + 20;
+
+        double searchRadius = Math.max(8.0D, workerRadius + 4.0D);
+        List<Mob> nearby = level.getEntitiesOfClass(Mob.class, new AABB(host.pos()).inflate(searchRadius), this::isWorkerAttachedToThisCrank);
+        if (!nearby.isEmpty()) {
+            Mob mob = nearby.get(0);
+            cachedWorkerMob = mob;
+            workerUuid = mob.getUUID();
+            lastKnownWorkerPos = mob.blockPosition();
+            return mob;
+        }
+
+        return null;
+    }
+
+    private void reconcileWorker() {
+        BlockState state = host.blockState();
+        if (!host.hasWorkerProperty()) {
+            clearWorkerReferences();
+            return;
+        }
+
+        Level level = level();
+        if (level == null) return;
+
+        Mob worker = resolveWorker();
+        boolean wasResolved = this.workerResolved;
+        boolean wasEligible = this.workerEligible;
+        boolean outputChanged = false;
+        boolean radiusChanged = false;
+
+        if (worker != null) {
+            this.workerResolved = true;
+            missingWorkerTicks = 0;
+            lastKnownWorkerPos = worker.blockPosition();
+
+            statRefreshTimer++;
+            boolean needStatRefresh = !wasResolved || (statRefreshTimer >= 60);
+
+            if (needStatRefresh) {
+                statRefreshTimer = 0;
+                WorkerResolver.ResolvedWorker profile = WorkerResolver.resolve(worker, machinePolicy.id().toString());
+                this.workerEligible = profile.isValid();
+
+                float oldRpm = effectiveBaseRpm;
+                float oldStress = effectiveBaseStress;
+                float oldRadius = workerRadius;
+                applyProfile(worker, profile);
+
+                outputChanged = Float.compare(oldRpm, effectiveBaseRpm) != 0
+                        || Float.compare(oldStress, effectiveBaseStress) != 0;
+                radiusChanged = Float.compare(oldRadius, workerRadius) != 0;
+                if (radiusChanged) {
+                    checkPathBlocks();
+                }
+            }
+
+            if (!wasResolved) {
+                CHPDiagnostics.event("worker_resolved", level, host.pos(), crankInstanceUuid, worker,
+                        "eligible=" + workerEligible);
+                float networkSpeed = host.theoreticalSpeed();
+                if (networkSpeed != 0) {
+                    generationDirection = Math.signum(networkSpeed);
+                }
+            }
+        } else {
+            if (wasResolved) {
+                CHPDiagnostics.event("worker_unresolved", level, host.pos(), crankInstanceUuid, cachedWorkerMob,
+                        "last_pos=" + lastKnownWorkerPos);
+            }
+            this.workerResolved = false;
+            this.workerEligible = false;
+            BlockPos checkPos = lastKnownWorkerPos != null ? lastKnownWorkerPos : host.pos();
+            if (level.hasChunkAt(checkPos)) {
+                missingWorkerTicks++;
+                boolean attachmentPresent = CHPUtils.hasAttachedWorker(level, host.pos());
+                if (shouldDetachMissingWorker(true, attachmentPresent, missingWorkerTicks)) {
+                    detachWorker(true);
+                    return;
+                }
+            }
+        }
+
+        if (wasResolved != this.workerResolved || wasEligible != this.workerEligible || outputChanged || radiusChanged) {
+            host.refreshKinetic();
+            host.syncToClient();
+        }
+    }
+
+    public static boolean shouldDetachMissingWorker(boolean workerLocationLoaded, boolean attachmentPresent, int missingTicks) {
+        if (!workerLocationLoaded) return false;
+        return attachmentPresent
+                ? missingTicks > MISSING_WORKER_GRACE_TICKS
+                : missingTicks > MISSING_ATTACHMENT_GRACE_TICKS;
+    }
+
+    private BlockPos[] offsetsForRadius(float radius) {
+        if (cachedOffsets == null || cachedOffsetsRadius != radius) {
+            cachedOffsets = generateOffsetsForRadius(radius);
+            cachedOffsetsRadius = radius;
+        }
+        return cachedOffsets;
+    }
+
+    private void checkPathBlocks() {
+        Level level = level();
+        if (level == null) return;
+
+        BlockPos[] offsets = offsetsForRadius(workerRadius);
+        PathEvaluator.Result evalResult = PathEvaluator.evaluate(level, host.pos(), offsets);
+        float speedMult = evalResult.speedMultiplier();
+        float stressMult = evalResult.stressMultiplier();
+
+        // pathEvaluated exposes the evaluated multipliers as mutable absolute
+        // values. The hook returns their final values; multiplying them again
+        // would square the path effect on NeoForge even when no script listens.
+        float[] scriptValues = CHPApi.scripts().firePathEvaluated(host.pos(), level, evalResult);
+        speedMult = scriptValues[0];
+        stressMult = scriptValues[1];
+
+        boolean valid = evalResult.isValid();
+        int invalidCount = evalResult.invalidBlocks();
+        int eff = Math.round(speedMult * 100.0f);
+
+        boolean changed = (this.hasValidWorkingBlocks != valid)
+                || (this.rpmModifier != speedMult)
+                || (this.pathStressModifier != stressMult)
+                || (this.invalidBlockCount != invalidCount);
+
+        if (changed) {
+            boolean wasGenerating = hasValidWorkingBlocks && (rpmModifier > 0);
+            this.hasValidWorkingBlocks = valid;
+            this.rpmModifier = speedMult;
+            this.pathStressModifier = stressMult;
+            this.efficiencyPercent = eff;
+            this.invalidBlockCount = invalidCount;
+            CHPDiagnostics.event("path_state_changed", level, host.pos(), crankInstanceUuid, cachedWorkerMob,
+                    "valid=" + valid + " speed_multiplier=" + speedMult + " stress_multiplier=" + stressMult
+                            + " efficiency=" + eff + " invalid_tiles=" + invalidCount);
+
+            boolean willGenerate = hasValidWorkingBlocks && (rpmModifier > 0);
+            if (!wasGenerating && willGenerate) {
+                float networkSpeed = host.theoreticalSpeed();
+                if (networkSpeed != 0) {
+                    this.generationDirection = Math.signum(networkSpeed);
+                }
+            }
+
+            host.refreshKinetic();
+            host.syncToClient();
+        }
+    }
+
+    public float getEfficiencyPercent() {
+        return efficiencyPercent;
+    }
+
+    public int getInvalidBlockCount() {
+        return invalidBlockCount;
+    }
+
+    public float getSpeedBonusPercent() {
+        return speedBonusPercent;
+    }
+
+    public float getHealthBonusPercent() {
+        return healthBonusPercent;
+    }
+
+    public String getCachedWorkerName() {
+        return cachedWorkerName;
+    }
+
+    public float getEffectiveBaseRpm() {
+        return effectiveBaseRpm;
+    }
+
+    public float getEffectiveBaseStress() {
+        return effectiveBaseStress;
+    }
+
+    public double getVisualGroundSpeed() {
+        return visualGroundSpeed;
+    }
+
+    public float getWorkerRadius() {
+        return workerRadius;
+    }
+
+    @Nullable
+    public UUID getWorkerUuid() {
+        return workerUuid;
+    }
+
+    @Nullable
+    public Mob getLoadedWorkerForDiagnostics() {
+        return cachedWorkerMob;
+    }
+
+    private void moveWorkerTo(Mob mob) {
+        Level level = level();
+        if (level == null || mob == null) return;
+
+        float speed = generatedSpeed();
+        if (speed == 0.0f) return;
+
+        BlockPos pos = host.pos();
+        double centerX = pos.getX() + 0.5;
+        double centerZ = pos.getZ() + 0.5;
+
+        double direction = Math.signum(speed);
+        double movementAttribute = mob.getAttributes().hasAttribute(Attributes.MOVEMENT_SPEED)
+                ? mob.getAttributeValue(Attributes.MOVEMENT_SPEED)
+                : WorkerStats.DEFAULT_SPEED_REF;
+        visualGroundSpeed = WorkerOrbitMovement.groundSpeedBlocksPerSecond(
+                movementAttribute,
+                CHPApi.config().workerGroundSpeedScale(),
+                CHPApi.config().minWorkerGroundSpeed(), CHPApi.config().maxWorkerGroundSpeed());
+        double angularDelta = WorkerOrbitMovement.angularDeltaPerTick(
+                visualGroundSpeed, workerRadius, direction);
+        controlWorkerAi(mob);
+        if (!Double.isFinite(workerOrbitAngle)) {
+            workerOrbitAngle = WorkerOrbitMovement.angleFromPosition(
+                    mob.getX(), mob.getZ(), centerX, centerZ);
+        }
+        double currentAngle = workerOrbitAngle;
+        workerOrbitAngle = WorkerOrbitMovement.normalizeAngle(workerOrbitAngle + angularDelta);
+        WorkerOrbitMovement.Snapshot movement = WorkerOrbitMovement.moveToAngle(
+                mob, centerX, centerZ, workerRadius, currentAngle, workerOrbitAngle);
+        WorkerActivityControl.clearHorizontalVelocity(mob);
+    }
+}

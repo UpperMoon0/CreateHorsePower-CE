@@ -1,6 +1,6 @@
-# Create Horse Power CE — Packmaker & Modder Guide
+# Create Horse Power CE â€” Packmaker & Modder Guide
 
-Welcome to the **Create Horse Power — Community Edition 1.2** framework documentation. This guide covers worker stats, path properties, attachment items, redstone, diagnostics, compatibility defaults, and scripting on both supported loaders.
+Welcome to the **Create Horse Power â€” Community Edition 1.2** framework documentation. This guide covers worker stats, path properties, attachment items, redstone, diagnostics, compatibility defaults, and scripting on both supported loaders.
 
 > **Loader availability**
 >
@@ -20,7 +20,7 @@ If a section is not labeled as "NeoForge 1.21.1 only", it applies to both loader
 2. [Datapack and config file paths by loader](#datapack-and-config-file-paths-by-loader)
 3. [NeoForge 1.21.1 Data Maps](#neoforge-1211-data-maps)
 4. [Tags](#tags)
-5. [KubeJS Integration — NeoForge 1.21.1 only](#kubejs-integration--neoforge-1211-only)
+5. [KubeJS Integration â€” NeoForge 1.21.1 only](#kubejs-integration--neoforge-1211-only)
 6. [Forge 1.20.1 customization](#forge-1201-customization)
 7. [Optional TerraFirmaCraft compatibility](#optional-terrafirmacraft-compatibility)
 8. [Server Configuration](#server-configuration)
@@ -37,21 +37,21 @@ Create Horse Power CE 1.2 turns the Horse Crank into a data-driven animal power 
 ```text
 Execution Lifecycle:
   Leash Bound (#createhorsepower:attachment_items)
-        ↓
+        â†“
   Worker Resolution & Validation (Alive, Species, Baby rules, Tamed rules, Undead rules)
-        ↓
+        â†“
   Path Scanning (Weighted Average, Worst Block, Legacy)
-        ↓
+        â†“
   Redstone Evaluation (Ignore, High Stops, High Runs)
-        ↓
+        â†“
   beforeWorkStart (optional KubeJS hook on NeoForge)
-        ↓
+        â†“
   Mechanical RPM / Stress Generation
         +
   Server-authoritative visual orbit gait (independent speed budget)
 ```
 
-Worker/path resolution differs by loader; see [Precedence Rules](#precedence-rules). Since 1.2.1, visible gait is deliberately independent from generated RPM: path/output multipliers can increase mechanical output without making animals sprint unrealistically fast.
+Worker/path resolution differs by loader; attachment profiles are shared across loaders. See [Precedence Rules](#precedence-rules). Since 1.2.1, visible gait is deliberately independent from generated RPM: path/output multipliers can increase mechanical output without making animals sprint unrealistically fast.
 
 ---
 
@@ -65,11 +65,12 @@ The two Minecraft versions use different tag-directory pluralization.
 | Entity type tags root | `data/<namespace>/tags/entity_type/` | `data/<namespace>/tags/entity_types/` |
 | Block tags root | `data/<namespace>/tags/block/` | `data/<namespace>/tags/blocks/` |
 | Data Maps directory | `data/<namespace>/data_maps/entity_type/`, `data/<namespace>/data_maps/block/` | _Not available_ |
+| Attachment profiles | `data/<namespace>/createhorsepower/attachment_profiles/` | same |
 | Server config | `saves/<world>/serverconfig/createhorsepower-server.toml` | same |
 | KubeJS startup scripts | `kubejs/startup_scripts/` | _Not available_ |
 | KubeJS server scripts | `kubejs/server_scripts/` | _Not available_ |
 
-Copying a NeoForge datapack into Forge 1.20.1 without renaming `tags/item` → `tags/items` (and similar registry folders) leaves those tags unread by Forge.
+Copying a NeoForge datapack into Forge 1.20.1 without renaming `tags/item` â†’ `tags/items` (and similar registry folders) leaves those tags unread by Forge.
 
 ---
 
@@ -111,6 +112,21 @@ Copying a NeoForge datapack into Forge 1.20.1 without renaming `tags/item` → `
 | `health_reference` | Float (> 0) | `20.0` | Species max-health benchmark. |
 | `requires_tamed` | Boolean | `false` | Require a tame worker. |
 | `allow_baby` | Boolean | `false` | Allow baby workers. |
+| `machines` | Object | `{}` | Exact machine-ID field overrides applied after this base profile is selected. |
+
+Machine overrides are field-by-field. Omitted fields inherit the selected base profile. Example:
+
+```json
+"machines": {
+  "createhorsepower:horse_crank": {
+    "rpm": 7.0,
+    "movement_radius": 2.0,
+    "allow_baby": true
+  }
+}
+```
+
+The source profile is chosen first using the normal KubeJS/Data Map/bundled/config precedence. Only then is the exact `machines[<machine-id>]` override applied; a lower-priority source never contributes a machine override to a higher-priority selected profile.
 
 `speed_scaling` affects mechanical output only. The 1.2.1 visual gait uses the separate server settings under `[workers]` documented below.
 
@@ -171,6 +187,35 @@ To add another attachment item while preserving defaults, omit `replace`:
 }
 ```
 
+### Attachment profiles
+
+Attachment behavior can be defined on **both loaders** without Java under:
+
+`data/<namespace>/createhorsepower/attachment_profiles/<name>.json`
+
+```json
+{
+  "priority": 100,
+  "items": ["firstworks:rope_harness"],
+  "item_tags": ["example:animal_harnesses"],
+  "mode": "harness",
+  "max_working_radius": 4.0,
+  "workers": ["minecraft:horse"],
+  "worker_tags": ["createhorsepower:workers/large"],
+  "machines": ["createhorsepower:horse_crank"],
+  "consume_on_attach": true,
+  "drop_on_detach": true,
+  "output_multiplier": 1.0
+}
+```
+
+`mode` accepts `vanilla_leash`, `harness`, `yoke`, or `virtual_tether`. `max_working_radius` must be within `0.5..6.0`; the effective orbit radius is the smaller of the worker profile radius and attachment limit. `output_multiplier` must be finite and greater than zero and scales both the resolved RPM and stress capacity.
+
+Selectors are deterministic: exact `items` beat `item_tags`; within the same selector class, higher `priority` wins and ties are broken by profile ID. `workers`/`worker_tags` and `machines` are allowlists; an empty allowlist means unrestricted. Invalid profiles fail the datapack reload with the profile ID in the error.
+
+The existing `#createhorsepower:attachment_items` / `#createhorsepower:worker_leashes` path remains a compatibility fallback. Items that have no explicit profile but are in those tags use the legacy `vanilla_leash` backend, are not consumed, and retain the existing fence-knot behavior.
+
+For non-vanilla backends, the current Horse Crank interaction intentionally preserves the established worker-selection UX: the target mob is first leashed to the player, then use the configured attachment item on the Horse Crank. CHP releases that temporary selection leash and persists its own attachment ownership marker. Detach/orphan recovery only cleans the backend recorded by CHP; it does not remove unrelated current leashes.
 ### Entity Tags
 
 - `#createhorsepower:workers/small`
@@ -181,7 +226,7 @@ These tier tags are available on both loaders and are fallbacks after higher-pri
 
 ---
 
-## KubeJS Integration — NeoForge 1.21.1 only
+## KubeJS Integration â€” NeoForge 1.21.1 only
 
 > Forge 1.20.1 does not register CHP KubeJS profile or lifecycle events.
 
@@ -415,7 +460,7 @@ When a CE bundled profile is selected, changed legacy `creatureRPMRange` / tier-
 
 Path stats:
 
-**KubeJS → explicit Data Map → legacy path config → CE bundled exact/family fallback**.
+**KubeJS â†’ explicit Data Map â†’ legacy path config â†’ CE bundled exact/family fallback**.
 
 The selected per-block profiles are still processed by the configured path evaluation mode. `WEIGHTED_AVERAGE` remains the default and continues to average mixed paths.
 
@@ -425,7 +470,7 @@ KubeJS and NeoForge Data Maps are unavailable.
 
 Worker bundled profiles use the same legacy balance override logic as NeoForge, including explicit legacy creature-list classification before tier tags/built-in tier fallback.
 
-For paths: **legacy path config → CE bundled exact/family fallback** (`greatPathBlock`, `normalPathBlock`, `poorPathBlock`).
+For paths: **legacy path config â†’ CE bundled exact/family fallback** (`greatPathBlock`, `normalPathBlock`, `poorPathBlock`).
 
 This ordering is intentional: pack/server data must be able to override CE defaults, while bundled defaults still provide sensible behavior when a pack supplies nothing.
 
@@ -436,7 +481,7 @@ This ordering is intentional: pack/server data must be able to override CE defau
 These apply on both loaders.
 
 - **Engineer's Goggles:** worker name/status, path efficiency, individual bonuses, and redstone mode.
-- **Wrench:** sneak-use a Create wrench to cycle `HIGH_STOPS` → `HIGH_RUNS` → `IGNORE`.
+- **Wrench:** sneak-use a Create wrench to cycle `HIGH_STOPS` â†’ `HIGH_RUNS` â†’ `IGNORE`.
 - **`/createhorsepower inspect`:** targeted crank state, mechanical RPM, visual gait blocks/second + radius, worker UUID/type, leash holder, attachment/AI marker state, and recovery anchor/chunk status when available.
 - **`/createhorsepower worker <entity_type>`:** query effective worker stats.
 - **`/createhorsepower path <block>`:** query effective path speed/stress multipliers.

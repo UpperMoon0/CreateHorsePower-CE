@@ -28,10 +28,22 @@ public class WorkerResolver {
             float effectiveStressCapacity,
             float speedBonusPercent,
             float healthBonusPercent,
-            boolean isValid
+            boolean isValid,
+            String source,
+            String machineId,
+            boolean machineOverrideApplied
     ) {
-        public static final ResolvedWorker INVALID = new ResolvedWorker(WorkerStats.DEFAULT, 0.0f, 0.0f, 0.0f, 0.0f, false);
+        public ResolvedWorker(WorkerStats baseStats, float effectiveRpm, float effectiveStressCapacity,
+                              float speedBonusPercent, float healthBonusPercent, boolean isValid) {
+            this(baseStats, effectiveRpm, effectiveStressCapacity, speedBonusPercent, healthBonusPercent,
+                    isValid, "unknown", "createhorsepower:horse_crank", false);
+        }
+
+        public static final ResolvedWorker INVALID = new ResolvedWorker(WorkerStats.DEFAULT, 0.0f, 0.0f,
+                0.0f, 0.0f, false, "none", "createhorsepower:horse_crank", false);
     }
+
+    private record SelectedProfile(WorkerStats stats, String source) {}
 
     private static Optional<BuiltinProfiles.WorkerTier> legacyTier(EntityType<?> type) {
         CHPConfig config = CHPApi.config();
@@ -94,6 +106,25 @@ public class WorkerResolver {
         );
     }
 
+    private static Optional<SelectedProfile> selectBaseStats(EntityType<?> type) {
+        Optional<WorkerStats> kjsStats = KubeJSProfileRegistry.getWorker(type);
+        if (kjsStats.isPresent()) return Optional.of(new SelectedProfile(kjsStats.get(), "kubejs"));
+
+        Optional<WorkerStats> platformStats = CHPApi.config().lookupWorkerStats(type);
+        if (platformStats.isPresent()) return Optional.of(new SelectedProfile(platformStats.get(), "platform_data"));
+
+        Optional<WorkerStats> builtinStats = BuiltinProfiles.worker(type);
+        if (builtinStats.isPresent()) return Optional.of(new SelectedProfile(applyLegacyOutputOverrides(type, builtinStats.get()), "builtin"));
+
+        String entityKey = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(type).toString();
+        if (CHPApi.config().smallCreatures().contains(entityKey)) return Optional.of(new SelectedProfile(createLegacyProfile(BuiltinProfiles.WorkerTier.SMALL), "legacy_config"));
+        if (CHPApi.config().mediumCreatures().contains(entityKey)) return Optional.of(new SelectedProfile(createLegacyProfile(BuiltinProfiles.WorkerTier.MEDIUM), "legacy_config"));
+        if (CHPApi.config().largeCreatures().contains(entityKey)) return Optional.of(new SelectedProfile(createLegacyProfile(BuiltinProfiles.WorkerTier.LARGE), "legacy_config"));
+        if (type.is(CHPTags.Entities.WORKERS_SMALL) || type.is(CHPTags.Entities.SMALL_WORKER_TAG)) return Optional.of(new SelectedProfile(createLegacyProfile(BuiltinProfiles.WorkerTier.SMALL), "worker_tag"));
+        if (type.is(CHPTags.Entities.WORKERS_MEDIUM) || type.is(CHPTags.Entities.MEDIUM_WORKER_TAG)) return Optional.of(new SelectedProfile(createLegacyProfile(BuiltinProfiles.WorkerTier.MEDIUM), "worker_tag"));
+        if (type.is(CHPTags.Entities.WORKERS_LARGE) || type.is(CHPTags.Entities.LARGE_WORKER_TAG)) return Optional.of(new SelectedProfile(createLegacyProfile(BuiltinProfiles.WorkerTier.LARGE), "worker_tag"));
+        return Optional.empty();
+    }
     public static Optional<WorkerStats> getBaseStats(EntityType<?> type) {
         Optional<WorkerStats> kjsStats = KubeJSProfileRegistry.getWorker(type);
         if (kjsStats.isPresent()) {
@@ -141,16 +172,22 @@ public class WorkerResolver {
     }
 
     public static ResolvedWorker resolve(@Nullable Mob mob) {
+        return resolve(mob, "createhorsepower:horse_crank");
+    }
+
+    public static ResolvedWorker resolve(@Nullable Mob mob, String machineId) {
         if (mob == null || !mob.isAlive()) {
             return ResolvedWorker.INVALID;
         }
 
-        Optional<WorkerStats> baseOpt = getBaseStats(mob.getType());
-        if (baseOpt.isEmpty()) {
-            return ResolvedWorker.INVALID;
+        Optional<SelectedProfile> selectedOpt = selectBaseStats(mob.getType());
+        if (selectedOpt.isEmpty()) {
+            return new ResolvedWorker(WorkerStats.DEFAULT, 0, 0, 0, 0, false, "none", machineId, false);
         }
 
-        WorkerStats stats = baseOpt.get();
+        SelectedProfile selected = selectedOpt.get();
+        boolean machineOverride = selected.stats().hasMachineOverride(machineId);
+        WorkerStats stats = selected.stats().forMachine(machineId);
 
         // Check baby constraint
         if (mob.isBaby() && !stats.allowBaby() && !CHPApi.config().allowBabies()) {
@@ -211,7 +248,7 @@ public class WorkerResolver {
                 baseStress,
                 speedBonus * 100.0f,
                 healthBonus * 100.0f,
-                true
+                true, selected.source(), machineId, machineOverride
         );
     }
 }

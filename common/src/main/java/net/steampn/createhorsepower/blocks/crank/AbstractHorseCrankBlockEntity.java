@@ -64,6 +64,13 @@ public abstract class AbstractHorseCrankBlockEntity extends GeneratingKineticBlo
     }
 
     @Override
+    public void setWorkerPresent(boolean present) {
+        BlockState state = blockState();
+        if (state.hasProperty(CrankProperties.HAS_WORKER) && state.getValue(CrankProperties.HAS_WORKER) != present) {
+            setBlockState(state.setValue(CrankProperties.HAS_WORKER, present));
+        }
+    }
+    @Override
     public void setBlockState(BlockState state) {
         this.level.setBlock(worldPosition, state, 3);
     }

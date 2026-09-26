@@ -55,7 +55,12 @@ def ALLOWED_ADAPTERS = [
         'net/steampn/createhorsepower/gametest/HorsePowerGameTests.java',
         'net/steampn/createhorsepower/gametest/HorsePowerLifecycleGameTests.java',
         // Registry + registration glue (loader-specific registries)
-        'net/steampn/createhorsepower/registry/CHPCreativeTabs.java'
+        'net/steampn/createhorsepower/registry/CHPCreativeTabs.java',
+        'net/steampn/createhorsepower/datagen/CHPBlockTagGenerator.java',
+        'net/steampn/createhorsepower/datagen/CHPEntityTagGenerator.java',
+        'net/steampn/createhorsepower/datagen/CHPItemTagGenerator.java',
+        'net/steampn/createhorsepower/datagen/CHPRecipeProvider.java',
+        'net/steampn/createhorsepower/datagen/DataGenerators.java'
 ] as Set
 // Exact one-loader source files. Keep these narrow: broad packages belong in
 // PLATFORM_ONLY_PREFIXES only when the entire integration is loader-specific.
@@ -66,7 +71,7 @@ def PLATFORM_ONLY_SOURCES = [
         'net/steampn/createhorsepower/gametest/NeoForgeRecoveryEdgeGameTests.java'
 ] as Set
 def PLATFORM_ONLY_PREFIXES = [
-        // NeoForge-only integrations and data generation APIs.
+        // Loader-specific integrations and data generation APIs.
         'net/steampn/createhorsepower/datagen/',
         'net/steampn/createhorsepower/compat/kubejs/',
         'net/steampn/createhorsepower/client/ponders/',
@@ -137,8 +142,7 @@ tasks.register('verifySharedSources') {
  *    (duplicatesStrategy = EXCLUDE picks whichever source wins). Fails the
  *    build instead.
  *
- * 2. The hand-maintained Forge 1.20.1 datapack JSONs are compared against
- *    their NeoForge 1.21.1 datagen-generated counterparts, after normalizing
+ * 2. Forge 1.20.1 and NeoForge 1.21.1 datagen JSONs are compared after normalizing
  *    the directory renames between versions (tags/items -> tags/item,
  *    recipes -> recipe, ...) and the known version-format differences
  *    (recipe result id/item, criteria items string vs list, requirement
@@ -181,8 +185,8 @@ tasks.register('verifySharedResources') {
             }
         }
 
-        // Rule 2: hand-written Forge data vs generated NeoForge data.
-        def forgeDataRoot = file('forge-1.20.1/src/main/resources')
+        // Rule 2: generated Forge data vs generated NeoForge data.
+        def forgeDataRoot = file('forge-1.20.1/src/generated/resources')
         def nfDataRoot = file('neoforge-1.21.1/src/generated/resources')
         def relativeDataJson = { File root ->
             if (!root.exists()) return [] as Set
@@ -256,14 +260,14 @@ tasks.register('verifySharedResources') {
             }
             if (parseNormalized(new File(forgeDataRoot, forgePath)) != parseNormalized(new File(nfDataRoot, nfPath))) {
                 problems << "Cross-version datapack drift: ${forgePath} vs ${nfPath}\n" +
-                        "  Hand-maintained Forge 1.20.1 JSON and NeoForge 1.21.1 datagen output are semantically different.\n" +
-                        "  Reconcile them (update the datagen provider or the hand-written file)."
+                        "  Forge 1.20.1 and NeoForge 1.21.1 datagen outputs are semantically different.\n" +
+                        "  Reconcile the loader datagen providers/shared definitions."
             }
         }
         nfData.each { nfPath ->
             if (!forgeToNf.containsKey(nfPath) && !PLATFORM_RESOURCE_ALLOWLIST.contains(nfPath)) {
                 problems << "NeoForge generated data has no Forge counterpart: ${nfPath}\n" +
-                        "  Add the matching hand-written file under forge-1.20.1/src/main/resources or allowlist it in PLATFORM_RESOURCE_ALLOWLIST."
+                        "  Generate the matching Forge resource or allowlist it in PLATFORM_RESOURCE_ALLOWLIST."
             }
         }
 
