@@ -13,6 +13,7 @@ import net.minecraft.world.entity.animal.horse.Horse;
 import net.minecraft.world.entity.decoration.LeashFenceKnotEntity;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.Blocks;
@@ -25,12 +26,16 @@ import net.steampn.createhorsepower.blocks.crank.WorkerAttachmentControl;
 import net.steampn.createhorsepower.blocks.crank.WorkerOrbitMovement;
 import net.steampn.createhorsepower.blocks.crank.WorkerRecoveryQueue;
 import net.steampn.createhorsepower.config.Config;
+import net.steampn.createhorsepower.content.attachment.AttachmentMode;
+import net.steampn.createhorsepower.content.attachment.AttachmentProfile;
+import net.steampn.createhorsepower.platform.CHPApi;
 import net.steampn.createhorsepower.content.stats.WorkerResolver;
 import net.steampn.createhorsepower.content.stats.WorkerStats;
 import net.steampn.createhorsepower.registry.BlockRegister;
 import net.steampn.createhorsepower.registry.TileEntityRegister;
 import net.steampn.createhorsepower.utils.CHPUtils;
 
+import java.util.Set;
 import java.util.UUID;
 
 /** Loader-level smoke test proving the crank registrations survive full server bootstrap. */
@@ -567,7 +572,7 @@ public final class HorsePowerGameTests {
      * drop the engine-side AI-suppression ownership even though restoration
      * could not run. Otherwise the ownership record stays stuck on A and
      * the next worker B is merely maintained ({@code NoAI=true} without a
-     * marker of its own) instead of acquiring its own recoverable marker —
+     * marker of its own) instead of acquiring its own recoverable marker --
      * a permanent frozen-animal bug.
      */
     @GameTest(template = "empty")
@@ -697,6 +702,68 @@ public final class HorsePowerGameTests {
         helper.succeed();
     }
 
+
+    @GameTest(template = "empty")
+    public static void customAttachmentProfilePersistsBackendRadiusAndOutput(GameTestHelper helper) {
+        BlockPos localCrankPos = new BlockPos(4, 2, 4);
+        helper.setBlock(localCrankPos, BlockRegister.HORSE_CRANK.get());
+        AbstractHorseCrankBlockEntity crank = requireCrank(helper, localCrankPos);
+        HorseCrankEngine engine = crank.engine();
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(6, 2, 4));
+
+        WorkerStats fixtureStats = new WorkerStats(
+                16.0f, 32.0f, 2.5f,
+                0.0f, WorkerStats.DEFAULT_SPEED_REF,
+                0.0f, WorkerStats.DEFAULT_HEALTH_REF,
+                false, false
+        );
+        WorkerResolver.ResolvedWorker fixture = new WorkerResolver.ResolvedWorker(
+                fixtureStats, 16.0f, 32.0f, 0.0f, 0.0f, true,
+                "gametest", "createhorsepower:horse_crank", false);
+        AttachmentProfile harness = new AttachmentProfile(
+                CHPApi.modId("gametest_harness"),
+                100,
+                Set.of(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(Items.SADDLE)),
+                Set.of(),
+                AttachmentMode.HARNESS,
+                1.75f,
+                Set.of(),
+                Set.of(),
+                Set.of(CHPApi.modId("horse_crank")),
+                false,
+                true,
+                0.5f
+        );
+
+        engine.attachWorker(horse, fixture, harness, new ItemStack(Items.SADDLE));
+
+        helper.assertTrue(engine.attachmentMode() == AttachmentMode.HARNESS,
+                "Custom profile must select the non-vanilla harness backend");
+        helper.assertTrue(WorkerAttachmentControl.markerMode(horse) == AttachmentMode.HARNESS,
+                "Worker marker must persist the selected attachment backend");
+        assertNear(helper, 1.75f, engine.getWorkerRadius(),
+                "Attachment profile must cap worker radius");
+        assertNear(helper, 8.0f, engine.getEffectiveBaseRpm(),
+                "Attachment output multiplier must scale RPM");
+        assertNear(helper, 16.0f, engine.getEffectiveBaseStress(),
+                "Attachment output multiplier must scale stress capacity");
+
+        CompoundTag saved = new CompoundTag();
+        engine.write(saved, false);
+        helper.assertTrue("harness".equals(saved.getString("AttachmentMode")),
+                "Save data must preserve the attachment backend");
+        helper.assertTrue(CHPApi.modId("gametest_harness").toString().equals(saved.getString("AttachmentProfile")),
+                "Save data must preserve the selected attachment profile id");
+
+        engine.detachWorker(false);
+        engine.read(saved, false);
+        helper.assertTrue(engine.attachmentMode() == AttachmentMode.HARNESS,
+                "Reload must restore the selected attachment backend");
+        helper.assertTrue(CHPApi.modId("gametest_harness").toString().equals(engine.attachmentProfileId()),
+                "Reload must restore the selected attachment profile id");
+
+        helper.succeed();
+    }
 
     private static void assertNear(GameTestHelper helper, float expected, float actual, String message) {
         helper.assertTrue(Math.abs(expected - actual) < 1.0e-4f,

@@ -9,6 +9,7 @@ import net.minecraft.data.recipes.RecipeProvider;
 import net.minecraft.data.recipes.ShapedRecipeBuilder;
 import net.minecraft.world.level.block.Blocks;
 import net.steampn.createhorsepower.registry.BlockRegister;
+import net.steampn.createhorsepower.datagen.CHPDataDefinitions;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
@@ -21,9 +22,9 @@ public class CHPRecipeProvider extends RecipeProvider implements net.neoforged.n
     @Override
     protected void buildRecipes(RecipeOutput recipeOutput) {
         ShapedRecipeBuilder.shaped(RecipeCategory.MISC, BlockRegister.HORSE_CRANK.get())
-                .pattern(" F ")
-                .pattern(" C ")
-                .pattern("SSS")
+                .pattern(CHPDataDefinitions.HORSE_CRANK_RECIPE[0])
+                .pattern(CHPDataDefinitions.HORSE_CRANK_RECIPE[1])
+                .pattern(CHPDataDefinitions.HORSE_CRANK_RECIPE[2])
                 .define('F', Blocks.OAK_FENCE)
                 .define('C', AllBlocks.COGWHEEL.get())
                 .define('S', Blocks.STONE)

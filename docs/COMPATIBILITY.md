@@ -11,6 +11,9 @@ Enforced and reviewed with every release. "Full" means identical behavior to the
 | Believable visual gait decoupled from mechanical RPM | Full | Full |
 | Redstone modes (`HIGH_STOPS`, `HIGH_RUNS`, `IGNORE`) | Full | Full |
 | Worker / attachment / leash datapack tags | Full | Full |
+| Data-driven attachment/harness profiles and backend-safe recovery | Full | Full |
+| Machine-specific worker profile overrides | Full | Full |
+| Reusable animal-power engine / bounded worker assignments | Full | Full |
 | Durable unloaded-worker detach + orphan leash recovery | Full | Full |
 | Optional TerraFirmaCraft worker + terrain defaults | Full (shared registry-ID/path fallback; explicit Data Maps/KubeJS can override) | Full (shared registry-ID/path fallback; legacy config can override) |
 | `/createhorsepower` diagnostics commands | Full | Full |
@@ -22,7 +25,8 @@ Enforced and reviewed with every release. "Full" means identical behavior to the
 | Jade HUD integration | Full | Full |
 | KubeJS startup profiles and lifecycle events | Full | Not yet ported (no Forge KubeJS script entry point; the shared profile registry cannot be populated from scripts) |
 | Ponder scenes | Full | Not yet ported |
-| Datagen (recipes, loot tables, tags, data maps) | Full | Not yet ported (JSONs are hand-maintained under `forge-1.20.1/src/main/resources`) |
+| Datagen (recipes, loot tables, tags) | Full | Full |
+| NeoForge Data Map datagen | Full | Not applicable (Forge has no Data Map API) |
 
 TerraFirmaCraft is never a required runtime dependency. CE only activates its built-in TFC defaults for registry IDs that actually exist. Starting in 1.2.2 those defaults are shared bundled fallbacks rather than NeoForge Data Map entries, so pack-provided Data Maps/KubeJS and legacy pack/server config can override them according to the documented precedence.
 

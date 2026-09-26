@@ -8,6 +8,11 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.LeadItem;
+import net.minecraft.world.item.ItemStack;
+import net.steampn.createhorsepower.content.attachment.AttachmentMode;
+import net.steampn.createhorsepower.content.attachment.AttachmentProfile;
+import net.steampn.createhorsepower.content.attachment.AttachmentProfileRegistry;
+import net.steampn.createhorsepower.content.machine.AnimalPowerMachinePolicy;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
@@ -113,7 +118,7 @@ public final class HorseCrankInteractions {
             return true;
         }
 
-        return loaded instanceof Mob mob && CHPUtils.isLeashedToKnotAt(mob, pos);
+        return loaded instanceof Mob mob && be.engine().isWorkerAttachmentValid(mob);
     }
 
     private static void clearWorkerState(Level level, BlockPos pos) {
@@ -133,9 +138,18 @@ public final class HorseCrankInteractions {
     }
 
     /** Runs the full attach flow for a leashed worker near the player. */
-    public static Outcome attachAt(Level level, BlockPos pos, BlockState state, Player player) {
+    public static Outcome attachAt(Level level, BlockPos pos, BlockState state, Player player, ItemStack attachmentStack) {
         if (level.isClientSide()) {
             return Outcome.SUCCESS;
+        }
+
+        AttachmentProfile attachment = AttachmentProfileRegistry.resolve(attachmentStack).orElse(null);
+        if (attachment == null) return Outcome.PASS;
+        var machine = AnimalPowerMachinePolicy.horseCrank();
+        if (!attachment.supportsMachine(machine.id())) {
+            CHPDiagnostics.event("attach_rejected", level, pos, null, null,
+                    "reason=attachment_machine_incompatible profile=" + attachment.id() + " machine=" + machine.id());
+            return Outcome.FAIL;
         }
 
         // Repair stale cache state before occupancy rejection. This is stricter
@@ -170,7 +184,14 @@ public final class HorseCrankInteractions {
         }
 
         Mob mob = mobsNearPlayer.get(0);
-        WorkerResolver.ResolvedWorker profile = WorkerResolver.resolve(mob);
+        if (!attachment.supportsWorker(mob)) {
+            CHPDiagnostics.event("attach_rejected", level, pos, null, mob,
+                    "reason=attachment_worker_incompatible profile=" + attachment.id());
+            player.displayClientMessage(Component.translatable("tooltip.createhorsepower.horse_crank.notValidWorker"), true);
+            return Outcome.SUCCESS;
+        }
+
+        WorkerResolver.ResolvedWorker profile = WorkerResolver.resolve(mob, machine.id().toString());
         if (!profile.isValid()) {
             CHPDiagnostics.event("attach_rejected", level, pos,
                     level.getBlockEntity(pos) instanceof AbstractHorseCrankBlockEntity be ? be.engine().crankInstanceUuid() : null,
@@ -186,11 +207,20 @@ public final class HorseCrankInteractions {
             return Outcome.FAIL;
         }
 
-        LeadItem.bindPlayerMobs(player, level, pos);
+        if (attachment.mode() == AttachmentMode.VANILLA_LEASH) {
+            LeadItem.bindPlayerMobs(player, level, pos);
+        } else {
+            // Preserve the existing worker-selection contract: a player-held leash chooses
+            // the worker, then a non-vanilla backend takes ownership without a fence knot.
+            mob.dropLeash(true, true);
+        }
         if (level.getBlockEntity(pos) instanceof AbstractHorseCrankBlockEntity be) {
-            be.attachWorker(mob, profile);
+            be.engine().attachWorker(mob, profile, attachment, attachmentStack);
         } else {
             level.setBlock(pos, state.setValue(CrankProperties.HAS_WORKER, true), 3);
+        }
+        if (attachment.consumeOnAttach() && !player.getAbilities().instabuild) {
+            attachmentStack.shrink(1);
         }
         player.displayClientMessage(Component.translatable("tooltip.createhorsepower.horse_crank.attached"), true);
 

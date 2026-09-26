@@ -6,6 +6,12 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.decoration.LeashFenceKnotEntity;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.ItemStack;
+import net.steampn.createhorsepower.content.attachment.AttachmentMode;
+import net.steampn.createhorsepower.content.attachment.AttachmentProfile;
+import net.steampn.createhorsepower.content.machine.AnimalPowerAccess;
 import net.steampn.createhorsepower.CHPConstants;
 import net.steampn.createhorsepower.platform.CHPApi;
 import net.steampn.createhorsepower.platform.DeferredDetachStore;
@@ -19,6 +25,11 @@ public final class WorkerAttachmentControl {
     public static final String MARKER_KEY = CHPConstants.MODID + ":crank_attachment";
     private static final String CRANK_POS_KEY = "CrankPos";
     private static final String CRANK_UUID_KEY = "CrankUuid";
+    private static final String MODE_KEY = "Mode";
+    private static final String PROFILE_KEY = "Profile";
+    private static final String ATTACHMENT_ITEM_KEY = "AttachmentItem";
+    private static final String CONSUMED_KEY = "Consumed";
+    private static final String DROP_ON_DETACH_KEY = "DropOnDetach";
 
     public enum RecoveryResult {
         NONE,
@@ -35,6 +46,11 @@ public final class WorkerAttachmentControl {
     }
 
     public static void markAttached(Mob mob, BlockPos crankPos, UUID crankUuid) {
+        markAttached(mob, crankPos, crankUuid, null, ItemStack.EMPTY);
+    }
+
+    public static void markAttached(Mob mob, BlockPos crankPos, UUID crankUuid,
+                                    @Nullable AttachmentProfile profile, ItemStack attachmentStack) {
         // A successful new attachment supersedes every older detach/recovery
         // intent for this worker. Clear both the durable level record and the
         // legacy BE-local migration record before writing new ownership.
@@ -44,9 +60,9 @@ public final class WorkerAttachmentControl {
             // crank chunk is available. Never load that chunk merely to clean
             // up the legacy BE-local detach policy.
             if (serverLevel.hasChunkAt(crankPos)
-                    && serverLevel.getBlockEntity(crankPos) instanceof AbstractHorseCrankBlockEntity crank
-                    && crankUuid.equals(crank.engine().crankInstanceUuid())) {
-                crank.engine().consumeDeferredDetachPolicy(mob.getUUID());
+                    && serverLevel.getBlockEntity(crankPos) instanceof AnimalPowerAccess machine
+                    && crankUuid.equals(machine.animalPowerEngine().crankInstanceUuid())) {
+                machine.animalPowerEngine().consumeDeferredDetachPolicy(mob.getUUID());
             }
             WorkerRecoveryQueue.cancelRecovery(mob);
             if (stale != null) {
@@ -58,6 +74,16 @@ public final class WorkerAttachmentControl {
         CompoundTag marker = new CompoundTag();
         marker.putLong(CRANK_POS_KEY, crankPos.asLong());
         marker.putUUID(CRANK_UUID_KEY, crankUuid);
+        AttachmentMode mode = profile == null ? AttachmentMode.VANILLA_LEASH : profile.mode();
+        marker.putString(MODE_KEY, mode.serializedName());
+        if (profile != null) {
+            marker.putString(PROFILE_KEY, profile.id().toString());
+            marker.putBoolean(CONSUMED_KEY, profile.consumeOnAttach());
+            marker.putBoolean(DROP_ON_DETACH_KEY, profile.dropOnDetach());
+            if (!attachmentStack.isEmpty()) {
+                marker.putString(ATTACHMENT_ITEM_KEY, BuiltInRegistries.ITEM.getKey(attachmentStack.getItem()).toString());
+            }
+        }
         mob.getPersistentData().put(MARKER_KEY, marker);
         CHPDiagnostics.event("attachment_marker_written", mob.level(), crankPos, crankUuid, mob, "");
     }
@@ -121,7 +147,7 @@ public final class WorkerAttachmentControl {
             // even when an old/corrupt worker marker does not. Honor that
             // stronger record rather than silently losing detach(false).
             if (durable != null) {
-                releasePersistedCrankLeash(mob, level, durable.crankPos(), durable.dropLead());
+                releasePersistedAttachment(mob, level, durable.crankPos(), durable.dropLead());
                 releaseActivityIfOwnedBy(mob, durable.crankPos(), durable.crankUuid());
                 CHPApi.deferredDetaches().remove(level, mob.getUUID());
             }
@@ -130,7 +156,7 @@ public final class WorkerAttachmentControl {
         }
 
         if (durable != null && durable.matches(crankPos, crankUuid)) {
-            releasePersistedCrankLeash(mob, level, crankPos, durable.dropLead());
+            releasePersistedAttachment(mob, level, crankPos, durable.dropLead());
             releaseActivityIfOwnedBy(mob, crankPos, crankUuid);
             CHPApi.deferredDetaches().remove(level, mob.getUUID());
             mob.getPersistentData().remove(MARKER_KEY);
@@ -144,9 +170,9 @@ public final class WorkerAttachmentControl {
             return RecoveryResult.DEFERRED;
         }
 
-        if (level.getBlockEntity(crankPos) instanceof AbstractHorseCrankBlockEntity crank
-                && crankUuid.equals(crank.engine().crankInstanceUuid())
-                && crank.engine().isAssignedWorker(mob.getUUID())) {
+        if (level.getBlockEntity(crankPos) instanceof AnimalPowerAccess machine
+                && crankUuid.equals(machine.animalPowerEngine().crankInstanceUuid())
+                && machine.animalPowerEngine().isAssignedWorker(mob.getUUID())) {
             CHPDiagnostics.event("attachment_recovery_valid", level, crankPos, crankUuid, mob, "owner_still_live=true");
             return RecoveryResult.VALID;
         }
@@ -154,19 +180,19 @@ public final class WorkerAttachmentControl {
         // Backward-compatible migration path for worlds written before the
         // level SavedData store existed. New detach requests are persisted at level scope.
         boolean dropLead = true;
-        boolean hasLegacyDeferredPolicy = level.getBlockEntity(crankPos) instanceof AbstractHorseCrankBlockEntity crank
-                && crankUuid.equals(crank.engine().crankInstanceUuid())
-                && crank.engine().hasDeferredDetachPolicy(mob.getUUID());
+        boolean hasLegacyDeferredPolicy = level.getBlockEntity(crankPos) instanceof AnimalPowerAccess machine
+                && crankUuid.equals(machine.animalPowerEngine().crankInstanceUuid())
+                && machine.animalPowerEngine().hasDeferredDetachPolicy(mob.getUUID());
         if (hasLegacyDeferredPolicy) {
-            AbstractHorseCrankBlockEntity crank = (AbstractHorseCrankBlockEntity) level.getBlockEntity(crankPos);
-            dropLead = crank.engine().deferredDetachDropLead(mob.getUUID());
+            AnimalPowerAccess machine = (AnimalPowerAccess) level.getBlockEntity(crankPos);
+            dropLead = machine.animalPowerEngine().deferredDetachDropLead(mob.getUUID());
         }
 
-        releasePersistedCrankLeash(mob, level, crankPos, dropLead);
+        releasePersistedAttachment(mob, level, crankPos, dropLead);
 
         if (hasLegacyDeferredPolicy) {
-            AbstractHorseCrankBlockEntity crank = (AbstractHorseCrankBlockEntity) level.getBlockEntity(crankPos);
-            crank.engine().consumeDeferredDetachPolicy(mob.getUUID());
+            AnimalPowerAccess machine = (AnimalPowerAccess) level.getBlockEntity(crankPos);
+            machine.animalPowerEngine().consumeDeferredDetachPolicy(mob.getUUID());
         }
         removeDurableIfOwnedBy(level, mob.getUUID(), crankPos, crankUuid);
         CHPDiagnostics.event("attachment_recovered", level, crankPos, crankUuid, mob,
@@ -198,7 +224,7 @@ public final class WorkerAttachmentControl {
         BlockPos crankPos = markerCrankPos(mob);
         UUID crankUuid = markerCrankUuid(mob);
         if (crankPos != null) {
-            releasePersistedCrankLeash(mob, level, crankPos, true);
+            releasePersistedAttachment(mob, level, crankPos, true);
         }
         if (crankPos != null && crankUuid != null) {
             releaseActivityIfOwnedBy(mob, crankPos, crankUuid);
@@ -230,6 +256,69 @@ public final class WorkerAttachmentControl {
         }
     }
 
+    public static AttachmentMode markerMode(Mob mob) {
+        if (!hasMarker(mob)) return AttachmentMode.VANILLA_LEASH;
+        CompoundTag marker = mob.getPersistentData().getCompound(MARKER_KEY);
+        if (!marker.contains(MODE_KEY)) return AttachmentMode.VANILLA_LEASH;
+        try {
+            return AttachmentMode.parse(marker.getString(MODE_KEY));
+        } catch (IllegalArgumentException ignored) {
+            return AttachmentMode.VANILLA_LEASH;
+        }
+    }
+
+    @Nullable
+    public static String markerProfileId(Mob mob) {
+        if (!hasMarker(mob)) return null;
+        CompoundTag marker = mob.getPersistentData().getCompound(MARKER_KEY);
+        return marker.contains(PROFILE_KEY) ? marker.getString(PROFILE_KEY) : null;
+    }
+
+    public static boolean isBackendAttached(Mob mob, BlockPos crankPos, UUID crankUuid, AttachmentMode mode) {
+        if (!isOwnedBy(mob, crankPos, crankUuid)) return false;
+        if (mode == AttachmentMode.VANILLA_LEASH) {
+            Entity holder = mob.getLeashHolder();
+            return holder instanceof LeashFenceKnotEntity knot && knot.blockPosition().equals(crankPos);
+        }
+        return mob.isAlive();
+    }
+
+    /**
+     * Releases only the backend recorded in CHP's attachment marker. The profile
+     * item lifecycle is backend-independent: a consumed harness/yoke item must be
+     * returned according to drop_on_detach even when the physical backend is the
+     * vanilla leash/fence-knot implementation.
+     */
+    public static void releasePersistedAttachment(Mob mob, ServerLevel level, BlockPos crankPos, boolean dropRequested) {
+        AttachmentMode mode = markerMode(mob);
+        if (mode == AttachmentMode.VANILLA_LEASH) {
+            releasePersistedCrankLeash(mob, level, crankPos, dropRequested);
+        }
+        dropConsumedAttachmentIfRequested(mob, dropRequested);
+    }
+
+    private static void dropConsumedAttachmentIfRequested(Mob mob, boolean dropRequested) {
+        if (!hasMarker(mob)) return;
+        CompoundTag marker = mob.getPersistentData().getCompound(MARKER_KEY);
+        if (dropRequested && marker.getBoolean(CONSUMED_KEY) && marker.getBoolean(DROP_ON_DETACH_KEY)
+                && marker.contains(ATTACHMENT_ITEM_KEY)) {
+            ResourceLocation itemId = parseResourceId(marker.getString(ATTACHMENT_ITEM_KEY));
+            if (itemId != null) {
+                BuiltInRegistries.ITEM.getOptional(itemId).ifPresent(item -> mob.spawnAtLocation(new ItemStack(item)));
+            }
+        }
+    }
+
+    @Nullable
+    private static ResourceLocation parseResourceId(String value) {
+        int colon = value.indexOf(':');
+        if (colon <= 0 || colon == value.length() - 1) return null;
+        try {
+            return CHPApi.id(value.substring(0, colon), value.substring(colon + 1));
+        } catch (RuntimeException ignored) {
+            return null;
+        }
+    }
     private static void releasePersistedCrankLeash(
             Mob mob,
             ServerLevel level,

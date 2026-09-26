@@ -32,3 +32,4 @@ forge*changelog.txt
 .cache
 src/generated/resources/.cache/
 logs/
+**/run-data/

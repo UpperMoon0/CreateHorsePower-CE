@@ -17,6 +17,8 @@ import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterGameTestsEvent;
+import net.neoforged.neoforge.event.AddReloadListenerEvent;
+import net.steampn.createhorsepower.content.attachment.AttachmentProfileReloadListener;
 import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
 import net.neoforged.neoforge.event.server.ServerStoppedEvent;
@@ -75,6 +77,11 @@ public class CreateHorsePower {
         event.register(HorsePowerGameTests.class);
         event.register(HorsePowerLifecycleGameTests.class);
         event.register(NeoForgeRecoveryEdgeGameTests.class);
+    }
+
+    @SubscribeEvent
+    public void onAddReloadListeners(AddReloadListenerEvent event) {
+        event.addListener(new AttachmentProfileReloadListener());
     }
 
     @SubscribeEvent
