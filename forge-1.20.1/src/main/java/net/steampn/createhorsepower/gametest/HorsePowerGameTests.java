@@ -765,6 +765,63 @@ public final class HorsePowerGameTests {
         helper.succeed();
     }
 
+
+    @GameTest(template = "empty")
+    public static void vanillaLeashBoundaryWorkerMustActuallyBindBeforeConsumption(GameTestHelper helper) {
+        List<AttachmentProfile> previousProfiles = AttachmentProfileRegistry.all();
+        try {
+            AttachmentProfile profile = new AttachmentProfile(
+                    CHPApi.modId("gametest_vanilla_boundary"),
+                    1000,
+                    Set.of(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(Items.SADDLE)),
+                    Set.of(),
+                    AttachmentMode.VANILLA_LEASH,
+                    3.0f,
+                    Set.of(),
+                    Set.of(),
+                    Set.of(CHPApi.modId("horse_crank")),
+                    true,
+                    true,
+                    1.0f
+            );
+            AttachmentProfileRegistry.replace(List.of(profile));
+
+            BlockPos localCrankPos = new BlockPos(4, 2, 4);
+            helper.setBlock(localCrankPos, BlockRegister.HORSE_CRANK.get());
+            AbstractHorseCrankBlockEntity crank = requireCrank(helper, localCrankPos);
+            BlockPos worldCrankPos = helper.absolutePos(localCrankPos);
+            ServerLevel level = helper.getLevel();
+
+            // CHP's selection AABB reaches one block farther on the positive
+            // edge than vanilla LeadItem.bindPlayerMobs(). This position is in
+            // that strip: it must either be bound specifically or rejected,
+            // never consumed/recorded without a real backend.
+            Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(12, 2, 4));
+            net.minecraft.world.entity.player.Player player = helper.makeMockSurvivalPlayer();
+            player.getAbilities().instabuild = false;
+            horse.setLeashedTo(player, false);
+            ItemStack attachmentStack = new ItemStack(Items.SADDLE);
+
+            HorseCrankInteractions.Outcome outcome = HorseCrankInteractions.attachAt(
+                    level, worldCrankPos, level.getBlockState(worldCrankPos), player, attachmentStack);
+
+            helper.assertTrue(outcome == HorseCrankInteractions.Outcome.SUCCESS,
+                    "Boundary worker attach must be handled successfully");
+            helper.assertTrue(CHPUtils.isLeashedToKnotAt(horse, worldCrankPos),
+                    "Selected boundary worker must actually be leashed to this crank before ownership is recorded");
+            helper.assertTrue(attachmentStack.isEmpty(),
+                    "Consumed vanilla-leash attachment is valid only after the exact worker backend exists");
+            helper.assertTrue(WorkerAttachmentControl.isOwnedBy(
+                            horse, worldCrankPos, crank.engine().crankInstanceUuid()),
+                    "Exact worker ownership must be recorded only after successful binding");
+
+            crank.engine().detachWorker(true);
+        } finally {
+            AttachmentProfileRegistry.replace(previousProfiles);
+        }
+        helper.succeed();
+    }
+
     @GameTest(template = "empty")
     public static void creativeConsumingProfileNeverRecordsOrDropsConsumedItem(GameTestHelper helper) {
         List<AttachmentProfile> previousProfiles = AttachmentProfileRegistry.all();

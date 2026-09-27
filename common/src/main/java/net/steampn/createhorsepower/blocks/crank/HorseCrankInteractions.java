@@ -7,7 +7,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.item.LeadItem;
+import net.minecraft.world.entity.decoration.LeashFenceKnotEntity;
 import net.minecraft.world.item.ItemStack;
 import net.steampn.createhorsepower.content.attachment.AttachmentMode;
 import net.steampn.createhorsepower.content.attachment.AttachmentProfile;
@@ -15,6 +15,7 @@ import net.steampn.createhorsepower.content.attachment.AttachmentProfileRegistry
 import net.steampn.createhorsepower.content.machine.AnimalPowerMachinePolicy;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.gameevent.GameEvent;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.steampn.createhorsepower.content.crank.RedstoneMode;
@@ -222,7 +223,25 @@ public final class HorseCrankInteractions {
         boolean attachmentItemConsumed = attachment.consumeOnAttach() && !player.getAbilities().instabuild;
 
         if (attachment.mode() == AttachmentMode.VANILLA_LEASH) {
-            LeadItem.bindPlayerMobs(player, level, pos);
+            // Bind only the worker selected above. Vanilla's batch helper has
+            // broader semantics on 1.21.1 (all Leashable entities, including
+            // boats) and a slightly different search box on both supported
+            // versions, so delegating to it can mutate unrelated leashes or
+            // report success without attaching this worker.
+            boolean knotAlreadyExisted = CHPUtils.getKnot(level, pos).isPresent();
+            LeashFenceKnotEntity knot = LeashFenceKnotEntity.getOrCreateKnot(level, pos);
+            knot.playPlacementSound();
+            mob.setLeashedTo(knot, true);
+            if (mob.getLeashHolder() != knot || !knot.blockPosition().equals(pos)) {
+                if (!knotAlreadyExisted) {
+                    knot.discard();
+                }
+                CHPDiagnostics.event("attach_rejected", level, pos, targetCrankUuid, mob,
+                        "reason=vanilla_leash_backend_not_established");
+                return Outcome.FAIL;
+            }
+            // Preserve vanilla's successful knot-bind vibration/game-event semantics.
+            level.gameEvent(player, GameEvent.BLOCK_ATTACH, pos);
         } else {
             // Preserve the existing worker-selection contract: a player-held leash chooses
             // the worker, then a non-vanilla backend takes ownership without a fence knot.
