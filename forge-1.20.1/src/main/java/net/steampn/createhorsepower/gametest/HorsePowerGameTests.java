@@ -47,6 +47,71 @@ import java.util.UUID;
 public final class HorsePowerGameTests {
     private HorsePowerGameTests() {}
 
+
+    @GameTest(template = "empty")
+    public static void freshDefaultPathConfigFallsThroughToBundledProfiles(GameTestHelper helper) {
+        helper.assertTrue(Config.POOR_PATH.getDefault().isEmpty(),
+                "Fresh 1.2+ poorPathBlock default must not shadow bundled path profiles");
+        helper.assertTrue(Config.NORMAL_PATH.getDefault().isEmpty(),
+                "Fresh 1.2+ normalPathBlock default must not shadow bundled path profiles");
+        helper.assertTrue(Config.GREAT_PATH.getDefault().isEmpty(),
+                "Fresh 1.2+ greatPathBlock default must not shadow bundled path profiles");
+        helper.assertTrue(Math.abs(net.steampn.createhorsepower.content.stats.BuiltinProfiles.path(Blocks.DIRT)
+                        .orElseThrow().speedMultiplier() - 0.70f) < 0.0001f,
+                "Bundled dirt profile must remain 0.70 on a fresh install");
+        helper.assertTrue(Math.abs(net.steampn.createhorsepower.content.stats.BuiltinProfiles.path(Blocks.GRAVEL)
+                        .orElseThrow().speedMultiplier() - 1.10f) < 0.0001f,
+                "Bundled gravel profile must remain 1.10 on a fresh install");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void attachmentJsonParserFeedsRealItemResolution(GameTestHelper helper) {
+        List<AttachmentProfile> previous = AttachmentProfileRegistry.all();
+        try {
+            AttachmentProfile parsed = net.steampn.createhorsepower.content.attachment.AttachmentProfileReloadListener.decode(
+                    CHPApi.modId("gametest_json_attachment"),
+                    com.google.gson.JsonParser.parseString("""
+                            {"items":["minecraft:saddle"],"mode":"harness","priority":99,"consume_on_attach":true}
+                            """).getAsJsonObject());
+            AttachmentProfileRegistry.replace(List.of(parsed));
+            AttachmentProfile resolved = AttachmentProfileRegistry.explicit(new ItemStack(Items.SADDLE)).orElseThrow();
+            helper.assertTrue(resolved.id().equals(CHPApi.modId("gametest_json_attachment")),
+                    "Parsed datapack JSON must resolve through the real item selector registry");
+            helper.assertTrue(resolved.mode() == AttachmentMode.HARNESS,
+                    "Parsed attachment mode must survive into runtime resolution");
+        } finally {
+            AttachmentProfileRegistry.replace(previous);
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void sharedWorkerJsonAppliesMachineOverrideOnBothLoaders(GameTestHelper helper) {
+        try {
+            net.steampn.createhorsepower.content.stats.WorkerProfileRegistry.Entry entry =
+                    net.steampn.createhorsepower.content.stats.WorkerProfileReloadListener.decode(
+                            CHPApi.modId("gametest_json_worker"),
+                            com.google.gson.JsonParser.parseString("""
+                                    {"entity":"minecraft:horse","rpm":5.0,"stress":600.0,"machines":{"createhorsepower:horse_crank":{"rpm":7.5,"movement_radius":2.0}}}
+                                    """).getAsJsonObject());
+            net.steampn.createhorsepower.content.stats.WorkerProfileRegistry.replace(List.of(entry));
+            Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(0, 1, 0));
+            WorkerResolver.ResolvedWorker resolved = WorkerResolver.resolve(horse, "createhorsepower:horse_crank");
+            helper.assertTrue(resolved.isValid(), "Shared JSON worker profile must resolve on this loader");
+            helper.assertTrue("datapack_json".equals(resolved.source()),
+                    "Shared JSON must be reported as the selected worker-profile source");
+            helper.assertTrue(resolved.machineOverrideApplied(), "Machine override must be reported as applied");
+            helper.assertTrue(Math.abs(resolved.baseStats().baseRpm() - 7.5f) < 0.0001f,
+                    "Machine-specific JSON RPM override must reach runtime resolution");
+            helper.assertTrue(Math.abs(resolved.baseStats().movementRadius() - 2.0f) < 0.0001f,
+                    "Machine-specific JSON movement radius must reach runtime resolution");
+        } finally {
+            net.steampn.createhorsepower.content.stats.WorkerProfileRegistry.clear();
+        }
+        helper.succeed();
+    }
+
     @GameTest(template = "empty")
     public static void crankRegistrations(GameTestHelper helper) {
         BlockRegister.HORSE_CRANK.get();

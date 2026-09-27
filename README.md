@@ -20,13 +20,13 @@ On both loaders, Jade integration activates automatically when Jade is installed
 ## Highlights
 
 - Persistent Horse Cranks with durable worker ownership and orphan-leash recovery across chunk unload/save/reload cycles.
-- Data-driven worker profiles with RPM, stress capacity, movement radius, taming/baby rules, and optional movement-speed and max-health scaling.
+- Data-driven worker profiles on both loaders through shared datapack JSON, with RPM, stress capacity, movement radius, taming/baby rules, attribute scaling, and machine-specific overrides.
 - Data-driven path profiles with weighted-average, worst-block, and legacy evaluation modes.
 - Believable worker gait that is independent from mechanical RPM; high-output cranks no longer force animals to sprint around the ring.
 - Per-crank redstone modes: `HIGH_STOPS`, `HIGH_RUNS`, and `IGNORE`.
 - Create Goggles and optional Jade (both loaders) diagnostics for worker, path, output, and veto state.
 - Optional transition-based field logging through `diagnostics.debugLogging` for attach/detach, leash recovery, AI control, work state, and path state.
-- Datapack tags for worker tiers and custom attachment items.
+- Datapack attachment profiles on both loaders with `vanilla_leash`, `harness`, `yoke`, and `virtual_tether` backends, plus worker/item tags for compatibility and selection.
 - NeoForge 1.21.1 only: optional KubeJS startup profiles and lifecycle/output events.
 - Inspection commands for cranks, workers, and path blocks.
 
@@ -53,21 +53,24 @@ Craft and place a Horse Crank, prepare a complete valid path around it, then att
 
 The full [Packmaker and Modder Guide](docs/PACKMAKERS.md) documents:
 
-- `createhorsepower:worker_stats` and `createhorsepower:path_stats` NeoForge Data Maps (NeoForge 1.21.1; NeoForge Data Maps and KubeJS profile registration are not available on Forge yet).
-- Worker, attachment-item, and leash tags (available on both versions).
+- Shared worker-profile JSON (`data/<namespace>/createhorsepower/worker_profiles/`) with machine-specific overrides on both versions.
+- Shared attachment-profile JSON plus worker, attachment-item, and leash tags on both versions.
+- Optional `createhorsepower:worker_stats` / `path_stats` NeoForge Data Maps and KubeJS scripting on NeoForge 1.21.1.
 - Server configuration, including the 1.2.1 visual-gait and debug-logging settings.
 - Built-in optional TerraFirmaCraft worker/path defaults and precedence behavior.
 - KubeJS startup registration and server lifecycle events (NeoForge 1.21.1 only for now).
 - Migration behavior from CE 1.1.
 
-Starting with 1.2.2, CE's bundled worker/path profiles are fallback defaults rather than pack-override data. On NeoForge 1.21.1, KubeJS and explicit Data Maps remain the highest-priority customization layers. Legacy server balance/path config can override CE bundled defaults, and weighted mixed-path evaluation is unchanged.
+CE's bundled worker/path profiles are fallback defaults rather than pack-override data. Worker customization is loader-neutral through shared datapack JSON; on NeoForge 1.21.1, KubeJS remains highest priority and shared worker JSON sits above explicit Data Maps. Legacy server balance/path config can still override bundled fallbacks where documented, and weighted mixed-path evaluation is unchanged.
+
+Vanilla lead support is bundled and works on a fresh install. `harness`, `yoke`, and `virtual_tether` are framework backends for packs/mods; CE does not ship player-facing items using those modes by default.
 
 ## Migrating from CE 1.1
 
 - Existing 1.1 server-config keys remain at the TOML root.
 - Existing Horse Cranks without a saved redstone mode migrate to `IGNORE`; new cranks use `defaultRedstoneMode`.
 - In 1.2.2, changed legacy RPM/stress values override CE bundled worker base output while intended per-animal health scaling remains active. Explicit legacy creature lists also take precedence over CE tier fallbacks for classification.
-- Pack/server legacy path lists override CE bundled per-block path defaults. On NeoForge, explicit KubeJS/Data Map profiles still win. Weighted mixed-path evaluation remains unchanged.
+- Fresh 1.2+ configs leave the legacy path lists empty so bundled per-block defaults apply (dirt `0.70`, gravel `1.10`). Existing 1.1 config files retain their stored path lists and continue to override bundled path defaults. On NeoForge, explicit KubeJS/Data Map path profiles still win.
 - Update any prerelease worker profile above a 6-block movement radius before loading it in 1.2; out-of-range Data Map or KubeJS values are rejected.
 - Back up important worlds before changing mod versions.
 
@@ -85,7 +88,7 @@ Starting with 1.2.2, CE's bundled worker/path profiles are fallback defaults rat
 - Pack-defined path data overrides CE bundled path defaults; weighted mixed-path evaluation still averages the resolved per-block profiles normally.
 - NeoForge bundled defaults are no longer shipped as Data Maps, so Data Maps consistently represent explicit datapack/packmaker overrides.
 
-See the [1.2.2 release notes](changelog/1.21.1-1.2.2.md) for NeoForge 1.21.1 and the [Forge 1.20.1 1.2.2 release notes](changelog/1.20.1-1.2.2.md) for the Forge port.
+See the unified [1.2.7 release notes](changelog/1.2.7.md) for the current cross-loader release changes.
 
 ## Building
 

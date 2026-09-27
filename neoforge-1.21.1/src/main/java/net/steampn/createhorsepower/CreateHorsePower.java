@@ -19,6 +19,7 @@ import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterGameTestsEvent;
 import net.neoforged.neoforge.event.AddReloadListenerEvent;
 import net.steampn.createhorsepower.content.attachment.AttachmentProfileReloadListener;
+import net.steampn.createhorsepower.content.stats.WorkerProfileReloadListener;
 import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
 import net.neoforged.neoforge.event.server.ServerStoppedEvent;
@@ -83,6 +84,7 @@ public class CreateHorsePower {
     @SubscribeEvent
     public void onAddReloadListeners(AddReloadListenerEvent event) {
         event.addListener(new AttachmentProfileReloadListener());
+        event.addListener(new WorkerProfileReloadListener());
     }
 
     @SubscribeEvent

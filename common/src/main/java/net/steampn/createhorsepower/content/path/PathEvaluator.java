@@ -186,14 +186,29 @@ public class PathEvaluator {
     }
 
     private static Optional<PathStats> legacyPathStats(String blockKey) {
-        if (CHPApi.config().greatPath().contains(blockKey)) {
-            return Optional.of(new PathStats((float) CHPApi.config().greatMultiplier(), 1.10f));
+        return legacyPathStats(
+                blockKey,
+                CHPApi.config().poorPath(), CHPApi.config().normalPath(), CHPApi.config().greatPath(),
+                CHPApi.config().poorMultiplier(), CHPApi.config().normalMultiplier(), CHPApi.config().greatMultiplier());
+    }
+
+    static Optional<PathStats> legacyPathStats(
+            String blockKey,
+            java.util.List<? extends String> poorPath,
+            java.util.List<? extends String> normalPath,
+            java.util.List<? extends String> greatPath,
+            double poorMultiplier,
+            double normalMultiplier,
+            double greatMultiplier
+    ) {
+        if (greatPath.contains(blockKey)) {
+            return Optional.of(new PathStats((float) greatMultiplier, 1.10f));
         }
-        if (CHPApi.config().normalPath().contains(blockKey)) {
-            return Optional.of(new PathStats((float) CHPApi.config().normalMultiplier(), 1.00f));
+        if (normalPath.contains(blockKey)) {
+            return Optional.of(new PathStats((float) normalMultiplier, 1.00f));
         }
-        if (CHPApi.config().poorPath().contains(blockKey)) {
-            return Optional.of(new PathStats((float) CHPApi.config().poorMultiplier(), 0.90f));
+        if (poorPath.contains(blockKey)) {
+            return Optional.of(new PathStats((float) poorMultiplier, 0.90f));
         }
         return Optional.empty();
     }

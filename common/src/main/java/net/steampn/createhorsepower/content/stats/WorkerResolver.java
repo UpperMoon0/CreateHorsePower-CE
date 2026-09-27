@@ -43,7 +43,7 @@ public class WorkerResolver {
                 0.0f, 0.0f, false, "none", "createhorsepower:horse_crank", false);
     }
 
-    private record SelectedProfile(WorkerStats stats, String source) {}
+    record SelectedProfile(WorkerStats stats, String source) {}
 
     private static Optional<BuiltinProfiles.WorkerTier> legacyTier(EntityType<?> type) {
         CHPConfig config = CHPApi.config();
@@ -106,12 +106,24 @@ public class WorkerResolver {
         );
     }
 
-    private static Optional<SelectedProfile> selectBaseStats(EntityType<?> type) {
-        Optional<WorkerStats> kjsStats = KubeJSProfileRegistry.getWorker(type);
+    static Optional<SelectedProfile> selectPackStats(
+            net.minecraft.resources.ResourceLocation entityId,
+            Optional<WorkerStats> platformStats
+    ) {
+        Optional<WorkerStats> kjsStats = KubeJSProfileRegistry.getWorker(entityId);
         if (kjsStats.isPresent()) return Optional.of(new SelectedProfile(kjsStats.get(), "kubejs"));
 
-        Optional<WorkerStats> platformStats = CHPApi.config().lookupWorkerStats(type);
+        Optional<WorkerStats> datapackStats = WorkerProfileRegistry.get(entityId);
+        if (datapackStats.isPresent()) return Optional.of(new SelectedProfile(datapackStats.get(), "datapack_json"));
+
         if (platformStats.isPresent()) return Optional.of(new SelectedProfile(platformStats.get(), "platform_data"));
+        return Optional.empty();
+    }
+
+    private static Optional<SelectedProfile> selectBaseStats(EntityType<?> type) {
+        var entityId = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(type);
+        Optional<SelectedProfile> packStats = selectPackStats(entityId, CHPApi.config().lookupWorkerStats(type));
+        if (packStats.isPresent()) return packStats;
 
         Optional<WorkerStats> builtinStats = BuiltinProfiles.worker(type);
         if (builtinStats.isPresent()) return Optional.of(new SelectedProfile(applyLegacyOutputOverrides(type, builtinStats.get()), "builtin"));
@@ -126,17 +138,10 @@ public class WorkerResolver {
         return Optional.empty();
     }
     public static Optional<WorkerStats> getBaseStats(EntityType<?> type) {
-        Optional<WorkerStats> kjsStats = KubeJSProfileRegistry.getWorker(type);
-        if (kjsStats.isPresent()) {
-            return kjsStats;
-        }
-
-        // Platform lookup is reserved for explicit pack-provided overrides
-        // (NeoForge Data Maps). Bundled CE defaults are resolved below so the
-        // legacy server balance knobs can still govern migrated packs.
-        Optional<WorkerStats> platformStats = CHPApi.config().lookupWorkerStats(type);
-        if (platformStats.isPresent()) {
-            return platformStats;
+        var entityId = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(type);
+        Optional<SelectedProfile> packStats = selectPackStats(entityId, CHPApi.config().lookupWorkerStats(type));
+        if (packStats.isPresent()) {
+            return Optional.of(packStats.get().stats());
         }
 
         Optional<WorkerStats> builtinStats = BuiltinProfiles.worker(type);

@@ -7,10 +7,20 @@ import net.steampn.createhorsepower.content.stats.WorkerStatsOverride;
 
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 public class WorkerProfilesKubeEvent implements KubeEvent {
+    private static final Set<String> PROFILE_KEYS = Set.of(
+            "rpm", "stress", "movementRadius", "speedScaling", "speedReference",
+            "healthScaling", "healthReference", "requiresTamed", "allowBaby", "machines"
+    );
+    private static final Set<String> MACHINE_KEYS = Set.of(
+            "rpm", "stress", "movementRadius", "speedScaling", "speedReference",
+            "healthScaling", "healthReference", "requiresTamed", "allowBaby"
+    );
 
     public void add(String entityId, Map<String, Object> properties) {
+        rejectUnknownKeys(properties, PROFILE_KEYS, "worker profile");
         ResourceLocation id = ResourceLocation.parse(entityId);
         WorkerStats.Builder builder = WorkerStats.builder();
 
@@ -59,6 +69,7 @@ public class WorkerProfilesKubeEvent implements KubeEvent {
     }
 
     private static WorkerStatsOverride machineOverride(String machineId, Map<?, ?> values) {
+        rejectUnknownKeys(values, MACHINE_KEYS, "machines." + machineId);
         WorkerStatsOverride override = new WorkerStatsOverride(
                 number(values, "rpm"),
                 number(values, "stress"),
@@ -94,6 +105,16 @@ public class WorkerProfilesKubeEvent implements KubeEvent {
             throw new IllegalArgumentException(key + " must be boolean");
         }
         return Optional.of(flag);
+    }
+
+
+    private static void rejectUnknownKeys(Map<?, ?> values, Set<String> allowed, String context) {
+        for (Object rawKey : values.keySet()) {
+            String key = String.valueOf(rawKey);
+            if (!allowed.contains(key)) {
+                throw new IllegalArgumentException(context + " has unknown field '" + key + "'");
+            }
+        }
     }
 
     public void add(String entityId, WorkerStats stats) {

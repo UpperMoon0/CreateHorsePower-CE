@@ -18,15 +18,16 @@ If a section is not labeled as "NeoForge 1.21.1 only", it applies to both loader
 ## Table of Contents
 1. [Architecture Overview](#architecture-overview)
 2. [Datapack and config file paths by loader](#datapack-and-config-file-paths-by-loader)
-3. [NeoForge 1.21.1 Data Maps](#neoforge-1211-data-maps)
-4. [Tags](#tags)
-5. [KubeJS Integration â€” NeoForge 1.21.1 only](#kubejs-integration--neoforge-1211-only)
-6. [Forge 1.20.1 customization](#forge-1201-customization)
-7. [Optional TerraFirmaCraft compatibility](#optional-terrafirmacraft-compatibility)
-8. [Server Configuration](#server-configuration)
-9. [Precedence Rules](#precedence-rules)
-10. [In-Game Diagnostics & Commands](#in-game-diagnostics--commands)
-11. [Migration from 1.1](#migration-from-11)
+3. [Shared worker profiles](#shared-worker-profiles-both-loaders)
+4. [NeoForge 1.21.1 Data Maps](#neoforge-1211-data-maps)
+5. [Tags and attachment profiles](#tags)
+6. [KubeJS Integration â€” NeoForge 1.21.1 only](#kubejs-integration--neoforge-1211-only)
+7. [Forge 1.20.1 customization](#forge-1201-customization)
+8. [Optional TerraFirmaCraft compatibility](#optional-terrafirmacraft-compatibility)
+9. [Server Configuration](#server-configuration)
+10. [Precedence Rules](#precedence-rules)
+11. [In-Game Diagnostics & Commands](#in-game-diagnostics--commands)
+12. [Migration from 1.1](#migration-from-11)
 
 ---
 
@@ -51,7 +52,7 @@ Execution Lifecycle:
   Server-authoritative visual orbit gait (independent speed budget)
 ```
 
-Worker/path resolution differs by loader; attachment profiles are shared across loaders. See [Precedence Rules](#precedence-rules). Since 1.2.1, visible gait is deliberately independent from generated RPM: path/output multipliers can increase mechanical output without making animals sprint unrealistically fast.
+Worker profiles and attachment profiles have loader-neutral datapack JSON surfaces; path resolution also supports loader-specific NeoForge Data Maps/KubeJS. See [Precedence Rules](#precedence-rules). Since 1.2.1, visible gait is deliberately independent from generated RPM: path/output multipliers can increase mechanical output without making animals sprint unrealistically fast.
 
 ---
 
@@ -65,6 +66,7 @@ The two Minecraft versions use different tag-directory pluralization.
 | Entity type tags root | `data/<namespace>/tags/entity_type/` | `data/<namespace>/tags/entity_types/` |
 | Block tags root | `data/<namespace>/tags/block/` | `data/<namespace>/tags/blocks/` |
 | Data Maps directory | `data/<namespace>/data_maps/entity_type/`, `data/<namespace>/data_maps/block/` | _Not available_ |
+| Worker profiles | `data/<namespace>/createhorsepower/worker_profiles/` | same |
 | Attachment profiles | `data/<namespace>/createhorsepower/attachment_profiles/` | same |
 | Server config | `saves/<world>/serverconfig/createhorsepower-server.toml` | same |
 | KubeJS startup scripts | `kubejs/startup_scripts/` | _Not available_ |
@@ -74,9 +76,45 @@ Copying a NeoForge datapack into Forge 1.20.1 without renaming `tags/item` â†
 
 ---
 
+
+## Shared worker profiles (both loaders)
+
+Forge 1.20.1 and NeoForge 1.21.1 both load exact worker profiles from:
+
+`data/<namespace>/createhorsepower/worker_profiles/<name>.json`
+
+```json
+{
+  "entity": "minecraft:horse",
+  "priority": 100,
+  "rpm": 5.0,
+  "stress": 600.0,
+  "movement_radius": 2.5,
+  "speed_scaling": 0.75,
+  "speed_reference": 0.225,
+  "health_scaling": 0.25,
+  "health_reference": 22.0,
+  "requires_tamed": false,
+  "allow_baby": false,
+  "machines": {
+    "createhorsepower:horse_crank": {
+      "rpm": 7.0,
+      "movement_radius": 2.0,
+      "allow_baby": true
+    }
+  }
+}
+```
+
+`entity` is required and must be a namespaced entity ID. `priority` defaults to `0`. The remaining fields use the same snake_case schema and validation as `WorkerStats` Data Maps. Machine overrides are field-by-field: omitted fields inherit the selected base profile. If several resource IDs target the same entity, higher `priority` wins; equal priority is resolved by lexicographically smaller profile resource ID. Replacing the same resource ID through normal datapack pack priority still follows Minecraft's resource-stack rules.
+
+This shared JSON layer is the primary exact-profile/machine-override authoring surface for Forge and is also supported on NeoForge. It is intentionally separate from CE's bundled fallback defaults.
+
+---
+
 ## NeoForge 1.21.1 Data Maps
 
-> **NeoForge 1.21.1 only.** Forge 1.20.1 does not expose the NeoForge Data Map API. Use tags/config and Forge's built-in profile layer there instead.
+> **NeoForge 1.21.1 only.** Forge 1.20.1 does not expose the NeoForge Data Map API. Use the shared worker-profile JSON layer for exact worker/machine profiles on Forge; tags/config remain available for tier and legacy tuning.
 
 ### Worker Stats Data Map (`createhorsepower:worker_stats`)
 
@@ -126,7 +164,7 @@ Machine overrides are field-by-field. Omitted fields inherit the selected base p
 }
 ```
 
-The source profile is chosen first using the normal KubeJS/Data Map/bundled/config precedence. Only then is the exact `machines[<machine-id>]` override applied; a lower-priority source never contributes a machine override to a higher-priority selected profile.
+The source profile is chosen first using the normal KubeJS/shared-JSON/Data-Map/bundled/config precedence. Only then is the exact `machines[<machine-id>]` override applied; a lower-priority source never contributes a machine override to a higher-priority selected profile.
 
 `speed_scaling` affects mechanical output only. The 1.2.1 visual gait uses the separate server settings under `[workers]` documented below.
 
@@ -209,7 +247,7 @@ Attachment behavior can be defined on **both loaders** without Java under:
 }
 ```
 
-`mode` accepts `vanilla_leash`, `harness`, `yoke`, or `virtual_tether`. `max_working_radius` must be within `0.5..6.0`; the effective orbit radius is the smaller of the worker profile radius and attachment limit. `output_multiplier` must be finite and greater than zero and scales both the resolved RPM and stress capacity.
+`mode` accepts `vanilla_leash`, `harness`, `yoke`, or `virtual_tether`. CE ships vanilla lead as usable default content; `harness`, `yoke`, and `virtual_tether` are framework backends and require a pack/mod to provide a selecting item/profile. `max_working_radius` must be within `0.5..6.0`; the effective orbit radius is the smaller of the worker profile radius and attachment limit. `output_multiplier` must be finite and greater than zero and scales both the resolved RPM and stress capacity.
 
 Selectors are deterministic: exact `items` beat `item_tags`; within the same selector class, higher `priority` wins and ties are broken by profile ID. `workers`/`worker_tags` and `machines` are allowlists; an empty allowlist means unrestricted. Invalid profiles fail the datapack reload with the profile ID in the error.
 
@@ -242,7 +280,14 @@ HorsePowerEvents.workerProfiles(event => {
         movementRadius: 3.0,
         healthScaling: 0.4,
         healthReference: 40.0,
-        requiresTamed: false
+        requiresTamed: false,
+        machines: {
+            'createhorsepower:horse_crank': {
+                rpm: 5.0,
+                movementRadius: 2.5,
+                allowBaby: true
+            }
+        }
     })
 })
 
@@ -258,6 +303,9 @@ HorsePowerEvents.pathProfiles(event => {
     })
 })
 ```
+
+
+KubeJS worker maps use **camelCase** JavaScript keys: `movementRadius`, `speedScaling`, `speedReference`, `healthScaling`, `healthReference`, `requiresTamed`, and `allowBaby`. Nested `machines[<machine-id>]` objects use the same camelCase names (plus `rpm`/`stress`). This differs from datapack/Data Map snake_case such as `movement_radius`. Unknown top-level or nested machine keys are rejected with an error instead of silently no-oping.
 
 ### Server Lifecycle Events
 
@@ -320,18 +368,11 @@ KubeJS is optional. Without it, NeoForge Data Maps, tags, config, attachment, mo
 
 > **Forge 1.20.1 only.** NeoForge Data Maps and CHP KubeJS registration are unavailable.
 
-Forge uses the shared CE bundled defaults as fallback profiles rather than treating them as platform overrides.
-
-For workers:
-
-1. CE resolves a bundled per-species profile when one exists.
-2. If legacy `creatureRPMRange` or tier stress values were changed from their shipped defaults, those configured values replace the bundled base RPM/stress for the applicable tier.
-3. Tier selection for that legacy override checks explicit `smallCreatures` / `mediumCreatures` / `largeCreatures` lists before worker tier tags and CE's built-in tier classification.
-4. Intended per-animal attribute scaling remains active on top of the configured base output.
+Forge uses the shared worker-profile JSON layer for exact per-entity profiles and machine-specific overrides; it does not require Java or NeoForge Data Maps for those features. If no shared JSON profile exists, CE resolves bundled per-species fallbacks and then legacy tier/tag/config behavior. Changed legacy `creatureRPMRange` or tier stress values continue to replace bundled base RPM/stress for the applicable tier, while intended per-animal attribute scaling remains active.
 
 For paths, explicit `poorPathBlock`, `normalPathBlock`, and `greatPathBlock` config entries beat CE bundled exact/family path defaults. The configured path profile is then fed into the selected evaluation mode normally, including `WEIGHTED_AVERAGE` for mixed tracks.
 
-There is no arbitrary per-entity exact-profile API comparable to NeoForge Data Maps/KubeJS on Forge 1.20.1, but pack/server legacy balance and path config can override CE bundled defaults as described above.
+For worker authoring parity, use `createhorsepower/worker_profiles/*.json`. NeoForge Data Maps and KubeJS remain loader-specific convenience layers, not requirements for exact worker or machine-override profiles.
 
 ---
 
@@ -352,7 +393,7 @@ Version 1.2.1 introduced built-in TFC defaults for these IDs when they exist:
 - `tfc:dromedary_camel`
 - `tfc:bactrian_camel`
 
-Starting with 1.2.2, those TFC species defaults are bundled common-code fallbacks on both loaders rather than shipped NeoForge Data Map values. On NeoForge, an explicit pack Data Map or KubeJS profile can override them. On both loaders, changed legacy RPM/stress values can override their bundled base output according to the effective worker tier while preserving intended per-animal health scaling.
+Starting with 1.2.2, those TFC species defaults are bundled common-code fallbacks on both loaders rather than shipped NeoForge Data Map values. Shared worker JSON can override them on both loaders; NeoForge can additionally use an explicit Data Map or KubeJS profile. Changed legacy RPM/stress values can override their bundled base output according to the effective worker tier while preserving intended per-animal health scaling.
 
 On Forge 1.20.1, registry IDs absent from the installed TFC version simply do nothing.
 
@@ -384,12 +425,15 @@ largeCreatureStressRange = 512
 poorMultiplier = 0.5
 normalMultiplier = 1.0
 greatMultiplier = 2.0
-poorPathBlock = ["minecraft:dirt", "minecraft:grass_block"]
-normalPathBlock = ["minecraft:dirt_path", "minecraft:gravel"]
-greatPathBlock = ["minecraft:ice", "minecraft:packed_ice", "minecraft:blue_ice"]
+poorPathBlock = []
+normalPathBlock = []
+greatPathBlock = []
 smallCreatures = ["minecraft:wolf"]
 mediumCreatures = ["minecraft:cow"]
 largeCreatures = ["minecraft:horse"]
+
+# Fresh 1.2+ configs intentionally leave these legacy path lists empty so bundled profiles apply.
+# Existing 1.1 files are not reset; stored path entries remain explicit overrides.
 
 [balance]
     globalRpmMultiplier = 1.0
@@ -427,6 +471,8 @@ largeCreatures = ["minecraft:horse"]
     defaultRedstoneMode = "HIGH_STOPS"
 ```
 
+Bundled defaults keep vanilla dirt/grass, dirt path/gravel, and ice-family paths usable without manual config. Existing 1.1 config files retain their stored legacy path entries rather than being rewritten.
+
 ### Visual gait settings
 
 `workerGroundSpeedScale` converts the mob's movement-speed attribute into a visual ground speed in blocks/second. The result is clamped between `minWorkerGroundSpeed` and `maxWorkerGroundSpeed`; angular movement is then derived as `linearSpeed / radius`, so workers at different configured radii retain the same ground speed.
@@ -452,9 +498,10 @@ Higher-priority entries replace lower-priority tuning for the same entity or blo
 Worker profile source precedence:
 
 1. **KubeJS startup profile** (`HorsePowerEvents.workerProfiles`)
-2. **Explicit NeoForge Data Map** (`createhorsepower:worker_stats`)
-3. **CE bundled exact registry-ID profile** (including optional TFC species)
-4. **Explicit legacy config list / worker tier tag / CE built-in tier fallback** for otherwise unresolved workers
+2. **Shared worker-profile JSON** (`createhorsepower/worker_profiles`)
+3. **Explicit NeoForge Data Map** (`createhorsepower:worker_stats`)
+4. **CE bundled exact registry-ID profile** (including optional TFC species)
+5. **Explicit legacy config list / worker tier tag / CE built-in tier fallback** for otherwise unresolved workers
 
 When a CE bundled profile is selected, changed legacy `creatureRPMRange` / tier-stress values are applied to its base output. Tier classification for that legacy override checks explicit config creature lists first, then tier tags, then CE's built-in tier. Intended health-based per-animal stress scaling remains active on top of the configured base SU.
 
@@ -466,9 +513,9 @@ The selected per-block profiles are still processed by the configured path evalu
 
 ### Forge 1.20.1
 
-KubeJS and NeoForge Data Maps are unavailable.
+KubeJS and NeoForge Data Maps are unavailable, but shared worker-profile JSON is fully supported.
 
-Worker bundled profiles use the same legacy balance override logic as NeoForge, including explicit legacy creature-list classification before tier tags/built-in tier fallback.
+Worker precedence is **shared worker JSON → CE bundled exact profile → explicit legacy config/tier-tag fallback**. Bundled profiles use the same legacy balance override logic as NeoForge, including explicit legacy creature-list classification before tier tags/built-in tier fallback.
 
 For paths: **legacy path config â†’ CE bundled exact/family fallback** (`greatPathBlock`, `normalPathBlock`, `poorPathBlock`).
 
@@ -496,6 +543,8 @@ For live incident debugging, enable `diagnostics.debugLogging`, reproduce the at
 
 All 1.1 root keys (`creatureRPMRange`, `largeCreatureStressRange`, `poorPathBlock`, etc.) remain at the root of `createhorsepower-server.toml`. Existing configs load without a reset.
 
+Fresh 1.2+ configs generate `poorPathBlock`, `normalPathBlock`, and `greatPathBlock` as empty arrays so bundled path profiles are not masked. Existing 1.1 config files keep their already-stored path lists and semantics.
+
 Version 1.2.1 adds these non-breaking defaults:
 
 - `workers.workerGroundSpeedScale = 10.0`
@@ -517,7 +566,7 @@ On NeoForge, KubeJS and explicit Data Maps remain above those legacy config over
 
 ### 2b. Forge 1.20.1 Customization
 
-Forge has no Data Map/KubeJS profile layer. Legacy worker balance and path config therefore override CE bundled defaults directly as documented above.
+Forge has no Data Map/KubeJS layer, but it does have the same shared worker-profile and attachment-profile JSON loaders as NeoForge. Use shared worker JSON for exact entity/machine profiles; legacy worker balance and path config remain supported fallbacks/overrides as documented above.
 
 ### 3. Existing Horse Cranks and Redstone
 
