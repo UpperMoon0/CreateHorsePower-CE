@@ -200,6 +200,18 @@ public final class HorseCrankInteractions {
             return Outcome.SUCCESS;
         }
 
+        UUID targetCrankUuid = level.getBlockEntity(pos) instanceof AbstractHorseCrankBlockEntity be
+                ? be.engine().crankInstanceUuid()
+                : null;
+        if (WorkerAttachmentControl.hasForeignMarker(mob, pos, targetCrankUuid)) {
+            CHPDiagnostics.event("attach_rejected", level, pos, targetCrankUuid, mob,
+                    "reason=worker_owned_by_other_machine old_crank="
+                            + WorkerAttachmentControl.markerCrankPos(mob));
+            player.displayClientMessage(
+                    Component.translatable("tooltip.createhorsepower.horse_crank.workerAlreadyAttached"), true);
+            return Outcome.SUCCESS;
+        }
+
         if (!CHPApi.scripts().fireBeforeAttach(player, mob, pos, level, profile)) {
             CHPDiagnostics.event("attach_rejected", level, pos,
                     level.getBlockEntity(pos) instanceof AbstractHorseCrankBlockEntity be ? be.engine().crankInstanceUuid() : null,

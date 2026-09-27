@@ -53,7 +53,8 @@ public class CreateHorsePower {
                 new Config(),
                 OptionalIntegrations.INSTANCE,
                 ResourceLocation::new,
-                new net.steampn.createhorsepower.platform.ForgeDeferredDetachStore()
+                new net.steampn.createhorsepower.platform.ForgeDeferredDetachStore(),
+                new net.steampn.createhorsepower.platform.ForgeItemStackPersistence()
         );
 
         CREATE_REGISTRATE.registerEventListeners(modEventBus);

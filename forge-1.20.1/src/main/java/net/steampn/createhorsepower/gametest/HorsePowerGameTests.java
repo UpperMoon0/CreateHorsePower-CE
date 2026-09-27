@@ -826,6 +826,144 @@ public final class HorsePowerGameTests {
 
 
     @GameTest(template = "empty")
+    public static void foreignHarnessOwnerCannotBeStolenBySecondCrank(GameTestHelper helper) {
+        List<AttachmentProfile> previousProfiles = AttachmentProfileRegistry.all();
+        try {
+            AttachmentProfile profile = new AttachmentProfile(
+                    CHPApi.modId("gametest_owned_harness"),
+                    1000,
+                    Set.of(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(Items.SADDLE)),
+                    Set.of(),
+                    AttachmentMode.HARNESS,
+                    3.0f,
+                    Set.of(),
+                    Set.of(),
+                    Set.of(CHPApi.modId("horse_crank")),
+                    true,
+                    true,
+                    1.0f
+            );
+            AttachmentProfileRegistry.replace(List.of(profile));
+
+            BlockPos localA = new BlockPos(3, 2, 4);
+            BlockPos localB = new BlockPos(9, 2, 4);
+            helper.setBlock(localA, BlockRegister.HORSE_CRANK.get());
+            helper.setBlock(localB, BlockRegister.HORSE_CRANK.get());
+            AbstractHorseCrankBlockEntity crankA = requireCrank(helper, localA);
+            AbstractHorseCrankBlockEntity crankB = requireCrank(helper, localB);
+            BlockPos worldA = helper.absolutePos(localA);
+            BlockPos worldB = helper.absolutePos(localB);
+            ServerLevel level = helper.getLevel();
+            Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(6, 2, 4));
+            net.minecraft.world.entity.player.Player player = helper.makeMockSurvivalPlayer();
+            player.getAbilities().instabuild = false;
+
+            horse.setLeashedTo(player, false);
+            ItemStack firstHarness = new ItemStack(Items.SADDLE);
+            HorseCrankInteractions.Outcome first = HorseCrankInteractions.attachAt(
+                    level, worldA, level.getBlockState(worldA), player, firstHarness);
+            helper.assertTrue(first == HorseCrankInteractions.Outcome.SUCCESS && firstHarness.isEmpty(),
+                    "Crank A must consume and own the first harness");
+            helper.assertTrue(WorkerAttachmentControl.isOwnedBy(
+                            horse, worldA, crankA.engine().crankInstanceUuid()),
+                    "Crank A attachment marker must own the worker");
+
+            // Minecraft permits a non-vanilla-backend worker to be leashed to a player again.
+            horse.setLeashedTo(player, false);
+            ItemStack secondHarness = new ItemStack(Items.SADDLE);
+            HorseCrankInteractions.Outcome second = HorseCrankInteractions.attachAt(
+                    level, worldB, level.getBlockState(worldB), player, secondHarness);
+
+            helper.assertTrue(second == HorseCrankInteractions.Outcome.SUCCESS,
+                    "Foreign ownership rejection is a handled interaction");
+            helper.assertTrue(secondHarness.getCount() == 1,
+                    "Rejected crank B attach must not consume another harness");
+            helper.assertTrue(WorkerAttachmentControl.isOwnedBy(
+                            horse, worldA, crankA.engine().crankInstanceUuid()),
+                    "Crank B must not overwrite crank A attachment ownership");
+            helper.assertTrue(crankA.engine().isAssignedWorker(horse.getUUID()),
+                    "Crank A must retain its worker assignment");
+            helper.assertTrue(!crankB.engine().isAssignedWorker(horse.getUUID()),
+                    "Crank B must not acquire the already-owned worker");
+
+            int beforeReturned = level.getEntitiesOfClass(
+                    ItemEntity.class,
+                    new AABB(worldA).inflate(5.0D),
+                    entity -> entity.getItem().is(Items.SADDLE)
+            ).size();
+            crankA.engine().detachWorker(true);
+            int afterReturned = level.getEntitiesOfClass(
+                    ItemEntity.class,
+                    new AABB(worldA).inflate(5.0D),
+                    entity -> entity.getItem().is(Items.SADDLE)
+            ).size();
+            helper.assertTrue(afterReturned == beforeReturned + 1,
+                    "Crank A must still return its originally consumed harness");
+        } finally {
+            AttachmentProfileRegistry.replace(previousProfiles);
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void consumedAttachmentPreservesFullStackState(GameTestHelper helper) {
+        List<AttachmentProfile> previousProfiles = AttachmentProfileRegistry.all();
+        try {
+            AttachmentProfile profile = new AttachmentProfile(
+                    CHPApi.modId("gametest_stateful_harness"),
+                    1000,
+                    Set.of(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(Items.DIAMOND_SWORD)),
+                    Set.of(),
+                    AttachmentMode.HARNESS,
+                    3.0f,
+                    Set.of(),
+                    Set.of(),
+                    Set.of(CHPApi.modId("horse_crank")),
+                    true,
+                    true,
+                    1.0f
+            );
+            AttachmentProfileRegistry.replace(List.of(profile));
+
+            BlockPos localCrankPos = new BlockPos(4, 2, 4);
+            helper.setBlock(localCrankPos, BlockRegister.HORSE_CRANK.get());
+            AbstractHorseCrankBlockEntity crank = requireCrank(helper, localCrankPos);
+            BlockPos worldCrankPos = helper.absolutePos(localCrankPos);
+            ServerLevel level = helper.getLevel();
+            Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(6, 2, 4));
+            net.minecraft.world.entity.player.Player player = helper.makeMockSurvivalPlayer();
+            player.getAbilities().instabuild = false;
+            horse.setLeashedTo(player, false);
+
+            ItemStack attachmentStack = new ItemStack(Items.DIAMOND_SWORD);
+            attachmentStack.setDamageValue(37);
+
+            HorseCrankInteractions.Outcome outcome = HorseCrankInteractions.attachAt(
+                    level, worldCrankPos, level.getBlockState(worldCrankPos), player, attachmentStack);
+            helper.assertTrue(outcome == HorseCrankInteractions.Outcome.SUCCESS && attachmentStack.isEmpty(),
+                    "Stateful consuming attachment must be consumed by the real interaction");
+
+            crank.engine().detachWorker(true);
+
+            ItemEntity returned = level.getEntitiesOfClass(
+                    ItemEntity.class,
+                    new AABB(worldCrankPos).inflate(4.0D),
+                    entity -> entity.getItem().is(Items.DIAMOND_SWORD)
+            ).stream().findFirst().orElseThrow(() ->
+                    new AssertionError("Detach must return the consumed stateful attachment"));
+            ItemStack restored = returned.getItem();
+            helper.assertTrue(restored.getCount() == 1,
+                    "Returned attachment must remain exactly one item");
+            helper.assertTrue(restored.getDamageValue() == 37,
+                    "Returned attachment must preserve damage/component state");
+        } finally {
+            AttachmentProfileRegistry.replace(previousProfiles);
+        }
+        helper.succeed();
+    }
+
+
+    @GameTest(template = "empty")
     public static void customAttachmentProfilePersistsBackendRadiusAndOutput(GameTestHelper helper) {
         BlockPos localCrankPos = new BlockPos(4, 2, 4);
         helper.setBlock(localCrankPos, BlockRegister.HORSE_CRANK.get());

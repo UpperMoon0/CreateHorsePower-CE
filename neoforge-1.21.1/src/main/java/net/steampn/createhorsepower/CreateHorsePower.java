@@ -48,7 +48,8 @@ public class CreateHorsePower {
         net.steampn.createhorsepower.platform.CHPApi.init(new net.steampn.createhorsepower.config.Config(),
                 net.steampn.createhorsepower.compat.OptionalIntegrations.INSTANCE,
                 ResourceLocation::fromNamespaceAndPath,
-                new net.steampn.createhorsepower.platform.NeoForgeDeferredDetachStore());
+                new net.steampn.createhorsepower.platform.NeoForgeDeferredDetachStore(),
+                new net.steampn.createhorsepower.platform.NeoForgeItemStackPersistence());
 
         CREATE_REGISTRATE.addDataGenerator(com.tterrag.registrate.providers.ProviderType.LANG, provider -> {
             PonderIndex.addPlugin(new HorseCrankPonderPlugin());

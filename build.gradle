@@ -67,6 +67,8 @@ def ALLOWED_ADAPTERS = [
 def PLATFORM_ONLY_SOURCES = [
         'net/steampn/createhorsepower/platform/ForgeDeferredDetachStore.java',
         'net/steampn/createhorsepower/platform/NeoForgeDeferredDetachStore.java',
+        'net/steampn/createhorsepower/platform/ForgeItemStackPersistence.java',
+        'net/steampn/createhorsepower/platform/NeoForgeItemStackPersistence.java',
         'net/steampn/createhorsepower/gametest/ForgeRecoveryEdgeGameTests.java',
         'net/steampn/createhorsepower/gametest/NeoForgeRecoveryEdgeGameTests.java'
 ] as Set

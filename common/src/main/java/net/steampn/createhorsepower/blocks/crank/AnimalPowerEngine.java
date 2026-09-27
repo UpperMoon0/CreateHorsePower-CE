@@ -558,6 +558,9 @@ public class AnimalPowerEngine {
     public void attachWorker(Mob worker, WorkerResolver.ResolvedWorker profile,
                              AttachmentProfile attachment, ItemStack attachmentStack,
                              boolean attachmentItemConsumed) {
+        if (WorkerAttachmentControl.hasForeignMarker(worker, host.pos(), crankInstanceUuid)) {
+            throw new IllegalStateException("worker is already owned by another animal-power machine");
+        }
         restoreWorkerAi();
         // Defensive cleanup: only a marker from a *different* crank should be
         // cleared on attach. Position + instance UUID form the identity, so a

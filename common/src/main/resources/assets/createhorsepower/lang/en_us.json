@@ -6,6 +6,7 @@
   "tooltip.createhorsepower.horse_crank.maximumMobs": "Attach only one worker at a time",
   "tooltip.createhorsepower.horse_crank.notValidWorker": "That creature cannot power this horse crank",
   "tooltip.createhorsepower.horse_crank.attached": "Worker attached",
+  "tooltip.createhorsepower.horse_crank.workerAlreadyAttached": "That worker is already attached to another animal-power machine",
   "tooltip.createhorsepower.goggles.header": "Horse Crank Status",
   "tooltip.createhorsepower.goggles.status.no_worker": "No worker attached",
   "tooltip.createhorsepower.goggles.status.stopped_redstone": "Stopped by redstone",

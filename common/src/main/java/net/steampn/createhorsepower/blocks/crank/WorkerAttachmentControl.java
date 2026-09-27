@@ -6,8 +6,6 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.decoration.LeashFenceKnotEntity;
-import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.steampn.createhorsepower.content.attachment.AttachmentMode;
 import net.steampn.createhorsepower.content.attachment.AttachmentProfile;
@@ -27,7 +25,8 @@ public final class WorkerAttachmentControl {
     private static final String CRANK_UUID_KEY = "CrankUuid";
     private static final String MODE_KEY = "Mode";
     private static final String PROFILE_KEY = "Profile";
-    private static final String ATTACHMENT_ITEM_KEY = "AttachmentItem";
+    private static final String ATTACHMENT_ITEM_KEY = "AttachmentItem"; // legacy registry-id fallback
+    private static final String ATTACHMENT_STACK_KEY = "AttachmentStack";
     private static final String CONSUMED_KEY = "Consumed";
     private static final String DROP_ON_DETACH_KEY = "DropOnDetach";
 
@@ -84,8 +83,9 @@ public final class WorkerAttachmentControl {
             // must never receive a second attachment item during detach/recovery.
             marker.putBoolean(CONSUMED_KEY, attachmentItemConsumed);
             marker.putBoolean(DROP_ON_DETACH_KEY, profile.dropOnDetach());
-            if (!attachmentStack.isEmpty()) {
-                marker.putString(ATTACHMENT_ITEM_KEY, BuiltInRegistries.ITEM.getKey(attachmentStack.getItem()).toString());
+            if (attachmentItemConsumed && !attachmentStack.isEmpty()
+                    && mob.level() instanceof ServerLevel serverLevel) {
+                marker.put(ATTACHMENT_STACK_KEY, CHPApi.itemStacks().saveOne(attachmentStack, serverLevel));
             }
         }
         mob.getPersistentData().put(MARKER_KEY, marker);
@@ -106,6 +106,20 @@ public final class WorkerAttachmentControl {
                 && crankPos.equals(BlockPos.of(marker.getLong(CRANK_POS_KEY)))
                 && marker.hasUUID(CRANK_UUID_KEY)
                 && crankUuid.equals(marker.getUUID(CRANK_UUID_KEY));
+    }
+
+    public static boolean hasForeignMarker(
+            Mob mob,
+            @Nullable BlockPos expectedCrankPos,
+            @Nullable UUID expectedCrankUuid
+    ) {
+        if (!hasMarker(mob)) {
+            return false;
+        }
+        if (expectedCrankPos == null || expectedCrankUuid == null) {
+            return true;
+        }
+        return !isOwnedBy(mob, expectedCrankPos, expectedCrankUuid);
     }
 
     /** Clear an attachment marker only when both crank position and UUID match. */
@@ -309,23 +323,33 @@ public final class WorkerAttachmentControl {
     public static void releaseConsumedAttachmentItemIfRequested(Mob mob, boolean dropRequested) {
         if (!hasMarker(mob)) return;
         CompoundTag marker = mob.getPersistentData().getCompound(MARKER_KEY);
-        if (dropRequested && marker.getBoolean(CONSUMED_KEY) && marker.getBoolean(DROP_ON_DETACH_KEY)
-                && marker.contains(ATTACHMENT_ITEM_KEY)) {
-            ResourceLocation itemId = parseResourceId(marker.getString(ATTACHMENT_ITEM_KEY));
-            if (itemId != null) {
-                BuiltInRegistries.ITEM.getOptional(itemId).ifPresent(item -> mob.spawnAtLocation(new ItemStack(item)));
-            }
+        if (!dropRequested || !marker.getBoolean(CONSUMED_KEY) || !marker.getBoolean(DROP_ON_DETACH_KEY)) {
+            return;
         }
-    }
+        if (marker.contains(ATTACHMENT_STACK_KEY, CompoundTag.TAG_COMPOUND)
+                && mob.level() instanceof ServerLevel serverLevel) {
+            ItemStack restored = CHPApi.itemStacks().load(marker.getCompound(ATTACHMENT_STACK_KEY), serverLevel);
+            if (!restored.isEmpty()) {
+                restored.setCount(1);
+                mob.spawnAtLocation(restored);
+            }
+            return;
+        }
 
-    @Nullable
-    private static ResourceLocation parseResourceId(String value) {
-        int colon = value.indexOf(':');
-        if (colon <= 0 || colon == value.length() - 1) return null;
-        try {
-            return CHPApi.id(value.substring(0, colon), value.substring(colon + 1));
-        } catch (RuntimeException ignored) {
-            return null;
+        // Markers written by 1.2.7 pre-fix builds only contain the item id.
+        // Keep that narrow fallback so existing worlds do not lose the item entirely.
+        if (marker.contains(ATTACHMENT_ITEM_KEY)) {
+            String value = marker.getString(ATTACHMENT_ITEM_KEY);
+            int colon = value.indexOf(':');
+            if (colon > 0 && colon < value.length() - 1) {
+                try {
+                    var itemId = CHPApi.id(value.substring(0, colon), value.substring(colon + 1));
+                    net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(itemId)
+                            .ifPresent(item -> mob.spawnAtLocation(new ItemStack(item)));
+                } catch (RuntimeException ignored) {
+                    // Malformed legacy ids are ignored rather than breaking detach recovery.
+                }
+            }
         }
     }
     private static void releasePersistedCrankLeash(

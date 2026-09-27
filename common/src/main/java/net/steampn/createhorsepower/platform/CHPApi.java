@@ -16,6 +16,7 @@ public final class CHPApi {
     private static ScriptHooks scripts = ScriptHooks.NOOP;
     private static BiFunction<String, String, ResourceLocation> idFactory;
     private static DeferredDetachStore deferredDetaches;
+    private static ItemStackPersistence itemStacks;
 
     private CHPApi() {}
 
@@ -23,12 +24,14 @@ public final class CHPApi {
             CHPConfig configImpl,
             ScriptHooks scriptHooks,
             BiFunction<String, String, ResourceLocation> idFactoryImpl,
-            DeferredDetachStore deferredDetachStoreImpl
+            DeferredDetachStore deferredDetachStoreImpl,
+            ItemStackPersistence itemStackPersistenceImpl
     ) {
         config = configImpl;
         scripts = scriptHooks == null ? ScriptHooks.NOOP : scriptHooks;
         idFactory = idFactoryImpl;
         deferredDetaches = deferredDetachStoreImpl;
+        itemStacks = itemStackPersistenceImpl;
     }
 
     public static CHPConfig config() {
@@ -47,6 +50,13 @@ public final class CHPApi {
             throw new IllegalStateException("CHPApi not initialized: deferred detach store missing");
         }
         return deferredDetaches;
+    }
+
+    public static ItemStackPersistence itemStacks() {
+        if (itemStacks == null) {
+            throw new IllegalStateException("CHPApi not initialized: ItemStack persistence missing");
+        }
+        return itemStacks;
     }
 
     /** Version-safe ResourceLocation factory (1.20.1 lacks parse/fromNamespaceAndPath parity). */
