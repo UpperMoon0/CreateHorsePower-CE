@@ -46,11 +46,12 @@ public final class WorkerAttachmentControl {
     }
 
     public static void markAttached(Mob mob, BlockPos crankPos, UUID crankUuid) {
-        markAttached(mob, crankPos, crankUuid, null, ItemStack.EMPTY);
+        markAttached(mob, crankPos, crankUuid, null, ItemStack.EMPTY, false);
     }
 
     public static void markAttached(Mob mob, BlockPos crankPos, UUID crankUuid,
-                                    @Nullable AttachmentProfile profile, ItemStack attachmentStack) {
+                                    @Nullable AttachmentProfile profile, ItemStack attachmentStack,
+                                    boolean attachmentItemConsumed) {
         // A successful new attachment supersedes every older detach/recovery
         // intent for this worker. Clear both the durable level record and the
         // legacy BE-local migration record before writing new ownership.
@@ -78,7 +79,10 @@ public final class WorkerAttachmentControl {
         marker.putString(MODE_KEY, mode.serializedName());
         if (profile != null) {
             marker.putString(PROFILE_KEY, profile.id().toString());
-            marker.putBoolean(CONSUMED_KEY, profile.consumeOnAttach());
+            // Persist what this interaction actually consumed, not merely the
+            // profile policy. Creative players keep their stack and therefore
+            // must never receive a second attachment item during detach/recovery.
+            marker.putBoolean(CONSUMED_KEY, attachmentItemConsumed);
             marker.putBoolean(DROP_ON_DETACH_KEY, profile.dropOnDetach());
             if (!attachmentStack.isEmpty()) {
                 marker.putString(ATTACHMENT_ITEM_KEY, BuiltInRegistries.ITEM.getKey(attachmentStack.getItem()).toString());
@@ -294,10 +298,15 @@ public final class WorkerAttachmentControl {
         if (mode == AttachmentMode.VANILLA_LEASH) {
             releasePersistedCrankLeash(mob, level, crankPos, dropRequested);
         }
-        dropConsumedAttachmentIfRequested(mob, dropRequested);
+        releaseConsumedAttachmentItemIfRequested(mob, dropRequested);
     }
 
-    private static void dropConsumedAttachmentIfRequested(Mob mob, boolean dropRequested) {
+    /**
+     * Applies only the profile-item lifecycle recorded in the marker.
+     * Physical backend cleanup is intentionally separate so vanilla-leash and
+     * custom backends return consumed items identically.
+     */
+    public static void releaseConsumedAttachmentItemIfRequested(Mob mob, boolean dropRequested) {
         if (!hasMarker(mob)) return;
         CompoundTag marker = mob.getPersistentData().getCompound(MARKER_KEY);
         if (dropRequested && marker.getBoolean(CONSUMED_KEY) && marker.getBoolean(DROP_ON_DETACH_KEY)

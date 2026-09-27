@@ -10,7 +10,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
-/** Bounded, loader-neutral worker assignment state for reusable animal-power machines. */
+/**
+ * Bounded, loader-neutral assignment persistence. The current AnimalPowerEngine
+ * intentionally supports one active worker; this container is migration groundwork
+ * for a future lifecycle that defines real multi-worker motion/output semantics.
+ */
 public final class WorkerAssignments {
     public record Entry(UUID workerUuid, @Nullable BlockPos lastKnownPos) {}
 

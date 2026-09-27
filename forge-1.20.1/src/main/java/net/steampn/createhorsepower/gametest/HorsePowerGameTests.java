@@ -21,6 +21,7 @@ import net.minecraftforge.gametest.GameTestHolder;
 import net.minecraftforge.gametest.PrefixGameTestTemplate;
 import net.steampn.createhorsepower.blocks.crank.AbstractHorseCrankBlockEntity;
 import net.steampn.createhorsepower.blocks.crank.HorseCrankEngine;
+import net.steampn.createhorsepower.blocks.crank.HorseCrankInteractions;
 import net.steampn.createhorsepower.blocks.crank.WorkerActivityControl;
 import net.steampn.createhorsepower.blocks.crank.WorkerAttachmentControl;
 import net.steampn.createhorsepower.blocks.crank.WorkerOrbitMovement;
@@ -28,6 +29,7 @@ import net.steampn.createhorsepower.blocks.crank.WorkerRecoveryQueue;
 import net.steampn.createhorsepower.config.Config;
 import net.steampn.createhorsepower.content.attachment.AttachmentMode;
 import net.steampn.createhorsepower.content.attachment.AttachmentProfile;
+import net.steampn.createhorsepower.content.attachment.AttachmentProfileRegistry;
 import net.steampn.createhorsepower.platform.CHPApi;
 import net.steampn.createhorsepower.content.stats.WorkerResolver;
 import net.steampn.createhorsepower.content.stats.WorkerStats;
@@ -35,6 +37,7 @@ import net.steampn.createhorsepower.registry.BlockRegister;
 import net.steampn.createhorsepower.registry.TileEntityRegister;
 import net.steampn.createhorsepower.utils.CHPUtils;
 
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -699,6 +702,125 @@ public final class HorsePowerGameTests {
             Config.ENABLE_PATH_STRESS_SCALING.set(oldStressScaling);
         }
 
+        helper.succeed();
+    }
+
+
+    @GameTest(template = "empty")
+    public static void loadedVanillaLeashProfileReturnsActuallyConsumedAttachment(GameTestHelper helper) {
+        List<AttachmentProfile> previousProfiles = AttachmentProfileRegistry.all();
+        try {
+            AttachmentProfile profile = new AttachmentProfile(
+                    CHPApi.modId("gametest_consuming_vanilla"),
+                    1000,
+                    Set.of(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(Items.SADDLE)),
+                    Set.of(),
+                    AttachmentMode.VANILLA_LEASH,
+                    3.0f,
+                    Set.of(),
+                    Set.of(),
+                    Set.of(CHPApi.modId("horse_crank")),
+                    true,
+                    true,
+                    1.0f
+            );
+            AttachmentProfileRegistry.replace(List.of(profile));
+
+            BlockPos localCrankPos = new BlockPos(4, 2, 4);
+            helper.setBlock(localCrankPos, BlockRegister.HORSE_CRANK.get());
+            AbstractHorseCrankBlockEntity crank = requireCrank(helper, localCrankPos);
+            BlockPos worldCrankPos = helper.absolutePos(localCrankPos);
+            ServerLevel level = helper.getLevel();
+            Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(6, 2, 4));
+            net.minecraft.world.entity.player.Player player = helper.makeMockSurvivalPlayer();
+            player.getAbilities().instabuild = false;
+            horse.setLeashedTo(player, false);
+            ItemStack attachmentStack = new ItemStack(Items.SADDLE);
+
+            int beforeSaddles = level.getEntitiesOfClass(
+                    ItemEntity.class,
+                    new AABB(worldCrankPos).inflate(4.0D),
+                    entity -> entity.getItem().is(Items.SADDLE)
+            ).size();
+
+            HorseCrankInteractions.Outcome outcome = HorseCrankInteractions.attachAt(
+                    level, worldCrankPos, level.getBlockState(worldCrankPos), player, attachmentStack);
+            helper.assertTrue(outcome == HorseCrankInteractions.Outcome.SUCCESS,
+                    "Real interaction must attach the worker through profile resolution");
+            helper.assertTrue(attachmentStack.isEmpty(),
+                    "Survival consuming profile must remove exactly one attachment item");
+
+            crank.engine().detachWorker(true);
+
+            int afterSaddles = level.getEntitiesOfClass(
+                    ItemEntity.class,
+                    new AABB(worldCrankPos).inflate(4.0D),
+                    entity -> entity.getItem().is(Items.SADDLE)
+            ).size();
+            helper.assertTrue(afterSaddles == beforeSaddles + 1,
+                    "Loaded vanilla-leash detach must return the consumed profile attachment item");
+        } finally {
+            AttachmentProfileRegistry.replace(previousProfiles);
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void creativeConsumingProfileNeverRecordsOrDropsConsumedItem(GameTestHelper helper) {
+        List<AttachmentProfile> previousProfiles = AttachmentProfileRegistry.all();
+        try {
+            AttachmentProfile profile = new AttachmentProfile(
+                    CHPApi.modId("gametest_creative_harness"),
+                    1000,
+                    Set.of(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(Items.SADDLE)),
+                    Set.of(),
+                    AttachmentMode.HARNESS,
+                    3.0f,
+                    Set.of(),
+                    Set.of(),
+                    Set.of(CHPApi.modId("horse_crank")),
+                    true,
+                    true,
+                    1.0f
+            );
+            AttachmentProfileRegistry.replace(List.of(profile));
+
+            BlockPos localCrankPos = new BlockPos(4, 2, 4);
+            helper.setBlock(localCrankPos, BlockRegister.HORSE_CRANK.get());
+            AbstractHorseCrankBlockEntity crank = requireCrank(helper, localCrankPos);
+            BlockPos worldCrankPos = helper.absolutePos(localCrankPos);
+            ServerLevel level = helper.getLevel();
+            Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(6, 2, 4));
+            net.minecraft.world.entity.player.Player player = helper.makeMockPlayer();
+            player.getAbilities().instabuild = true;
+            horse.setLeashedTo(player, false);
+            ItemStack attachmentStack = new ItemStack(Items.SADDLE);
+
+            int beforeSaddles = level.getEntitiesOfClass(
+                    ItemEntity.class,
+                    new AABB(worldCrankPos).inflate(4.0D),
+                    entity -> entity.getItem().is(Items.SADDLE)
+            ).size();
+
+            HorseCrankInteractions.Outcome outcome = HorseCrankInteractions.attachAt(
+                    level, worldCrankPos, level.getBlockState(worldCrankPos), player, attachmentStack);
+            helper.assertTrue(outcome == HorseCrankInteractions.Outcome.SUCCESS,
+                    "Creative interaction must still attach through the custom profile");
+            helper.assertTrue(attachmentStack.getCount() == 1,
+                    "Creative consuming profile must not shrink the attachment stack");
+
+            crank.engine().detachWorker(true);
+
+            int afterSaddles = level.getEntitiesOfClass(
+                    ItemEntity.class,
+                    new AABB(worldCrankPos).inflate(4.0D),
+                    entity -> entity.getItem().is(Items.SADDLE)
+            ).size();
+            helper.assertTrue(afterSaddles == beforeSaddles,
+                    "Creative attach must not mint a duplicate attachment item on detach");
+        } finally {
+            AttachmentProfileRegistry.replace(previousProfiles);
+        }
         helper.succeed();
     }
 

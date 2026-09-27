@@ -33,8 +33,10 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Loader-neutral animal-power behaviour. Assignment, attachment, activity, movement, work-area and output state live here;
- * the platform block entities delegate lifecycle + Create wiring to this class.
+ * Loader-neutral animal-power behaviour for the current single-worker machine lifecycle.
+ * Assignment persistence is structured so it can migrate forward, but multi-worker motion,
+ * attachment and output aggregation are deliberately not claimed until those semantics exist.
+ * Platform block entities delegate lifecycle + Create wiring to this class.
  */
 public class AnimalPowerEngine {
     /** Bridges the engine to the hosting block entity / world. */
@@ -134,6 +136,11 @@ public class AnimalPowerEngine {
     private UUID crankInstanceUuid = UUID.randomUUID();
 
     public AnimalPowerEngine(Host host, RedstoneMode defaultMode, AnimalPowerMachinePolicy machinePolicy) {
+        if (machinePolicy.maxWorkers() != 1) {
+            throw new IllegalArgumentException(
+                    "AnimalPowerEngine currently supports exactly one active worker; "
+                            + "multi-worker lifecycle/output semantics remain intentionally unimplemented");
+        }
         this.host = host;
         this.redstoneMode = defaultMode;
         this.machinePolicy = machinePolicy;
@@ -540,11 +547,17 @@ public class AnimalPowerEngine {
     // ==========================================
 
     public void attachWorker(Mob worker, WorkerResolver.ResolvedWorker profile) {
-        attachWorker(worker, profile, AttachmentProfileRegistry.legacyVanilla(), ItemStack.EMPTY);
+        attachWorker(worker, profile, AttachmentProfileRegistry.legacyVanilla(), ItemStack.EMPTY, false);
     }
 
     public void attachWorker(Mob worker, WorkerResolver.ResolvedWorker profile,
                              AttachmentProfile attachment, ItemStack attachmentStack) {
+        attachWorker(worker, profile, attachment, attachmentStack, false);
+    }
+
+    public void attachWorker(Mob worker, WorkerResolver.ResolvedWorker profile,
+                             AttachmentProfile attachment, ItemStack attachmentStack,
+                             boolean attachmentItemConsumed) {
         restoreWorkerAi();
         // Defensive cleanup: only a marker from a *different* crank should be
         // cleared on attach. Position + instance UUID form the identity, so a
@@ -556,7 +569,8 @@ public class AnimalPowerEngine {
         this.attachmentProfileId = attachment.id().toString();
         this.attachmentRadiusLimit = attachment.maxWorkingRadius();
         this.attachmentOutputMultiplier = attachment.outputMultiplier();
-        WorkerAttachmentControl.markAttached(worker, host.pos(), crankInstanceUuid, attachment, attachmentStack);
+        WorkerAttachmentControl.markAttached(
+                worker, host.pos(), crankInstanceUuid, attachment, attachmentStack, attachmentItemConsumed);
         this.cachedWorkerMob = worker;
         this.workerUuid = worker.getUUID();
         this.lastKnownWorkerPos = worker.blockPosition();
@@ -675,17 +689,27 @@ public class AnimalPowerEngine {
 
     private void releaseAttachmentBackend(Level level, @Nullable UUID workerUuid, @Nullable Mob cachedWorker,
                                           boolean dropRequested, AttachmentMode mode) {
-        if (mode == AttachmentMode.VANILLA_LEASH) {
-            CHPUtils.cleanUpLeash(level, host.pos(), workerUuid, dropRequested);
-            return;
-        }
-        if (!(level instanceof ServerLevel serverLevel)) return;
         Mob loaded = cachedWorker;
-        if (workerUuid != null) {
+        ServerLevel serverLevel = level instanceof ServerLevel server ? server : null;
+        if (serverLevel != null && workerUuid != null) {
             Entity indexed = serverLevel.getEntity(workerUuid);
             if (indexed instanceof Mob mob) loaded = mob;
         }
-        if (loaded != null && WorkerAttachmentControl.isOwnedBy(loaded, host.pos(), crankInstanceUuid)) {
+
+        if (mode == AttachmentMode.VANILLA_LEASH) {
+            // Keep the established exact-worker/knot cleanup, then handle the
+            // profile item independently. Previously the early return here
+            // permanently lost consumed custom vanilla-leash attachments.
+            CHPUtils.cleanUpLeash(level, host.pos(), workerUuid, dropRequested);
+            if (loaded != null && WorkerAttachmentControl.isOwnedBy(loaded, host.pos(), crankInstanceUuid)) {
+                WorkerAttachmentControl.releaseConsumedAttachmentItemIfRequested(loaded, dropRequested);
+            }
+            return;
+        }
+
+        if (serverLevel != null
+                && loaded != null
+                && WorkerAttachmentControl.isOwnedBy(loaded, host.pos(), crankInstanceUuid)) {
             WorkerAttachmentControl.releasePersistedAttachment(loaded, serverLevel, host.pos(), dropRequested);
         }
     }

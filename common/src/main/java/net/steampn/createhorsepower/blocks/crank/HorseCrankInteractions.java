@@ -207,6 +207,8 @@ public final class HorseCrankInteractions {
             return Outcome.FAIL;
         }
 
+        boolean attachmentItemConsumed = attachment.consumeOnAttach() && !player.getAbilities().instabuild;
+
         if (attachment.mode() == AttachmentMode.VANILLA_LEASH) {
             LeadItem.bindPlayerMobs(player, level, pos);
         } else {
@@ -215,11 +217,11 @@ public final class HorseCrankInteractions {
             mob.dropLeash(true, true);
         }
         if (level.getBlockEntity(pos) instanceof AbstractHorseCrankBlockEntity be) {
-            be.engine().attachWorker(mob, profile, attachment, attachmentStack);
+            be.engine().attachWorker(mob, profile, attachment, attachmentStack, attachmentItemConsumed);
         } else {
             level.setBlock(pos, state.setValue(CrankProperties.HAS_WORKER, true), 3);
         }
-        if (attachment.consumeOnAttach() && !player.getAbilities().instabuild) {
+        if (attachmentItemConsumed) {
             attachmentStack.shrink(1);
         }
         player.displayClientMessage(Component.translatable("tooltip.createhorsepower.horse_crank.attached"), true);

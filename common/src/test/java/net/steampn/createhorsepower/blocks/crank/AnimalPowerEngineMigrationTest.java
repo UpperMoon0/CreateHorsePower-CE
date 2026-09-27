@@ -46,8 +46,22 @@ class AnimalPowerEngineMigrationTest {
         CompoundTag migrated = new CompoundTag();
         engine.write(migrated, false);
         assertTrue(migrated.hasUUID("WorkerUUID"), "legacy single-worker key remains for backward compatibility");
-        assertTrue(migrated.contains("AnimalPowerWorkers"), "generalized runtime must persist the new assignment list");
+        assertTrue(migrated.contains("AnimalPowerWorkers"), "migration must persist the bounded assignment container");
         assertEquals(worker, migrated.getUUID("WorkerUUID"));
+    }
+
+    @Test
+    void multiWorkerPolicyFailsFastUntilLifecycleSemanticsExist() {
+        ResourceLocation machineId = ResourceLocation.tryParse("createhorsepower:future_multi_worker_machine");
+        assertNotNull(machineId);
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () ->
+                new AnimalPowerEngine(
+                        new FakeHost(),
+                        RedstoneMode.HIGH_STOPS,
+                        new AnimalPowerMachinePolicy(machineId, 2)));
+
+        assertTrue(error.getMessage().contains("exactly one active worker"));
     }
 
     private static final class FakeHost implements AnimalPowerEngine.Host {
