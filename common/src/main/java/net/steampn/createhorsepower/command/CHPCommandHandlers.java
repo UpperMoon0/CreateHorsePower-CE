@@ -92,6 +92,10 @@ public final class CHPCommandHandlers {
             String leash = holder == null ? "none"
                     : holder.getType().toString() + " @ " + holder.blockPosition().toShortString();
             source.sendSuccess(() -> Component.literal("Worker Type: " + workerType), false);
+            WorkerResolver.ResolvedWorker resolved = WorkerResolver.resolve(loadedWorker, "createhorsepower:horse_crank");
+            source.sendSuccess(() -> Component.literal("Profile Source: " + resolved.source()), false);
+            source.sendSuccess(() -> Component.literal("Machine Override: " + resolved.machineOverrideApplied()
+                    + " (" + resolved.machineId() + ")"), false);
             source.sendSuccess(() -> Component.literal("Leash Holder: " + leash), false);
             source.sendSuccess(() -> Component.literal("Markers: attachment=" + WorkerAttachmentControl.hasMarker(loadedWorker)
                     + " ai=" + WorkerActivityControl.hasMarker(loadedWorker)), false);

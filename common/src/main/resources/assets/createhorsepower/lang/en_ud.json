@@ -6,6 +6,7 @@
   "tooltip.createhorsepower.horse_crank.maximumMobs": "ǝɯıʇ ɐ ʇɐ ɹǝʞɹoʍ ǝuo ʎןuo ɥɔɐʇʇ∀",
   "tooltip.createhorsepower.horse_crank.notValidWorker": "ʞuɐɹɔ ǝsɹoɥ sıɥʇ ɹǝʍod ʇouuɐɔ ǝɹnʇɐǝɹɔ ʇɐɥ⟘",
   "tooltip.createhorsepower.horse_crank.attached": "pǝɥɔɐʇʇɐ ɹǝʞɹoM",
+  "tooltip.createhorsepower.horse_crank.workerAlreadyAttached": "That worker is already attached to another animal-power machine",
   "tooltip.createhorsepower.goggles.header": "snʇɐʇS ʞuɐɹƆ ǝsɹoH",
   "tooltip.createhorsepower.goggles.status.no_worker": "pǝɥɔɐʇʇɐ ɹǝʞɹoʍ oN",
   "tooltip.createhorsepower.goggles.status.stopped_redstone": "ǝuoʇspǝɹ ʎq pǝddoʇS",

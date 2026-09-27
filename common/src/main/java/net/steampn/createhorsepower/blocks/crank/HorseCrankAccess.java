@@ -1,6 +1,7 @@
 package net.steampn.createhorsepower.blocks.crank;
 
 import net.steampn.createhorsepower.content.crank.RedstoneMode;
+import net.steampn.createhorsepower.content.machine.AnimalPowerAccess;
 import net.steampn.createhorsepower.content.stats.WorkerResolver;
 
 /**
@@ -8,8 +9,13 @@ import net.steampn.createhorsepower.content.stats.WorkerResolver;
  * other integrations depend on this interface, not on a particular platform
  * block entity class.
  */
-public interface HorseCrankAccess {
+public interface HorseCrankAccess extends AnimalPowerAccess {
     HorseCrankEngine engine();
+
+    @Override
+    default AnimalPowerEngine animalPowerEngine() {
+        return engine();
+    }
 
     default boolean isStoppedByRedstone() {
         return engine().isStoppedByRedstone();

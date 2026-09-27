@@ -51,6 +51,7 @@ public final class BuiltinProfiles {
     public static final PathStats GRAVEL = PathStats.of(1.10f, 1.00f);
     public static final PathStats MOSSY_STONE_BRICKS = PathStats.of(1.15f, 1.05f);
     public static final PathStats CRACKED_STONE_BRICKS = PathStats.of(1.10f, 1.00f);
+    public static final PathStats ICE = PathStats.of(2.00f, 1.10f);
 
     private static final Map<EntityType<?>, WorkerStats> WORKERS = Map.ofEntries(
             Map.entry(EntityType.HORSE, HORSE), Map.entry(EntityType.DONKEY, DONKEY),
@@ -91,13 +92,14 @@ public final class BuiltinProfiles {
             Map.entry("tfc:bactrian_camel", WorkerTier.LARGE));
 
     private static final Map<Block, PathStats> PATHS = Map.ofEntries(
-            Map.entry(Blocks.DIRT_PATH, PathStats.NORMAL), Map.entry(Blocks.DIRT, DIRT),
+            Map.entry(Blocks.DIRT_PATH, PathStats.NORMAL), Map.entry(Blocks.DIRT, DIRT), Map.entry(Blocks.GRASS_BLOCK, DIRT),
             Map.entry(Blocks.COARSE_DIRT, COARSE_DIRT), Map.entry(Blocks.GRAVEL, GRAVEL),
             Map.entry(Blocks.STONE_BRICKS, PathStats.GREAT), Map.entry(Blocks.MOSSY_STONE_BRICKS, MOSSY_STONE_BRICKS),
             Map.entry(Blocks.CRACKED_STONE_BRICKS, CRACKED_STONE_BRICKS), Map.entry(Blocks.COBBLESTONE, PathStats.NORMAL),
             Map.entry(Blocks.MOSSY_COBBLESTONE, PathStats.NORMAL), Map.entry(Blocks.POLISHED_ANDESITE, PathStats.GREAT),
             Map.entry(Blocks.POLISHED_DIORITE, PathStats.GREAT), Map.entry(Blocks.POLISHED_GRANITE, PathStats.GREAT),
-            Map.entry(Blocks.POLISHED_DEEPSLATE, PathStats.GREAT), Map.entry(Blocks.SMOOTH_STONE, PathStats.GREAT));
+            Map.entry(Blocks.POLISHED_DEEPSLATE, PathStats.GREAT), Map.entry(Blocks.SMOOTH_STONE, PathStats.GREAT),
+            Map.entry(Blocks.ICE, ICE), Map.entry(Blocks.PACKED_ICE, ICE), Map.entry(Blocks.BLUE_ICE, ICE));
 
     public static Optional<WorkerStats> worker(EntityType<?> type) {
         WorkerStats exact = WORKERS.get(type);

@@ -100,16 +100,16 @@ public class Config implements CHPConfig {
                 .defineInRange("greatMultiplier", 2.0, 0.0, Double.MAX_VALUE);
 
         POOR_PATH = BUILDER
-                .comment("Types of blocks valid as \"Poor\" quality (legacy fallback list).")
-                .defineListAllowEmpty("poorPathBlock", List.of("minecraft:dirt", "minecraft:grass_block"), Config::validateBlockName);
+                .comment("Legacy Poor path overrides. Fresh 1.2+ configs leave this empty so bundled path profiles apply; values already present in upgraded 1.1 configs are preserved.")
+                .defineListAllowEmpty("poorPathBlock", List.of(), Config::validateBlockName);
 
         NORMAL_PATH = BUILDER
-                .comment("Types of blocks valid as \"Normal\" quality (legacy fallback list).")
-                .defineListAllowEmpty("normalPathBlock", List.of("minecraft:dirt_path", "minecraft:gravel"), Config::validateBlockName);
+                .comment("Legacy Normal path overrides. Fresh 1.2+ configs leave this empty so bundled path profiles apply; values already present in upgraded 1.1 configs are preserved.")
+                .defineListAllowEmpty("normalPathBlock", List.of(), Config::validateBlockName);
 
         GREAT_PATH = BUILDER
-                .comment("Types of blocks valid as \"Great\" quality (legacy fallback list).")
-                .defineListAllowEmpty("greatPathBlock", List.of("minecraft:ice", "minecraft:packed_ice", "minecraft:blue_ice"), Config::validateBlockName);
+                .comment("Legacy Great path overrides. Fresh 1.2+ configs leave this empty so bundled path profiles apply; values already present in upgraded 1.1 configs are preserved.")
+                .defineListAllowEmpty("greatPathBlock", List.of(), Config::validateBlockName);
 
         SMALL_CREATURES = BUILDER
                 .comment("Valid \"Small\" creatures (legacy fallback list).")

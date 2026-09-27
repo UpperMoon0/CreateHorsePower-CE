@@ -18,6 +18,7 @@ import net.steampn.createhorsepower.blocks.crank.AbstractHorseCrankBlock;
 import net.steampn.createhorsepower.blocks.crank.HorseCrankInteractions;
 import net.steampn.createhorsepower.registry.TileEntityRegister;
 import net.steampn.createhorsepower.utils.CHPTags;
+import net.steampn.createhorsepower.content.attachment.AttachmentProfileRegistry;
 import org.jetbrains.annotations.NotNull;
 
 /**
@@ -56,8 +57,8 @@ public class HorseCrankBlock extends AbstractHorseCrankBlock implements IBE<Hors
             return ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
         }
 
-        if (stack.is(CHPTags.Items.ATTACHMENT_ITEMS)) {
-            return mapUse(HorseCrankInteractions.attachAt(level, pos, state, player));
+        if (stack.is(CHPTags.Items.ATTACHMENT_ITEMS) || AttachmentProfileRegistry.resolve(stack).isPresent()) {
+            return mapUse(HorseCrankInteractions.attachAt(level, pos, state, player, stack));
         }
 
         if (!stack.isEmpty()) {

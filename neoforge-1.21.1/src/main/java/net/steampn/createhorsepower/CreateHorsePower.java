@@ -17,6 +17,9 @@ import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterGameTestsEvent;
+import net.neoforged.neoforge.event.AddReloadListenerEvent;
+import net.steampn.createhorsepower.content.attachment.AttachmentProfileReloadListener;
+import net.steampn.createhorsepower.content.stats.WorkerProfileReloadListener;
 import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
 import net.neoforged.neoforge.event.server.ServerStoppedEvent;
@@ -46,7 +49,8 @@ public class CreateHorsePower {
         net.steampn.createhorsepower.platform.CHPApi.init(new net.steampn.createhorsepower.config.Config(),
                 net.steampn.createhorsepower.compat.OptionalIntegrations.INSTANCE,
                 ResourceLocation::fromNamespaceAndPath,
-                new net.steampn.createhorsepower.platform.NeoForgeDeferredDetachStore());
+                new net.steampn.createhorsepower.platform.NeoForgeDeferredDetachStore(),
+                new net.steampn.createhorsepower.platform.NeoForgeItemStackPersistence());
 
         CREATE_REGISTRATE.addDataGenerator(com.tterrag.registrate.providers.ProviderType.LANG, provider -> {
             PonderIndex.addPlugin(new HorseCrankPonderPlugin());
@@ -75,6 +79,12 @@ public class CreateHorsePower {
         event.register(HorsePowerGameTests.class);
         event.register(HorsePowerLifecycleGameTests.class);
         event.register(NeoForgeRecoveryEdgeGameTests.class);
+    }
+
+    @SubscribeEvent
+    public void onAddReloadListeners(AddReloadListenerEvent event) {
+        event.addListener(new AttachmentProfileReloadListener());
+        event.addListener(new WorkerProfileReloadListener());
     }
 
     @SubscribeEvent

@@ -101,7 +101,7 @@ neoForge {
         data {
             data()
 
-            programArguments.addAll '--mod', project.mod_id, '--all', '--output', file('src/generated/resources/').getAbsolutePath(), '--existing', file('src/main/resources/').getAbsolutePath()
+            programArguments.addAll '--mod', project.mod_id, '--server', '--output', file('src/generated/resources/').getAbsolutePath(), '--existing', file('src/main/resources/').getAbsolutePath(), '--existing', rootProject.file('common/src/main/resources').getAbsolutePath()
         }
 
         configureEach {

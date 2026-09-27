@@ -77,6 +77,16 @@ jobs:
       - name: Make Gradle executable
         run: chmod +x ./gradlew
 
+      - name: Generate datapack resources and verify clean output
+        env:
+          PROJECT: ${{ matrix.project }}
+        run: |
+          ./gradlew ":${PROJECT}:runData" --stacktrace --no-daemon
+          if [[ -n "$(git status --porcelain --untracked-files=all -- "${PROJECT}/src/generated/resources")" ]]; then
+            git diff -- "${PROJECT}/src/generated/resources"
+            git status --short --untracked-files=all -- "${PROJECT}/src/generated/resources"
+            exit 1
+          fi
       # Request build first (including this platform's JUnit suite) and then the
       # real-game suite in one Gradle invocation. Gradle stops on the first
       # failure unless --continue is requested, so compile/unit failures still

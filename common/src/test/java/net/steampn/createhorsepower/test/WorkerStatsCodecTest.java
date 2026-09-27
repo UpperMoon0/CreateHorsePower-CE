@@ -143,4 +143,48 @@ public class WorkerStatsCodecTest {
         assertTrue(result.result().isPresent());
         assertFalse(result.result().get().requiresTamed(), "Omitted requires_tamed must default to false");
     }
-}
+
+    @Test
+    @DisplayName("Machine overrides inherit omitted base fields and replace exact fields")
+    void testMachineOverrideInheritance() {
+        JsonObject jsonObject = JsonParser.parseString("""
+                {
+                  "rpm": 5.0,
+                  "stress": 600.0,
+                  "movement_radius": 3.0,
+                  "requires_tamed": true,
+                  "machines": {
+                    "createhorsepower:horse_crank": {
+                      "rpm": 7.0,
+                      "movement_radius": 2.0,
+                      "allow_baby": true
+                    }
+                  }
+                }
+                """).getAsJsonObject();
+
+        WorkerStats base = WorkerStats.CODEC.parse(JsonOps.INSTANCE, jsonObject).result().orElseThrow();
+        WorkerStats effective = base.forMachine("createhorsepower:horse_crank");
+
+        assertEquals(7.0f, effective.baseRpm());
+        assertEquals(600.0f, effective.stressCapacity(), "omitted override fields inherit base stats");
+        assertEquals(2.0f, effective.movementRadius());
+        assertTrue(effective.requiresTamed(), "base boolean is inherited");
+        assertTrue(effective.allowBaby(), "explicit machine boolean wins");
+        assertEquals(base, base.forMachine("example:other_machine"), "missing machine override must be a no-op");
+        assertTrue(base.hasMachineOverride("createhorsepower:horse_crank"));
+    }
+
+    @Test
+    @DisplayName("Machine override codec rejects invalid fields and malformed machine ids")
+    void testMachineOverrideValidation() {
+        var invalidRadius = WorkerStats.CODEC.parse(JsonOps.INSTANCE, JsonParser.parseString("""
+                {"machines":{"createhorsepower:horse_crank":{"movement_radius":6.01}}}
+                """).getAsJsonObject());
+        assertTrue(invalidRadius.error().isPresent(), invalidRadius.toString());
+
+        var invalidId = WorkerStats.CODEC.parse(JsonOps.INSTANCE, JsonParser.parseString("""
+                {"machines":{"not namespaced":{"rpm":5.0}}}
+                """).getAsJsonObject());
+        assertTrue(invalidId.error().isPresent());
+    }}
