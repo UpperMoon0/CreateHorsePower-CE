@@ -862,9 +862,8 @@ public final class HorsePowerGameTests {
             // that strip: it must either be bound specifically or rejected,
             // never consumed/recorded without a real backend.
             Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(12, 2, 4));
-            // GameTestHelper's local spawn conversion uses float coordinates on
-            // 1.21.1. At large random test origins it can round this narrow strip
-            // outside the selection AABB. Set the exact world-space fixture in doubles.
+            // Place the narrow positive-edge strip explicitly in world space
+            // and assert both search bounds before exercising the attachment.
             horse.setPos(worldCrankPos.getX() + 8.25D, worldCrankPos.getY(), worldCrankPos.getZ() + 0.5D);
             helper.assertTrue(horse.getBoundingBox().intersects(new net.minecraft.world.phys.AABB(worldCrankPos).inflate(7.0D)),
                     "Boundary fixture must intersect CHP's candidate selection");
