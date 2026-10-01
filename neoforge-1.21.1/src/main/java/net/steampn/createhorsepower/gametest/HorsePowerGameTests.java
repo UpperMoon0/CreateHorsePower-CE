@@ -863,6 +863,16 @@ public final class HorsePowerGameTests {
             // that strip: it must either be bound specifically or rejected,
             // never consumed/recorded without a real backend.
             Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(12, 2, 4));
+            // GameTestHelper's local spawn conversion uses float coordinates on
+            // 1.21.1. At large random test origins it can round this narrow strip
+            // outside the selection AABB. Set the exact world-space fixture in doubles.
+            horse.setPos(worldCrankPos.getX() + 8.25D, worldCrankPos.getY(), worldCrankPos.getZ() + 0.5D);
+            helper.assertTrue(horse.getBoundingBox().intersects(new net.minecraft.world.phys.AABB(worldCrankPos).inflate(7.0D)),
+                    "Boundary fixture must intersect CHP's candidate selection");
+            helper.assertTrue(!horse.getBoundingBox().intersects(new net.minecraft.world.phys.AABB(
+                    worldCrankPos.getX() - 7.0D, worldCrankPos.getY() - 7.0D, worldCrankPos.getZ() - 7.0D,
+                    worldCrankPos.getX() + 7.0D, worldCrankPos.getY() + 7.0D, worldCrankPos.getZ() + 7.0D)),
+                    "Boundary fixture must stay outside vanilla's bulk-bind search");
             net.minecraft.world.entity.player.Player player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
             player.getAbilities().instabuild = false;
             horse.setLeashedTo(player, false);
@@ -1232,4 +1242,36 @@ public final class HorsePowerGameTests {
         helper.assertTrue(yawError < 0.1F, "Worker yaw must face its actual movement vector");
         return newAngle;
     }
+    @GameTest(template = "empty")
+    public static void expandedOwnershipSurvivesNativeMobNbtWithoutPackedAliasTheft(GameTestHelper helper) {
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(2, 1, 2));
+        java.util.UUID owner = java.util.UUID.randomUUID();
+        for (int y : new int[]{-8_000_000, -1_000_000, -2049, -65, 320, 2048, 1_000_000, 7_999_999}) {
+            BlockPos exact = new BlockPos(7, y, 9);
+            BlockPos alias = exact.below(4096);
+            horse.setNoAi(false);
+            WorkerAttachmentControl.markAttached(horse, exact, owner);
+            net.steampn.createhorsepower.blocks.crank.WorkerActivityControl.acquire(horse, exact, owner);
+            net.minecraft.nbt.CompoundTag saved = horse.saveWithoutId(new net.minecraft.nbt.CompoundTag());
+            Horse restored = new Horse(EntityType.HORSE, helper.getLevel());
+            restored.load(saved);
+            helper.assertTrue(exact.equals(WorkerAttachmentControl.markerCrankPos(restored))
+                    && WorkerAttachmentControl.isOwnedBy(restored, exact, owner)
+                    && !WorkerAttachmentControl.isOwnedBy(restored, alias, owner),
+                    "Native worker NBT must preserve full attachment ownership at Y=" + y);
+            helper.assertTrue(net.steampn.createhorsepower.blocks.crank.WorkerActivityControl.isOwnedBy(restored, exact, owner)
+                    && !net.steampn.createhorsepower.blocks.crank.WorkerActivityControl.isOwnedBy(restored, alias, owner),
+                    "Packed alias must not own restored AI suppression at Y=" + y);
+            WorkerAttachmentControl.clearIfOwnedBy(restored, alias, owner);
+            helper.assertTrue(WorkerAttachmentControl.hasMarker(restored), "Alias must not clear another crank's marker");
+            WorkerAttachmentControl.clearIfOwnedBy(restored, exact, owner);
+            helper.assertTrue(!WorkerAttachmentControl.hasMarker(restored), "Exact owner must clear attachment marker");
+            net.steampn.createhorsepower.blocks.crank.WorkerActivityControl.releaseFromMarker(restored);
+            helper.assertTrue(!restored.isNoAi(), "Native worker reload must retain original AI state");
+            net.steampn.createhorsepower.blocks.crank.WorkerActivityControl.releaseFromMarker(horse);
+            WorkerAttachmentControl.clearIfOwnedBy(horse, exact, owner);
+        }
+        helper.succeed();
+    }
+
 }
