@@ -34,3 +34,11 @@ TerraFirmaCraft is never a required runtime dependency. CE only activates its bu
 Rule: a feature may only be advertised as "supported" on a version when this
 matrix lists it as Full there. When porting a missing feature, move the row to
 Full in the same change.
+
+## Expanded build heights
+
+Worker/crank ownership, activity markers, assignment positions, and deferred detach records
+retain full XYZ coordinates alongside their legacy packed keys. New saves do not wrap Y
+at the vanilla packed-position boundary. Old dense saves remain readable. Already truncated
+old high-Y records cannot recover their original coordinate from the packed value alone.
+This persistence fix does not certify all Create or third-party expanded-height behavior.

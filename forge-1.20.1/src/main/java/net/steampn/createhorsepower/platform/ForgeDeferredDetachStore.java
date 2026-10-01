@@ -1,6 +1,7 @@
 package net.steampn.createhorsepower.platform;
 
 import net.minecraft.core.BlockPos;
+import net.steampn.createhorsepower.utils.FullPositionNbt;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.saveddata.SavedData;
@@ -47,7 +48,7 @@ public final class ForgeDeferredDetachStore implements DeferredDetachStore {
                         continue;
                     }
                     data.entries.put(workerUuid, new Entry(
-                            BlockPos.of(tag.getLong("CrankPos")),
+                            FullPositionNbt.get(tag, "CrankPos"),
                             tag.getUUID("CrankUuid"),
                             tag.getBoolean("DropLead")
                     ));
@@ -63,7 +64,7 @@ public final class ForgeDeferredDetachStore implements DeferredDetachStore {
             CompoundTag entriesTag = new CompoundTag();
             entries.forEach((workerUuid, entry) -> {
                 CompoundTag tag = new CompoundTag();
-                tag.putLong("CrankPos", entry.crankPos().asLong());
+                FullPositionNbt.put(tag, "CrankPos", entry.crankPos());
                 tag.putUUID("CrankUuid", entry.crankUuid());
                 tag.putBoolean("DropLead", entry.dropLead());
                 entriesTag.put(workerUuid.toString(), tag);

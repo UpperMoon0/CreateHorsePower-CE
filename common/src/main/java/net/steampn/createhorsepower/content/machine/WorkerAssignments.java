@@ -1,6 +1,7 @@
 package net.steampn.createhorsepower.content.machine;
 
 import net.minecraft.core.BlockPos;
+import net.steampn.createhorsepower.utils.FullPositionNbt;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
@@ -50,7 +51,7 @@ public final class WorkerAssignments {
         for (Entry entry : entries) {
             CompoundTag tag = new CompoundTag();
             tag.putUUID("UUID", entry.workerUuid());
-            if (entry.lastKnownPos() != null) tag.putLong("Pos", entry.lastKnownPos().asLong());
+            if (entry.lastKnownPos() != null) FullPositionNbt.put(tag, "Pos", entry.lastKnownPos());
             list.add(tag);
         }
         parent.put("AnimalPowerWorkers", list);
@@ -63,7 +64,7 @@ public final class WorkerAssignments {
         for (int i = 0; i < list.size() && entries.size() < maxWorkers; i++) {
             CompoundTag tag = list.getCompound(i);
             if (!tag.hasUUID("UUID")) continue;
-            entries.add(new Entry(tag.getUUID("UUID"), tag.contains("Pos") ? BlockPos.of(tag.getLong("Pos")) : null));
+            entries.add(new Entry(tag.getUUID("UUID"), tag.contains("Pos") ? FullPositionNbt.get(tag, "Pos") : null));
         }
         return true;
     }

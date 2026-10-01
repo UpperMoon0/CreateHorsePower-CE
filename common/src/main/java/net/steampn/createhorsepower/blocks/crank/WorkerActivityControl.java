@@ -1,6 +1,7 @@
 package net.steampn.createhorsepower.blocks.crank;
 
 import net.minecraft.core.BlockPos;
+import net.steampn.createhorsepower.utils.FullPositionNbt;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
@@ -73,7 +74,7 @@ public final class WorkerActivityControl {
             return null;
         }
         CompoundTag marker = mob.getPersistentData().getCompound(MARKER_KEY);
-        return marker.contains(CRANK_POS_KEY) ? BlockPos.of(marker.getLong(CRANK_POS_KEY)) : null;
+        return marker.contains(CRANK_POS_KEY) ? FullPositionNbt.get(marker, CRANK_POS_KEY) : null;
     }
 
     /**
@@ -98,7 +99,7 @@ public final class WorkerActivityControl {
             return true;
         }
         return marker.contains(CRANK_POS_KEY)
-                && expectedCrankPos.equals(BlockPos.of(marker.getLong(CRANK_POS_KEY)));
+                && expectedCrankPos.equals(FullPositionNbt.get(marker, CRANK_POS_KEY));
     }
 
     /**
@@ -194,7 +195,7 @@ public final class WorkerActivityControl {
             return false;
         }
         CompoundTag marker = tag.getCompound(MARKER_KEY);
-        BlockPos crankPos = marker.contains(CRANK_POS_KEY) ? BlockPos.of(marker.getLong(CRANK_POS_KEY)) : null;
+        BlockPos crankPos = marker.contains(CRANK_POS_KEY) ? FullPositionNbt.get(marker, CRANK_POS_KEY) : null;
         UUID crankUuid = marker.hasUUID(CRANK_UUID_KEY) ? marker.getUUID(CRANK_UUID_KEY) : null;
         boolean restoreTo = marker.getBoolean(PREVIOUS_NO_AI_KEY);
         mob.setNoAi(restoreTo);
@@ -242,7 +243,7 @@ public final class WorkerActivityControl {
         }
         return expectedCrankPos != null
                 && marker.contains(CRANK_POS_KEY)
-                && !expectedCrankPos.equals(BlockPos.of(marker.getLong(CRANK_POS_KEY)));
+                && !expectedCrankPos.equals(FullPositionNbt.get(marker, CRANK_POS_KEY));
     }
 
     /** Legacy UUID-only overload retained for compatibility with existing integrations. */
@@ -323,7 +324,7 @@ public final class WorkerActivityControl {
         CompoundTag marker = new CompoundTag();
         marker.putBoolean(PREVIOUS_NO_AI_KEY, previousNoAi);
         if (crankPos != null) {
-            marker.putLong(CRANK_POS_KEY, crankPos.asLong());
+            FullPositionNbt.put(marker, CRANK_POS_KEY, crankPos);
         }
         if (crankUuid != null) {
             marker.putUUID(CRANK_UUID_KEY, crankUuid);

@@ -2,6 +2,7 @@ package net.steampn.createhorsepower.blocks.crank;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
+import net.steampn.createhorsepower.utils.FullPositionNbt;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
@@ -394,7 +395,7 @@ public class AnimalPowerEngine {
             compound.putUUID("WorkerUUID", workerUuid);
         }
         if (lastKnownWorkerPos != null) {
-            compound.putLong("WorkerPos", lastKnownWorkerPos.asLong());
+            FullPositionNbt.put(compound, "WorkerPos", lastKnownWorkerPos);
         }
         assignments.write(compound);
         if (Double.isFinite(workerOrbitAngle)) {
@@ -488,7 +489,7 @@ public class AnimalPowerEngine {
             workerUuid = compound.getUUID("WorkerUUID");
         }
         if (compound.contains("WorkerPos")) {
-            lastKnownWorkerPos = BlockPos.of(compound.getLong("WorkerPos"));
+            lastKnownWorkerPos = FullPositionNbt.get(compound, "WorkerPos");
         }
         boolean readAssignments = assignments.read(compound);
         if (readAssignments && assignments.primary() != null) {

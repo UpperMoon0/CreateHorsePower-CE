@@ -1,6 +1,7 @@
 package net.steampn.createhorsepower.blocks.crank;
 
 import net.minecraft.core.BlockPos;
+import net.steampn.createhorsepower.utils.FullPositionNbt;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
@@ -72,7 +73,7 @@ public final class WorkerAttachmentControl {
         }
 
         CompoundTag marker = new CompoundTag();
-        marker.putLong(CRANK_POS_KEY, crankPos.asLong());
+        FullPositionNbt.put(marker, CRANK_POS_KEY, crankPos);
         marker.putUUID(CRANK_UUID_KEY, crankUuid);
         AttachmentMode mode = profile == null ? AttachmentMode.VANILLA_LEASH : profile.mode();
         marker.putString(MODE_KEY, mode.serializedName());
@@ -103,7 +104,7 @@ public final class WorkerAttachmentControl {
         }
         CompoundTag marker = mob.getPersistentData().getCompound(MARKER_KEY);
         return marker.contains(CRANK_POS_KEY)
-                && crankPos.equals(BlockPos.of(marker.getLong(CRANK_POS_KEY)))
+                && crankPos.equals(FullPositionNbt.get(marker, CRANK_POS_KEY))
                 && marker.hasUUID(CRANK_UUID_KEY)
                 && crankUuid.equals(marker.getUUID(CRANK_UUID_KEY));
     }
@@ -135,7 +136,7 @@ public final class WorkerAttachmentControl {
     public static BlockPos markerCrankPos(Mob mob) {
         if (!hasMarker(mob)) return null;
         CompoundTag marker = mob.getPersistentData().getCompound(MARKER_KEY);
-        return marker.contains(CRANK_POS_KEY) ? BlockPos.of(marker.getLong(CRANK_POS_KEY)) : null;
+        return marker.contains(CRANK_POS_KEY) ? FullPositionNbt.get(marker, CRANK_POS_KEY) : null;
     }
 
     @Nullable
