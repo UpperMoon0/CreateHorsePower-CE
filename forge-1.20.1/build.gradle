@@ -155,6 +155,8 @@ test {
 }
 
 tasks.named('processResources', ProcessResources).configure {
+    // Datagen bookkeeping is not a runtime resource or release artifact.
+    exclude '.cache/**'
     var replaceProperties = [
             minecraft_version: minecraft_version, minecraft_version_range: minecraft_version_range,
             forge_version: forge_version, forge_version_range: forge_version_range,

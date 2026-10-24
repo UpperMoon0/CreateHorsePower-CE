@@ -131,6 +131,8 @@ tasks.matching { it.name == 'runGameTestServer' }.configureEach {
 }
 
 tasks.named('processResources', ProcessResources).configure {
+    // Datagen bookkeeping is not a runtime resource or release artifact.
+    exclude '.cache/**'
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
 
