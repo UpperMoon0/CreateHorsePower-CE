@@ -771,7 +771,7 @@ public final class HorsePowerGameTests {
     }
 
 
-    @GameTest(template = "empty")
+    @GameTest(template = "kinetic_network")
     public static void loadedVanillaLeashProfileReturnsActuallyConsumedAttachment(GameTestHelper helper) {
         List<AttachmentProfile> previousProfiles = AttachmentProfileRegistry.all();
         try {
@@ -808,6 +808,7 @@ public final class HorsePowerGameTests {
                     entity -> entity.getItem().is(Items.SADDLE)
             ).size();
 
+            assertSelectableWorker(helper, worldCrankPos, horse, player);
             HorseCrankInteractions.Outcome outcome = HorseCrankInteractions.attachAt(
                     level, worldCrankPos, level.getBlockState(worldCrankPos), player, attachmentStack);
             helper.assertTrue(outcome == HorseCrankInteractions.Outcome.SUCCESS,
@@ -831,7 +832,7 @@ public final class HorsePowerGameTests {
     }
 
 
-    @GameTest(template = "empty")
+    @GameTest(template = "kinetic_network")
     public static void vanillaLeashBoundaryWorkerMustActuallyBindBeforeConsumption(GameTestHelper helper) {
         List<AttachmentProfile> previousProfiles = AttachmentProfileRegistry.all();
         try {
@@ -867,6 +868,7 @@ public final class HorsePowerGameTests {
             horse.setLeashedTo(player, false);
             ItemStack attachmentStack = new ItemStack(Items.SADDLE);
 
+            assertSelectableWorker(helper, worldCrankPos, horse, player);
             HorseCrankInteractions.Outcome outcome = HorseCrankInteractions.attachAt(
                     level, worldCrankPos, level.getBlockState(worldCrankPos), player, attachmentStack);
 
@@ -887,7 +889,7 @@ public final class HorsePowerGameTests {
         helper.succeed();
     }
 
-    @GameTest(template = "empty")
+    @GameTest(template = "kinetic_network")
     public static void creativeConsumingProfileNeverRecordsOrDropsConsumedItem(GameTestHelper helper) {
         List<AttachmentProfile> previousProfiles = AttachmentProfileRegistry.all();
         try {
@@ -924,6 +926,7 @@ public final class HorsePowerGameTests {
                     entity -> entity.getItem().is(Items.SADDLE)
             ).size();
 
+            assertSelectableWorker(helper, worldCrankPos, horse, player);
             HorseCrankInteractions.Outcome outcome = HorseCrankInteractions.attachAt(
                     level, worldCrankPos, level.getBlockState(worldCrankPos), player, attachmentStack);
             helper.assertTrue(outcome == HorseCrankInteractions.Outcome.SUCCESS,
@@ -947,7 +950,7 @@ public final class HorsePowerGameTests {
     }
 
 
-    @GameTest(template = "empty")
+    @GameTest(template = "kinetic_network")
     public static void foreignHarnessOwnerCannotBeStolenBySecondCrank(GameTestHelper helper) {
         List<AttachmentProfile> previousProfiles = AttachmentProfileRegistry.all();
         try {
@@ -982,6 +985,7 @@ public final class HorsePowerGameTests {
 
             horse.setLeashedTo(player, false);
             ItemStack firstHarness = new ItemStack(Items.SADDLE);
+            assertSelectableWorker(helper, worldA, horse, player);
             HorseCrankInteractions.Outcome first = HorseCrankInteractions.attachAt(
                     level, worldA, level.getBlockState(worldA), player, firstHarness);
             helper.assertTrue(first == HorseCrankInteractions.Outcome.SUCCESS && firstHarness.isEmpty(),
@@ -993,6 +997,7 @@ public final class HorsePowerGameTests {
             // Minecraft permits a non-vanilla-backend worker to be leashed to a player again.
             horse.setLeashedTo(player, false);
             ItemStack secondHarness = new ItemStack(Items.SADDLE);
+            assertSelectableWorker(helper, worldB, horse, player);
             HorseCrankInteractions.Outcome second = HorseCrankInteractions.attachAt(
                     level, worldB, level.getBlockState(worldB), player, secondHarness);
 
@@ -1027,7 +1032,7 @@ public final class HorsePowerGameTests {
         helper.succeed();
     }
 
-    @GameTest(template = "empty")
+    @GameTest(template = "kinetic_network")
     public static void consumedAttachmentPreservesFullStackState(GameTestHelper helper) {
         List<AttachmentProfile> previousProfiles = AttachmentProfileRegistry.all();
         try {
@@ -1060,6 +1065,7 @@ public final class HorsePowerGameTests {
             ItemStack attachmentStack = new ItemStack(Items.DIAMOND_SWORD);
             attachmentStack.setDamageValue(37);
 
+            assertSelectableWorker(helper, worldCrankPos, horse, player);
             HorseCrankInteractions.Outcome outcome = HorseCrankInteractions.attachAt(
                     level, worldCrankPos, level.getBlockState(worldCrankPos), player, attachmentStack);
             helper.assertTrue(outcome == HorseCrankInteractions.Outcome.SUCCESS && attachmentStack.isEmpty(),
@@ -1145,6 +1151,27 @@ public final class HorsePowerGameTests {
                 "Reload must restore the selected attachment profile id");
 
         helper.succeed();
+    }
+
+    /**
+     * Real interactions query the world's entity index. Keep these fixtures in
+     * the full-sized template: the one-block empty template does not wait for
+     * the chunks containing workers at (6, 2, 4) or (12, 2, 4) to become visible.
+     */
+    private static void assertSelectableWorker(
+            GameTestHelper helper,
+            BlockPos crankPos,
+            Mob worker,
+            net.minecraft.world.entity.player.Player player
+    ) {
+        ServerLevel level = helper.getLevel();
+        helper.assertTrue(level.isPositionEntityTicking(worker.blockPosition()),
+                "Fixture worker chunk must be entity-ticking before the interaction");
+        List<Mob> selectable = level.getEntitiesOfClass(
+                Mob.class, new AABB(crankPos).inflate(7.0D),
+                mob -> mob.isLeashed() && mob.getLeashHolder() == player);
+        helper.assertTrue(selectable.size() == 1 && selectable.get(0) == worker,
+                "Fixture worker must be the sole player-leashed mob visible to the real interaction");
     }
 
     private static void assertNear(GameTestHelper helper, float expected, float actual, String message) {

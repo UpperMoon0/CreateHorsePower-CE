@@ -27,5 +27,6 @@ public class HorseCrankTileEntity extends AbstractHorseCrankBlockEntity {
     protected void read(CompoundTag compound, HolderLookup.Provider registries, boolean clientPacket) {
         super.read(compound, registries, clientPacket);
         engine().read(compound, clientPacket);
+        markLoadedGeneratorForReconciliation(clientPacket);
     }
 }

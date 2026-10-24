@@ -21,6 +21,7 @@ import java.util.List;
 public abstract class AbstractHorseCrankBlockEntity extends GeneratingKineticBlockEntity implements HorseCrankEngine.Host, HorseCrankAccess {
 
     private final HorseCrankEngine engine = new HorseCrankEngine(this, CHPApi.config().defaultRedstoneMode());
+    private boolean needsLoadedGeneratorReconciliation;
 
     public AbstractHorseCrankBlockEntity(BlockEntityType<?> type, BlockPos pos, BlockState state) {
         super(type, pos, state);
@@ -114,6 +115,18 @@ public abstract class AbstractHorseCrankBlockEntity extends GeneratingKineticBlo
     // Create lifecycle
     // ==========================================
 
+    /**
+     * Call after both Create and worker state have been read. Keep the saved
+     * kinetic fields coherent until the first server tick: clearing only speed
+     * or network here can create a transient speed-cycle conflict or a passive
+     * source loop with dependent blocks that have not ticked yet.
+     */
+    protected final void markLoadedGeneratorForReconciliation(boolean clientPacket) {
+        if (!clientPacket) {
+            needsLoadedGeneratorReconciliation = engine.getWorkerUuid() != null && !hasSource();
+        }
+    }
+
     @Override
     public float getGeneratedSpeed() {
         return engine.generatedSpeed();
@@ -139,6 +152,15 @@ public abstract class AbstractHorseCrankBlockEntity extends GeneratingKineticBlo
     @Override
     public void tick() {
         if (this.level != null && !this.level.isClientSide()) {
+            if (needsLoadedGeneratorReconciliation) {
+                needsLoadedGeneratorReconciliation = false;
+                // Worker resolution is intentionally pending after disk read.
+                // Let Create withdraw the saved source through its normal
+                // dependency cleanup BEFORE its validation can silently zero
+                // speed while leaving the old network identity behind. This
+                // also precedes legacy direction handling, which clears speed.
+                updateGeneratedRotation();
+            }
             engine.beforeHostTick();
         }
         super.tick();
