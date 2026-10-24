@@ -51,6 +51,50 @@ class AnimalPowerEngineMigrationTest {
     }
 
     @Test
+    void reloadUsesCurrentScalarPositionInsteadOfStaleAttachmentPosition() {
+        UUID worker = UUID.randomUUID();
+        BlockPos original = new BlockPos(15, 65, 15);
+        BlockPos current = new BlockPos(17, 65, 17);
+        AnimalPowerEngine engine = new AnimalPowerEngine(new FakeHost(), RedstoneMode.IGNORE,
+                new AnimalPowerMachinePolicy(ResourceLocation.tryParse("createhorsepower:horse_crank"), 1));
+        CompoundTag saved = new CompoundTag();
+        saved.putUUID("WorkerUUID", worker);
+        saved.putLong("WorkerPos", current.asLong());
+        engine.assignments().assign(worker, original);
+        engine.assignments().write(saved);
+
+        engine.read(saved, false);
+        assertEquals(current, engine.assignments().primary().lastKnownPos(),
+                "old assignment lists must not move the worker back across a chunk boundary");
+
+        // Simulate a stale container to verify every write uses the engine's
+        // authoritative location, not the original attachment-time position.
+        engine.assignments().assign(worker, original);
+        CompoundTag roundTrip = new CompoundTag();
+        engine.write(roundTrip, false);
+        assertEquals(current.asLong(), roundTrip.getLong("WorkerPos"));
+        assertEquals(current.asLong(), roundTrip.getList("AnimalPowerWorkers", CompoundTag.TAG_COMPOUND)
+                .getCompound(0).getLong("Pos"));
+    }
+
+    @Test
+    void unrelatedScalarWorkerCannotOverrideAssignmentPosition() {
+        UUID worker = UUID.randomUUID();
+        BlockPos assigned = new BlockPos(17, 65, 17);
+        AnimalPowerEngine engine = new AnimalPowerEngine(new FakeHost(), RedstoneMode.IGNORE,
+                new AnimalPowerMachinePolicy(ResourceLocation.tryParse("createhorsepower:horse_crank"), 1));
+        CompoundTag saved = new CompoundTag();
+        saved.putUUID("WorkerUUID", UUID.randomUUID());
+        saved.putLong("WorkerPos", BlockPos.ZERO.asLong());
+        engine.assignments().assign(worker, assigned);
+        engine.assignments().write(saved);
+
+        engine.read(saved, false);
+        assertEquals(worker, engine.getWorkerUuid());
+        assertEquals(assigned, engine.assignments().primary().lastKnownPos());
+    }
+
+    @Test
     void multiWorkerPolicyFailsFastUntilLifecycleSemanticsExist() {
         ResourceLocation machineId = ResourceLocation.tryParse("createhorsepower:future_multi_worker_machine");
         assertNotNull(machineId);

@@ -44,6 +44,257 @@ import java.util.UUID;
 public final class HorsePowerLifecycleGameTests {
     private HorsePowerLifecycleGameTests() {}
 
+    /** A loaded entity can precede its first vanilla leash-restoration tick. */
+    @GameTest(template = "kinetic_network", timeoutTicks = 40, batch = "chp_restart_pending_leash")
+    public static void pendingSavedLeashSurvivesCrankTicks(GameTestHelper helper) {
+        BlockPos localCrankPos = new BlockPos(4, 4, 4);
+        helper.setBlock(localCrankPos, BlockRegister.HORSE_CRANK.get());
+        // A supported, valid path makes zero output while pending meaningful:
+        // this same fixture must generate again as soon as vanilla restores its leash.
+        for (BlockPos offset : HorseCrankEngine.generateOffsetsForRadius(HorseCrankEngine.DEFAULT_RADIUS)) {
+            BlockPos localPathPos = localCrankPos.offset(offset);
+            helper.setBlock(localPathPos.below(), Blocks.BEDROCK);
+            helper.setBlock(localPathPos, Blocks.COBBLESTONE);
+        }
+        AbstractHorseCrankBlockEntity crank = requireCrank(helper, localCrankPos);
+        HorseCrankEngine engine = crank.engine();
+        ServerLevel level = helper.getLevel();
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(7, 4, 4));
+        horse.setLeashedTo(LeashFenceKnotEntity.getOrCreateKnot(level, crank.getBlockPos()), false);
+        var profile = WorkerResolver.resolve(horse);
+        helper.assertTrue(profile.isValid(), "restart fixture horse must be an eligible worker");
+        engine.attachWorker(horse, profile);
+        helper.assertTrue(engine.hasValidWorkingBlocks,
+                "supported cobblestone orbit must be valid before the restart fixture is saved");
+        CompoundTag savedWorker = new CompoundTag();
+        horse.saveWithoutId(savedWorker);
+        CompoundTag savedEngine = new CompoundTag();
+        engine.write(savedEngine, false);
+        savedEngine.putFloat("GenerationDirection", -1.0F);
+        UUID workerUuid = horse.getUUID();
+        UUID crankUuid = engine.crankInstanceUuid();
+        horse.discard();
+        engine.setCachedWorkerMobForTesting(null);
+        Horse[] reloadedHolder = new Horse[1];
+        int[] initialTick = new int[1];
+
+        helper.startSequence()
+                .thenWaitUntil(() -> helper.assertTrue(level.getEntity(workerUuid) == null,
+                        "saved worker must leave the UUID index before reload"))
+                .thenExecute(() -> {
+                    engine.read(savedEngine, false);
+                    Horse reloaded = EntityType.HORSE.create(level);
+                    helper.assertTrue(reloaded != null, "saved worker must be creatable");
+                    reloaded.load(savedWorker);
+                    helper.assertTrue(level.addFreshEntity(reloaded), "saved worker must register");
+                    helper.assertTrue(level.getEntity(workerUuid) == reloaded,
+                            "fixture must be indexed before testing delayed leash restoration");
+                    helper.assertTrue(reloaded.getLeashHolder() == null,
+                            "loaded NBT must not yet have a resolved vanilla leash holder");
+                    CompoundTag pending = new CompoundTag();
+                    reloaded.saveWithoutId(pending);
+                    helper.assertTrue(pending.contains("leash", 11),
+                            "pending vanilla leash must use the 1.21.1 BlockPos int-array schema");
+                    int[] leashPos = pending.getIntArray("leash");
+                    helper.assertTrue(leashPos.length == 3
+                                    && leashPos[0] == crank.getBlockPos().getX()
+                                    && leashPos[1] == crank.getBlockPos().getY()
+                                    && leashPos[2] == crank.getBlockPos().getZ(),
+                            "pending saved leash must target this crank's exact position");
+                    reloadedHolder[0] = reloaded;
+                    initialTick[0] = reloaded.tickCount;
+                    AABB dropArea = new AABB(crank.getBlockPos()).inflate(8.0D);
+                    int initialLeads = level.getEntitiesOfClass(ItemEntity.class, dropArea,
+                                    item -> item.getItem().is(Items.LEAD)).stream()
+                            .mapToInt(item -> item.getItem().getCount()).sum();
+                    // Model a block-ticking crank beside a loaded but non-entity-ticking chunk.
+                    // No synthetic entity tick may mask the pending vanilla leash in this phase.
+                    for (int i = 0; i <= HorseCrankEngine.MISSING_WORKER_GRACE_TICKS; i++) {
+                        engine.afterHostTick();
+                    }
+                    int finalLeads = level.getEntitiesOfClass(ItemEntity.class, dropArea,
+                                    item -> item.getItem().is(Items.LEAD)).stream()
+                            .mapToInt(item -> item.getItem().getCount()).sum();
+                    helper.assertTrue(finalLeads == initialLeads,
+                            "waiting for vanilla leash restoration must not drop a lead");
+                    helper.assertTrue(reloaded.tickCount == initialTick[0],
+                            "fixture must not tick the worker during crank-only passes");
+                    helper.assertTrue(engine.hasValidWorkingBlocks,
+                            "pending worker must have an otherwise valid path");
+                    helper.assertTrue(engine.generatedSpeed() == 0.0F && !engine.isWorking(),
+                            "pending saved leash must never produce kinetic output");
+                    helper.assertTrue(engine.isAssignedWorker(workerUuid),
+                            "crank-only passes must not discard the saved assignment");
+                    helper.assertTrue(level.getBlockState(crank.getBlockPos()).getValue(CrankProperties.HAS_WORKER),
+                            "pending saved leash must retain HAS_WORKER");
+                    helper.assertTrue(WorkerAttachmentControl.isOwnedBy(reloaded, crank.getBlockPos(), crankUuid),
+                            "pending saved leash must retain its exact ownership marker");
+                    helper.assertTrue(CHPApi.deferredDetaches().get(level, workerUuid) == null,
+                            "waiting for vanilla restoration must not manufacture a detach request");
+                })
+                .thenWaitUntil(() -> {
+                    Horse reloaded = reloadedHolder[0];
+                    helper.assertTrue(reloaded.tickCount > initialTick[0],
+                            "vanilla must actually tick the reloaded worker");
+                    helper.assertTrue(CHPUtils.isLeashedToKnotAt(reloaded, crank.getBlockPos()),
+                            "vanilla must restore the saved crank leash");
+                })
+                .thenExecute(() -> {
+                    WorkerRecoveryQueue.process(level);
+                    engine.afterHostTick();
+                    helper.assertTrue(engine.isWorkerResolved(), "restored worker must resolve normally");
+                    helper.assertTrue(engine.isWorking() && engine.generatedSpeed() < 0.0F,
+                            "restored worker must resume actual negative-direction kinetic generation");
+                    CompoundTag restoredEngine = new CompoundTag();
+                    engine.write(restoredEngine, false);
+                    helper.assertTrue(restoredEngine.getFloat("GenerationDirection") == -1.0F,
+                            "reload/restoration must preserve saved direction without a competing network");
+                    helper.assertTrue(engine.isAssignedWorker(workerUuid), "original assignment must survive recovery");
+                    helper.assertTrue(WorkerAttachmentControl.isOwnedBy(
+                                    reloadedHolder[0], crank.getBlockPos(), crankUuid),
+                            "recovery must preserve the original matching ownership marker");
+                })
+                .thenSucceed();
+    }
+
+    /** A saved reservation must not force-load or time out an unavailable worker chunk. */
+    @GameTest(template = "empty", timeoutTicks = 20, batch = "chp_restart_unloaded_worker")
+    public static void missingWorkerInUnloadedChunkStaysReserved(GameTestHelper helper) {
+        BlockPos localCrankPos = new BlockPos(0, 1, 0);
+        helper.setBlock(localCrankPos, BlockRegister.HORSE_CRANK.get());
+        AbstractHorseCrankBlockEntity crank = requireCrank(helper, localCrankPos);
+        HorseCrankEngine engine = crank.engine();
+        ServerLevel level = helper.getLevel();
+        BlockPos workerPos = crank.getBlockPos().offset(1024, 0, 1024);
+        UUID workerUuid = UUID.randomUUID();
+        helper.assertFalse(level.hasChunkAt(workerPos), "worker fixture chunk must start unloaded");
+        engine.setWorkerUuidForTesting(workerUuid);
+        CompoundTag savedEngine = new CompoundTag();
+        engine.write(savedEngine, false);
+        savedEngine.putLong("WorkerPos", workerPos.asLong());
+        savedEngine.getList("AnimalPowerWorkers", 10).getCompound(0).putLong("Pos", workerPos.asLong());
+        engine.read(savedEngine, false);
+        level.setBlock(crank.getBlockPos(), crank.getBlockState().setValue(CrankProperties.HAS_WORKER, true), 3);
+        helper.assertTrue(level.getEntity(workerUuid) == null,
+                "fixture must have no indexed worker entity");
+        for (int i = 0; i <= HorseCrankEngine.MISSING_WORKER_GRACE_TICKS; i++) {
+            engine.afterHostTick();
+        }
+        helper.assertTrue(engine.isAssignedWorker(workerUuid),
+                "unloaded saved worker must remain reserved after more than the missing-worker grace");
+        helper.assertTrue(level.getBlockState(crank.getBlockPos()).getValue(CrankProperties.HAS_WORKER),
+                "unloaded worker reservation must retain HAS_WORKER");
+        helper.assertTrue(engine.generatedSpeed() == 0.0F && !engine.isWorking(),
+                "unavailable worker must not produce kinetic output");
+        helper.assertTrue(CHPApi.deferredDetaches().get(level, workerUuid) == null,
+                "waiting for an unloaded worker must not manufacture a detach request");
+        helper.assertFalse(level.hasChunkAt(workerPos), "worker reconciliation must not force-load its chunk");
+        helper.succeed();
+    }
+
+    /** A genuinely absent worker can be cleaned up after entity storage is authoritative. */
+    @GameTest(template = "empty", timeoutTicks = 100, batch = "chp_restart_missing_worker_cleanup")
+    public static void missingWorkerInReadyChunksEventuallyDetaches(GameTestHelper helper) {
+        BlockPos localCrankPos = new BlockPos(0, 1, 0);
+        helper.setBlock(localCrankPos, BlockRegister.HORSE_CRANK.get());
+        AbstractHorseCrankBlockEntity crank = requireCrank(helper, localCrankPos);
+        HorseCrankEngine engine = crank.engine();
+        ServerLevel level = helper.getLevel();
+        BlockPos workerPos = crank.getBlockPos();
+        UUID workerUuid = UUID.randomUUID();
+        UUID crankUuid = engine.crankInstanceUuid();
+        engine.setWorkerUuidForTesting(workerUuid);
+        CompoundTag savedEngine = new CompoundTag();
+        engine.write(savedEngine, false);
+        savedEngine.putLong("WorkerPos", workerPos.asLong());
+        savedEngine.getList("AnimalPowerWorkers", 10).getCompound(0).putLong("Pos", workerPos.asLong());
+        // Do not install the reservation until readiness is established: ordinary
+        // scheduled crank ticks during the wait must not race the assertions.
+        engine.setWorkerUuidForTesting(null);
+        int radius = (int) Math.ceil(Math.max(8.0D, engine.getWorkerRadius() + 4.0D));
+        int minX = (workerPos.getX() - radius) >> 4;
+        int maxX = (workerPos.getX() + radius) >> 4;
+        int minZ = (workerPos.getZ() - radius) >> 4;
+        int maxZ = (workerPos.getZ() + radius) >> 4;
+        // Only prepare the fixture's bounded worker-search area. Loading block
+        // chunks is not treated as proof that their entity storage is ready.
+        for (int x = minX; x <= maxX; x++) {
+            for (int z = minZ; z <= maxZ; z++) {
+                level.getChunk(x, z);
+            }
+        }
+        helper.startSequence()
+                .thenWaitUntil(() -> {
+                    helper.assertTrue(level.isPositionEntityTicking(workerPos),
+                            "fixture worker position must be entity-ticking before absence is authoritative");
+                    for (int x = minX; x <= maxX; x++) {
+                        for (int z = minZ; z <= maxZ; z++) {
+                            helper.assertTrue(level.areEntitiesLoaded(net.minecraft.world.level.ChunkPos.asLong(x, z)),
+                                    "all bounded search chunks must finish loading entity storage");
+                        }
+                    }
+                })
+                .thenExecute(() -> {
+                    engine.read(savedEngine, false);
+                    level.setBlock(crank.getBlockPos(),
+                            crank.getBlockState().setValue(CrankProperties.HAS_WORKER, true), 3);
+                    helper.assertTrue(level.getEntity(workerUuid) == null,
+                            "ready fixture must truly lack the saved worker UUID");
+                    for (int i = 0; i <= HorseCrankEngine.MISSING_WORKER_GRACE_TICKS; i++) {
+                        engine.afterHostTick();
+                    }
+                    helper.assertFalse(engine.isAssignedWorker(workerUuid),
+                            "genuinely missing worker must not remain reserved after authoritative grace");
+                    helper.assertFalse(level.getBlockState(crank.getBlockPos()).getValue(CrankProperties.HAS_WORKER),
+                            "confirmed missing worker cleanup must clear HAS_WORKER");
+                    DeferredDetachStore.Entry deferred = CHPApi.deferredDetaches().get(level, workerUuid);
+                    helper.assertTrue(deferred != null && deferred.matches(crank.getBlockPos(), crankUuid)
+                                    && deferred.dropLead(),
+                            "missing worker cleanup must persist the exact owner's drop-on-detach policy");
+                })
+                .thenSucceed();
+    }
+
+    /** Waiting for entity ticks must not turn a genuinely broken leash into a permanent reservation. */
+    @GameTest(template = "empty", timeoutTicks = 20, batch = "chp_restart_detach_control")
+    public static void tickingUnleashedWorkerStillDetaches(GameTestHelper helper) {
+        BlockPos localCrankPos = new BlockPos(0, 1, 0);
+        helper.setBlock(localCrankPos, BlockRegister.HORSE_CRANK.get());
+        AbstractHorseCrankBlockEntity crank = requireCrank(helper, localCrankPos);
+        HorseCrankEngine engine = crank.engine();
+        ServerLevel level = helper.getLevel();
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(2, 1, 2));
+        horse.setNoAi(true);
+        horse.setLeashedTo(LeashFenceKnotEntity.getOrCreateKnot(level, crank.getBlockPos()), false);
+        engine.attachWorker(horse, WorkerResolver.resolve(horse));
+        UUID workerUuid = horse.getUUID();
+        AABB dropArea = new AABB(crank.getBlockPos()).inflate(8.0D);
+        int initialLeads = level.getEntitiesOfClass(ItemEntity.class, dropArea,
+                        item -> item.getItem().is(Items.LEAD)).stream()
+                .mapToInt(item -> item.getItem().getCount()).sum();
+        horse.dropLeash(true, true);
+        engine.afterHostTick();
+        for (int i = 0; i <= HorseCrankEngine.MISSING_ATTACHMENT_GRACE_TICKS; i++) {
+            // Run the real entity tick, including tickCount and vanilla leash processing.
+            level.tickNonPassenger(horse);
+            engine.afterHostTick();
+        }
+        helper.assertFalse(engine.isAssignedWorker(workerUuid),
+                "a genuinely unleaded, ticking worker must eventually detach");
+        helper.assertFalse(level.getBlockState(crank.getBlockPos()).getValue(CrankProperties.HAS_WORKER),
+                "confirmed broken leash must clear HAS_WORKER");
+        helper.assertFalse(WorkerAttachmentControl.hasMarker(horse),
+                "confirmed detach must clear the owned attachment marker");
+        helper.assertTrue(CHPApi.deferredDetaches().get(level, workerUuid) == null,
+                "loaded-worker detach must not leave a deferred detach record");
+        int finalLeads = level.getEntitiesOfClass(ItemEntity.class, dropArea,
+                        item -> item.getItem().is(Items.LEAD)).stream()
+                .mapToInt(item -> item.getItem().getCount()).sum();
+        helper.assertTrue(finalLeads == initialLeads + 1,
+                "engine cleanup must not duplicate the lead already dropped by the broken leash");
+        helper.succeed();
+    }
+
     @GameTest(template = "empty", timeoutTicks = 20, batch = "chp_recovery_no_drop_reload")
     public static void durableNoDropDetachSurvivesCrankReplacement(GameTestHelper helper) {
         BlockPos localCrankPos = new BlockPos(0, 1, 0);

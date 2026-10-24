@@ -16,6 +16,7 @@ import net.steampn.createhorsepower.content.machine.AnimalPowerMachinePolicy;
 import net.steampn.createhorsepower.content.machine.WorkerAssignments;
 import net.steampn.createhorsepower.platform.DeferredDetachStore;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.steampn.createhorsepower.content.crank.RedstoneMode;
@@ -108,6 +109,8 @@ public class AnimalPowerEngine {
 
     @Nullable
     private Mob cachedWorkerMob;
+    @Nullable private Mob lastInspectedMissingWorker;
+    private int lastInspectedMissingWorkerTick;
     @Nullable
     private UUID workerUuid;
     @Nullable
@@ -396,6 +399,10 @@ public class AnimalPowerEngine {
         if (lastKnownWorkerPos != null) {
             compound.putLong("WorkerPos", lastKnownWorkerPos.asLong());
         }
+        if (workerUuid != null) {
+            if (!assignments.contains(workerUuid)) assignments.clear();
+            assignments.assign(workerUuid, lastKnownWorkerPos);
+        }
         assignments.write(compound);
         if (Double.isFinite(workerOrbitAngle)) {
             compound.putDouble("WorkerOrbitAngle", workerOrbitAngle);
@@ -493,7 +500,15 @@ public class AnimalPowerEngine {
         boolean readAssignments = assignments.read(compound);
         if (readAssignments && assignments.primary() != null) {
             workerUuid = assignments.primary().workerUuid();
-            lastKnownWorkerPos = assignments.primary().lastKnownPos();
+            // Older saves kept the assignment position at attach time while
+            // WorkerPos followed the orbit. Prefer the matching scalar position
+            // when migrating those saves, then keep both representations in sync.
+            lastKnownWorkerPos = compound.hasUUID("WorkerUUID")
+                    && workerUuid.equals(compound.getUUID("WorkerUUID"))
+                    && compound.contains("WorkerPos")
+                    ? BlockPos.of(compound.getLong("WorkerPos"))
+                    : assignments.primary().lastKnownPos();
+            assignments.assign(workerUuid, lastKnownWorkerPos);
         } else if (workerUuid != null) {
             assignments.clear();
             assignments.assign(workerUuid, lastKnownWorkerPos);
@@ -535,6 +550,8 @@ public class AnimalPowerEngine {
             invalidBlockCount = compound.getInt("InvalidBlockCount");
             cachedWorkerName = compound.getString("CachedWorkerName");
         } else {
+            lastInspectedMissingWorker = null;
+            missingWorkerTicks = 0;
             workerResolved = false;
             workerEligible = false;
             isWorking = false;
@@ -806,6 +823,7 @@ public class AnimalPowerEngine {
         // or `onCrankRemoved`), so it must drop its local ownership record
         // even if the worker is currently unloaded.
         this.cachedWorkerMob = null;
+        this.lastInspectedMissingWorker = null;
         this.workerUuid = null;
         this.lastKnownWorkerPos = null;
         this.assignments.clear();
@@ -1140,7 +1158,10 @@ public class AnimalPowerEngine {
         if (worker != null) {
             this.workerResolved = true;
             missingWorkerTicks = 0;
+            lastInspectedMissingWorker = null;
             lastKnownWorkerPos = worker.blockPosition();
+            if (!assignments.contains(worker.getUUID())) assignments.clear();
+            assignments.assign(worker.getUUID(), lastKnownWorkerPos);
 
             statRefreshTimer++;
             boolean needStatRefresh = !wasResolved || (statRefreshTimer >= 60);
@@ -1179,7 +1200,7 @@ public class AnimalPowerEngine {
             this.workerResolved = false;
             this.workerEligible = false;
             BlockPos checkPos = lastKnownWorkerPos != null ? lastKnownWorkerPos : host.pos();
-            if (level.hasChunkAt(checkPos)) {
+            if (canInspectMissingWorker(level, checkPos)) {
                 missingWorkerTicks++;
                 boolean attachmentPresent = CHPUtils.hasAttachedWorker(level, host.pos());
                 if (shouldDetachMissingWorker(true, attachmentPresent, missingWorkerTicks)) {
@@ -1193,6 +1214,37 @@ public class AnimalPowerEngine {
             host.refreshKinetic();
             host.syncToClient();
         }
+    }
+
+    /** Block chunks can tick before their entities load or restore delayed leashes. */
+    private boolean canInspectMissingWorker(Level level, BlockPos checkPos) {
+        if (!(level instanceof ServerLevel serverLevel)) return false;
+        Entity indexed = workerUuid == null ? null : serverLevel.getEntity(workerUuid);
+        if (indexed instanceof Mob mob) {
+            if (!mob.isAlive()) return true;
+            // Count failed attachment checks in worker ticks, not crank ticks.
+            // A loaded border-chunk mob may not tick at all, leaving its saved
+            // vanilla leash pending even though getEntity already finds it.
+            boolean advanced = lastInspectedMissingWorker == mob
+                    && mob.tickCount > lastInspectedMissingWorkerTick;
+            lastInspectedMissingWorker = mob;
+            lastInspectedMissingWorkerTick = mob.tickCount;
+            return advanced;
+        }
+        lastInspectedMissingWorker = null;
+        if (!serverLevel.isPositionEntityTicking(checkPos)
+                || !serverLevel.areEntitiesLoaded(ChunkPos.asLong(checkPos))) return false;
+
+        // Old saves can have a stale attachment-time position. An orbit may
+        // straddle chunk boundaries, so absence is not authoritative until the
+        // complete bounded worker-search area has finished loading entities.
+        int radius = (int) Math.ceil(Math.max(8.0D, workerRadius + 4.0D));
+        for (int x = (host.pos().getX() - radius) >> 4; x <= (host.pos().getX() + radius) >> 4; x++) {
+            for (int z = (host.pos().getZ() - radius) >> 4; z <= (host.pos().getZ() + radius) >> 4; z++) {
+                if (!serverLevel.areEntitiesLoaded(ChunkPos.asLong(x, z))) return false;
+            }
+        }
+        return true;
     }
 
     public static boolean shouldDetachMissingWorker(boolean workerLocationLoaded, boolean attachmentPresent, int missingTicks) {
