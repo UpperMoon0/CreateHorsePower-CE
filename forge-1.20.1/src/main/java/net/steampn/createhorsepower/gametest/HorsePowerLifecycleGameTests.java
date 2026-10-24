@@ -44,6 +44,171 @@ import java.util.UUID;
 public final class HorsePowerLifecycleGameTests {
     private HorsePowerLifecycleGameTests() {}
 
+    /** Saved root generators must withdraw stale rotation before Create validates them. */
+    @GameTest(template = "kinetic_network", timeoutTicks = 160, batch = "chp_saved_kinetics_forward")
+    public static void savedGeneratorReloadPreservesKineticsForward(GameTestHelper helper) { exerciseSavedGeneratorNetworkReload(helper, false, false); }
+
+    @GameTest(template = "kinetic_network", timeoutTicks = 160, batch = "chp_saved_kinetics_reverse")
+    public static void savedGeneratorReloadPreservesKineticsReverse(GameTestHelper helper) { exerciseSavedGeneratorNetworkReload(helper, true, false); }
+
+    @GameTest(template = "kinetic_network", timeoutTicks = 160, batch = "chp_saved_kinetics_other_sources")
+    public static void savedRootPendingPreservesOtherLiveSources(GameTestHelper helper) { exerciseSavedGeneratorNetworkReload(helper, false, true); }
+
+    private static void exerciseSavedGeneratorNetworkReload(GameTestHelper helper, boolean reverse, boolean keepOtherWorkers) {
+        ServerLevel level = helper.getLevel();
+        BlockPos origin = helper.absolutePos(BlockPos.ZERO);
+        BlockPos[] positions = {origin.offset(5, 5, 5), origin.offset(9, 5, 5),
+                origin.offset(9, 5, 9), origin.offset(5, 5, 9)};
+        AbstractHorseCrankBlockEntity[] cranks = new AbstractHorseCrankBlockEntity[4];
+        Horse[] workers = new Horse[4];
+        CompoundTag[] savedWorkers = new CompoundTag[4];
+        CompoundTag[] savedEngines = new CompoundTag[4];
+        java.util.List<BlockPos> gears = new java.util.ArrayList<>();
+        java.util.List<BlockPos> adjacentCogs = new java.util.ArrayList<>();
+        java.util.LinkedHashMap<BlockPos, CompoundTag> fullSaved = new java.util.LinkedHashMap<>();
+        java.util.List<KineticBlockEntity> reloadedNodes = new java.util.ArrayList<>();
+        var cog = AllBlocks.COGWHEEL.getDefaultState().setValue(RotatedPillarKineticBlock.AXIS, Direction.Axis.Y);
+        var shaft = AllBlocks.SHAFT.getDefaultState().setValue(RotatedPillarKineticBlock.AXIS, Direction.Axis.Y);
+        for (BlockPos pos : positions) {
+            level.setBlock(pos, BlockRegister.HORSE_CRANK.get().defaultBlockState(), 3);
+            for (BlockPos offset : HorseCrankEngine.generateOffsetsForRadius(HorseCrankEngine.DEFAULT_RADIUS)) {
+                level.setBlock(pos.offset(offset).below(), Blocks.BEDROCK.defaultBlockState(), 3);
+                level.setBlock(pos.offset(offset), Blocks.COBBLESTONE.defaultBlockState(), 3);
+            }
+            BlockPos output = pos.offset(0, 0, pos.getZ() == positions[0].getZ() ? -1 : 1);
+            level.setBlock(output, cog, 3);
+            level.setBlock(output.above(), shaft, 3);
+            adjacentCogs.add(output);
+            gears.add(output);
+        }
+        // Synthetic upper U-shaped equal-ratio connection, with output cogs directly
+        // adjacent to each crank as in the observed live output arrangement.
+        for (int x = 5; x <= 9; x++) for (int z = 4; z <= 10; z++) {
+            if (x != 5 && x != 9 && z != 10) continue;
+            BlockPos pos = origin.offset(x, 7, z);
+            level.setBlock(pos, cog, 3);
+            gears.add(pos);
+        }
+        var sequence = helper.startSequence();
+        sequence.thenIdle(8);
+        for (int i = 0; i < 4; i++) {
+            final int index = i;
+            sequence.thenExecute(() -> {
+                cranks[index] = (AbstractHorseCrankBlockEntity) level.getBlockEntity(positions[index]);
+                helper.assertTrue(cranks[index] != null, "fixture crank must exist");
+                workers[index] = attachFixtureHorse(helper, level, cranks[index], 0.225D).horse();
+            }).thenIdle(8);
+        }
+        sequence.thenExecute(() -> {
+            java.util.List<BlockPos> allNodes = new java.util.ArrayList<>(gears);
+            allNodes.removeAll(adjacentCogs);
+            for (int i = 0; i < 4; i++) {
+                allNodes.add(positions[i]); allNodes.add(adjacentCogs.get(i)); allNodes.add(adjacentCogs.get(i).above());
+            }
+            for (BlockPos pos : allNodes) {
+                BlockEntity be = level.getBlockEntity(pos);
+                helper.assertTrue(be instanceof KineticBlockEntity, "every kinetic node must be present before save");
+                fullSaved.put(pos, be.saveWithFullMetadata());
+            }
+            for (int i = 0; i < 4; i++) {
+                helper.assertTrue(cranks[i].engine().isWorking(), "all four sources must initially work");
+                helper.assertTrue(cranks[i].network != null && cranks[i].network.equals(cranks[0].network),
+                        "four cranks must share the same actual kinetic network");
+                savedWorkers[i] = new CompoundTag(); workers[i].saveWithoutId(savedWorkers[i]);
+                savedEngines[i] = new CompoundTag(); cranks[i].engine().write(savedEngines[i], false);
+                if (!keepOtherWorkers || i == 0) workers[i].discard();
+                cranks[i].engine().setCachedWorkerMobForTesting(null);
+            }
+
+        }).thenWaitUntil(() -> {
+            for (int i = 0; i < 4; i++) if (!keepOtherWorkers || i == 0)
+                helper.assertTrue(level.getEntity(workers[i].getUUID()) == null, "old worker UUID index must be empty");
+        }).thenExecute(() -> {
+            // Remove old in-memory membership, then construct fresh BEs from the complete
+            // saved Create + CHP NBT. No hand-written network IDs or speeds in this fixture.
+            for (BlockPos pos : fullSaved.keySet()) {
+                KineticBlockEntity old = (KineticBlockEntity) level.getBlockEntity(pos);
+                helper.assertTrue(old != null, "old node must survive up to reconstruction");
+                old.setNetwork(null); old.clearKineticInformation();
+            }
+            java.util.List<BlockPos> order = new java.util.ArrayList<>(fullSaved.keySet());
+            if (reverse) java.util.Collections.reverse(order);
+            for (BlockPos pos : order) {
+                BlockEntity fresh = BlockEntity.loadStatic(pos, level.getBlockState(pos), fullSaved.get(pos));
+                helper.assertTrue(fresh instanceof KineticBlockEntity, "full saved BE must recreate kinetic node");
+                if (fresh instanceof AbstractHorseCrankBlockEntity && fullSaved.get(pos).contains("Source")) {
+                    KineticBlockEntity sourced = (KineticBlockEntity) fresh;
+                    helper.assertTrue(sourced.hasSource() && sourced.getTheoreticalSpeed() == fullSaved.get(pos).getFloat("Speed"),
+                            "sourced crank must preserve saved external rotation during read");
+                }
+                fresh.setLevel(level); level.setBlockEntity(fresh);
+                reloadedNodes.add((KineticBlockEntity) fresh);
+            }
+            for (int i = 0; i < 4; i++) cranks[i] = (AbstractHorseCrankBlockEntity) level.getBlockEntity(positions[i]);
+            for (int step = 0; step < 4; step++) {
+                int i = reverse ? 3 - step : step;
+                if (keepOtherWorkers && i != 0) continue;
+                Horse reloaded = EntityType.HORSE.create(level);
+                helper.assertTrue(reloaded != null, "reload horse must be creatable");
+                reloaded.load(savedWorkers[i]);
+                helper.assertTrue(level.addFreshEntity(reloaded), "reload horse must register");
+                helper.assertTrue(level.getEntity(reloaded.getUUID()) == reloaded, "reload must be indexed");
+                helper.assertTrue(reloaded.getLeashHolder() == null, "reload must retain a pending leash");
+                workers[i] = reloaded;
+            }
+            // Reconstruct a loaded block network before its workers are entity-ticking.
+            // These are real block-entity ticks, including Create propagation/validation,
+            // not a full server restart or a simulation of the original live belt layout.
+            int pendingPasses = Math.max(250, 3 * com.simibubi.create.infrastructure.config.AllConfigs.server().kinetics.kineticValidationFrequency.get());
+            for (int pass = 0; pass < pendingPasses; pass++) for (KineticBlockEntity node : reloadedNodes) {
+                if (!node.isRemoved()) node.tick(); // includes Create supertick/validation
+            }
+
+            for (int i = 0; i < 4; i++) {
+                helper.assertTrue(cranks[i].engine().isAssignedWorker(workers[i].getUUID()),
+                        "pending restoration must preserve each original worker assignment");
+                if (!keepOtherWorkers || i == 0) helper.assertTrue(cranks[i].getGeneratedSpeed() == 0,
+                        "pending worker must not generate rotation");
+            }
+            assertOnlyRealCapacity(helper, reloadedNodes, "pending");
+            if (!keepOtherWorkers) for (KineticBlockEntity node : reloadedNodes)
+                helper.assertTrue(node.getTheoreticalSpeed() == 0,
+                        "all-pending network must not keep ghost rotation at " + node.getBlockPos() + " speed=" + node.getTheoreticalSpeed());
+            if (keepOtherWorkers) helper.assertTrue(cranks[0].getGeneratedSpeed() == 0 && Math.abs(cranks[0].getTheoreticalSpeed()) > 0,
+                    "pending crank must remain passive while other real workers power its network");
+            for (BlockPos pos : fullSaved.keySet()) helper.assertTrue(level.getBlockEntity(pos) instanceof KineticBlockEntity,
+                    "pending reload must not destroy any kinetic node at " + pos);
+        }).thenIdle(15).thenExecute(() -> {
+
+            assertOnlyRealCapacity(helper, reloadedNodes, "restored");
+            for (BlockPos pos : fullSaved.keySet()) helper.assertTrue(level.getBlockEntity(pos) instanceof KineticBlockEntity,
+                    "recovery must not destroy any kinetic node at " + pos);
+            for (int i = 0; i < 4; i++) {
+                CompoundTag tag = new CompoundTag(); cranks[i].engine().write(tag, false);
+                helper.assertTrue(cranks[i].engine().isWorking() && Math.abs(cranks[i].getGeneratedSpeed()) > 0,
+                        "restored worker must resume actual generation");
+                helper.assertTrue(tag.getFloat("GenerationDirection") == savedEngines[i].getFloat("GenerationDirection"),
+                        "saved direction must survive controlled engine reload");
+            }
+        }).thenSucceed();
+    }
+
+    private static void assertOnlyRealCapacity(GameTestHelper helper, java.util.List<KineticBlockEntity> nodes, String stage) {
+        java.util.Set<com.simibubi.create.content.kinetics.KineticNetwork> seen = new java.util.HashSet<>();
+        for (KineticBlockEntity node : nodes) if (!node.isRemoved() && node.hasNetwork()) {
+            var net = node.getOrCreateNetwork();
+            if (!seen.add(net)) continue;
+            float expected = 0;
+            for (var source : net.sources.entrySet()) expected += source.getValue() * Math.abs(source.getKey().getGeneratedSpeed());
+            float actual = net.calculateCapacity();
+
+            helper.assertTrue(Math.abs(actual - expected) < 0.001F,
+                    "fully loaded network must not retain ghost capacity at " + stage + ": actual=" + actual + " realSources=" + expected);
+        }
+    }
+
+
+
     /** A loaded entity can precede its first vanilla leash-restoration tick. */
     @GameTest(template = "kinetic_network", timeoutTicks = 40, batch = "chp_restart_pending_leash")
     public static void pendingSavedLeashSurvivesCrankTicks(GameTestHelper helper) {
