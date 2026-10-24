@@ -88,7 +88,7 @@ Vanilla lead support is bundled and works on a fresh install. `harness`, `yoke`,
 - Pack-defined path data overrides CE bundled path defaults; weighted mixed-path evaluation still averages the resolved per-block profiles normally.
 - NeoForge bundled defaults are no longer shipped as Data Maps, so Data Maps consistently represent explicit datapack/packmaker overrides.
 
-See the unified [1.2.7 release notes](changelog/1.2.7.md) for the current cross-loader release changes.
+See the unified [1.2.8 release notes](changelog/1.2.8.md) for the current cross-loader release changes.
 
 ## Building
 

@@ -64,7 +64,7 @@ Worker precedence on NeoForge is KubeJS → shared worker JSON → explicit NeoF
 - Version 1.2.1 adds `workers.workerGroundSpeedScale`, `workers.minWorkerGroundSpeed`, `workers.maxWorkerGroundSpeed`, and `diagnostics.debugLogging`; their defaults are safe for existing worlds.
 - Back up important worlds before updating.
 
-Full release details: [unified 1.2.7 changelog](https://github.com/UpperMoon0/CreateHorsePower-CE/blob/main/changelog/1.2.7.md).
+Full release details: [unified 1.2.8 changelog](https://github.com/UpperMoon0/CreateHorsePower-CE/blob/main/changelog/1.2.8.md).
 
 ## Credits
 
