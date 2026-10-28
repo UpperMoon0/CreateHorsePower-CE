@@ -20,20 +20,42 @@ public final class IcyHorseDeparture {
                 || !WorkerAttachmentControl.hasMarker(horse)) return;
         BlockPos pos = WorkerAttachmentControl.markerCrankPos(horse);
         UUID owner = WorkerAttachmentControl.markerCrankUuid(horse);
-        if (pos != null && owner != null && level.hasChunkAt(pos)
-                && level.getBlockEntity(pos) instanceof AbstractHorseCrankBlockEntity crank
-                && owner.equals(crank.engine().crankInstanceUuid())
-                && horse.getUUID().equals(crank.engine().getWorkerUuid())) {
-            crank.detachWorker(true);
-        } else {
-            // The marker contains everything needed to release without loading
-            // a chunk, recreating a horse, or touching a replacement crank.
+        String sourceDimension = horse.getPersistentData().getCompound(WorkerAttachmentControl.MARKER_KEY)
+                .getString("CrankDimension");
+        AbstractHorseCrankBlockEntity source = null;
+        ServerLevel sourceLevel = null;
+        if (pos != null && owner != null) {
+            for (ServerLevel candidate : level.getServer().getAllLevels()) {
+                if (!sourceDimension.isEmpty() && !sourceDimension.equals(candidate.dimension().location().toString())) continue;
+                if (!candidate.hasChunkAt(pos)) continue;
+                if (candidate.getBlockEntity(pos) instanceof AbstractHorseCrankBlockEntity crank
+                        && owner.equals(crank.engine().crankInstanceUuid())
+                        && horse.getUUID().equals(crank.engine().getWorkerUuid())) {
+                    // Legacy markers have no dimension. Ambiguous cloned crank
+                    // identities must never let a recall mutate multiple machines.
+                    if (source != null) { source = null; sourceLevel = null; break; }
+                    source = crank;
+                    sourceLevel = candidate;
+                }
+            }
+        }
+        if (source != null) {
+            // A source in another dimension cannot resolve this registered body.
+            // Preserve a no-drop policy for any stale original body; return the
+            // one attachment from the actual recalled body below instead.
+            source.detachWorker(sourceLevel == level);
+        }
+        if (WorkerAttachmentControl.hasMarker(horse)) {
             WorkerAttachmentControl.recoverAfterTimeout(horse, level);
         }
         // A conflicting activity marker is owned by another crank and survives.
         if (WorkerActivityControl.isOwnedBy(horse, pos, owner)) {
             WorkerActivityControl.releaseFromMarker(horse);
         }
-        WorkerRecoveryQueue.cancelRecovery(horse);
+        if (WorkerAttachmentControl.hasMarker(horse) || WorkerActivityControl.hasMarker(horse)) {
+            WorkerRecoveryQueue.enqueue(horse, level);
+        } else {
+            WorkerRecoveryQueue.cancelRecovery(horse);
+        }
     }
 }

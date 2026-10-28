@@ -52,6 +52,11 @@ public final class IcyBetterHorses {
         }
     }
 
+    /** True for a real Icy-managed body, including vanilla horses before conversion. */
+    public static boolean isManaged(Mob mob) {
+        return managed(mob, API.get(mob.getClass()));
+    }
+
     /** Respect Icy's owner/trusted-player policy without changing ownership or taming. */
     public static boolean mayAttach(Mob mob, UUID player) {
         Api api = API.get(mob.getClass());

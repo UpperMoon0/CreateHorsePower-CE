@@ -72,6 +72,7 @@ public final class WorkerAttachmentControl {
         }
 
         CompoundTag marker = new CompoundTag();
+        marker.putString("CrankDimension", mob.level().dimension().location().toString());
         marker.putLong(CRANK_POS_KEY, crankPos.asLong());
         marker.putUUID(CRANK_UUID_KEY, crankUuid);
         AttachmentMode mode = profile == null ? AttachmentMode.VANILLA_LEASH : profile.mode();

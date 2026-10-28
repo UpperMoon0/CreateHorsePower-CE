@@ -1,0 +1,125 @@
+package net.steampn.createhorsepower.compat;
+
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.animal.horse.Horse;
+import net.minecraft.world.entity.decoration.LeashFenceKnotEntity;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.phys.AABB;
+import net.steampn.createhorsepower.blocks.crank.*;
+import net.steampn.createhorsepower.content.attachment.*;
+import net.steampn.createhorsepower.content.stats.WorkerResolver;
+import net.steampn.createhorsepower.platform.CHPApi;
+import net.steampn.createhorsepower.registry.BlockRegister;
+import java.util.Set;
+import java.util.UUID;
+
+/** Real-world lifecycle regressions shared by loader annotation wrappers. */
+public final class IcyLifecycleScenarios {
+    private IcyLifecycleScenarios() {}
+
+    private static Horse horse(GameTestHelper h) {
+        var id = CHPApi.id(IcyBetterHorses.NAMESPACE, "arabian_horse");
+        h.assertTrue(BuiltInRegistries.ENTITY_TYPE.containsKey(id), "Released Icy runtime is required for this scenario");
+        Horse horse = (Horse) BuiltInRegistries.ENTITY_TYPE.get(id).create(h.getLevel());
+        horse.moveTo(h.absolutePos(new BlockPos(6, 2, 4)), 0, 0);
+        horse.setTamed(true);
+        h.assertTrue(h.getLevel().addFreshEntity(horse), "Real custom entity must register");
+        return horse;
+    }
+
+    private static AbstractHorseCrankBlockEntity crank(GameTestHelper h) {
+        BlockPos pos = new BlockPos(4, 2, 4);
+        for (BlockPos offset : HorseCrankEngine.generateOffsetsForRadius(2.5f)) h.setBlock(pos.offset(offset), Blocks.DIRT_PATH);
+        h.setBlock(pos, BlockRegister.HORSE_CRANK.get());
+        return (AbstractHorseCrankBlockEntity) h.getLevel().getBlockEntity(h.absolutePos(pos));
+    }
+
+    public static void unauthorizedDetachCannotHandleOwnedOrUnavailableHorse(GameTestHelper h) throws Exception {
+        if (!Boolean.getBoolean("createhorsepower.icyExpected")) { h.succeed(); return; }
+        AbstractHorseCrankBlockEntity crank = crank(h);
+        Horse horse = horse(h);
+        var owner = h.makeMockSurvivalPlayer();
+        var stranger = h.makeMockSurvivalPlayer();
+        h.assertTrue(!owner.getUUID().equals(stranger.getUUID()), "Distinct ownership test actors are required");
+        horse.getClass().getMethod("bh_setOwner", UUID.class).invoke(horse, owner.getUUID());
+        horse.setLeashedTo(LeashFenceKnotEntity.getOrCreateKnot(h.getLevel(), crank.getBlockPos()), false);
+        crank.engine().attachWorker(horse, WorkerResolver.resolve(horse));
+        h.assertTrue(HorseCrankInteractions.detachAt(h.getLevel(), crank.getBlockPos(), crank.getBlockState(), stranger)
+                == HorseCrankInteractions.Outcome.FAIL, "Untrusted player's real detach path must reject");
+        h.assertTrue(horse.getUUID().equals(crank.engine().getWorkerUuid()) && horse.isLeashed(), "Unauthorized detach must not mutate claim or lead");
+        Class<?> tracker = Class.forName("icy.betterhorses.net.HorseTrackerState");
+        Object trustState = tracker.getMethod("get", net.minecraft.server.MinecraftServer.class)
+                .invoke(null, h.getLevel().getServer());
+        Object trusted = tracker.getMethod("trust", UUID.class, UUID.class, String.class)
+                .invoke(trustState, owner.getUUID(), stranger.getUUID(), "Icy GameTest trusted player");
+        h.assertTrue(Boolean.TRUE.equals(trusted), "Real Icy trust store must accept isolated test actor");
+        h.assertTrue(HorseCrankInteractions.detachAt(h.getLevel(), crank.getBlockPos(), crank.getBlockState(), stranger)
+                == HorseCrankInteractions.Outcome.SUCCESS, "Icy trusted player's actual detach must succeed");
+        tracker.getMethod("untrust", UUID.class, UUID.class).invoke(trustState, owner.getUUID(), stranger.getUUID());
+        horse.setLeashedTo(LeashFenceKnotEntity.getOrCreateKnot(h.getLevel(), crank.getBlockPos()), false);
+        crank.engine().attachWorker(horse, WorkerResolver.resolve(horse));
+        CompoundTag saved = horse.saveWithoutId(new CompoundTag());
+        var type = horse.getType();
+        horse.remove(Entity.RemovalReason.UNLOADED_TO_CHUNK);
+        h.runAfterDelay(2, () -> {
+            h.assertTrue(HorseCrankInteractions.detachAt(h.getLevel(), crank.getBlockPos(), crank.getBlockState(), owner)
+                    == HorseCrankInteractions.Outcome.FAIL, "Unavailable Icy body cannot prove player ownership/trust");
+            Horse restored = (Horse) type.create(h.getLevel());
+            restored.load(saved);
+            h.getLevel().addFreshEntity(restored);
+            h.runAfterDelay(3, () -> {
+                h.assertTrue(HorseCrankInteractions.detachAt(h.getLevel(), crank.getBlockPos(), crank.getBlockState(), owner)
+                        == HorseCrankInteractions.Outcome.SUCCESS, "Owner may detach the loaded real worker");
+                h.assertTrue(crank.engine().getWorkerUuid() == null && !restored.isLeashed(), "Owner release must clear claim and lead");
+                h.succeed();
+            });
+        });
+    }
+
+    private static int count(GameTestHelper h, Item item) {
+        AABB bounds = new AABB(h.absolutePos(new BlockPos(0, 0, 0)), h.absolutePos(new BlockPos(15, 8, 15)));
+        return h.getLevel().getEntitiesOfClass(ItemEntity.class, bounds, e -> e.getItem().is(item))
+                .stream().mapToInt(e -> e.getItem().getCount()).sum();
+    }
+
+    public static void unloadedCachedBodyCannotReturnAttachmentTwice(GameTestHelper h) {
+        if (!Boolean.getBoolean("createhorsepower.icyExpected")) { h.succeed(); return; }
+        AbstractHorseCrankBlockEntity crank = crank(h);
+        Horse horse = horse(h);
+        var profile = new AttachmentProfile(CHPApi.modId("icy_consuming_leash"), 1,
+                Set.of(CHPApi.id("minecraft", "saddle")), Set.of(), AttachmentMode.VANILLA_LEASH,
+                3, Set.of(), Set.of(), Set.of(), true, true, 1);
+        horse.setLeashedTo(LeashFenceKnotEntity.getOrCreateKnot(h.getLevel(), crank.getBlockPos()), false);
+        crank.engine().attachWorker(horse, WorkerResolver.resolve(horse), profile, new ItemStack(Items.SADDLE), true);
+        WorkerActivityControl.acquire(horse, crank.getBlockPos(), crank.engine().crankInstanceUuid());
+        CompoundTag saved = horse.saveWithoutId(new CompoundTag());
+        var type = horse.getType();
+        int saddles = count(h, Items.SADDLE);
+        int leads = count(h, Items.LEAD);
+        horse.remove(Entity.RemovalReason.UNLOADED_TO_CHUNK);
+        h.runAfterDelay(2, () -> {
+            h.assertTrue(h.getLevel().getEntity(horse.getUUID()) == null, "Removed body must no longer be indexed");
+            crank.engine().detachWorker(true);
+            h.assertTrue(count(h, Items.SADDLE) == saddles && count(h, Items.LEAD) == leads,
+                    "System detach must not return items from stale unloaded cache");
+            Horse restored = (Horse) type.create(h.getLevel());
+            restored.load(saved);
+            h.getLevel().addFreshEntity(restored);
+            h.runAfterDelay(4, () -> {
+                h.assertTrue(count(h, Items.SADDLE) == saddles + 1, "Actual loaded body returns its consumed attachment exactly once");
+                h.assertTrue(count(h, Items.LEAD) == leads + 1, "Actual loaded body returns its old exact-knot lead exactly once");
+                h.assertTrue(!restored.isLeashed() && !restored.isNoAi() && !WorkerAttachmentControl.hasMarker(restored),
+                        "Deferred system detach restores real body's AI and attachment");
+                h.succeed();
+            });
+        });
+    }
+}

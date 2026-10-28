@@ -91,6 +91,12 @@ neoForge {
             server()
             programArgument '--nogui'
             systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+            if (providers.gradleProperty('chpRestartPhase').isPresent()) {
+                gameDirectory = project.file(providers.gradleProperty('chpRestartDirectory').get())
+                systemProperty 'createhorsepower.restart.phase', providers.gradleProperty('chpRestartPhase').get()
+                systemProperty 'createhorsepower.restart.dir', project.file(providers.gradleProperty('chpRestartDirectory').get()).absolutePath
+                systemProperty 'createhorsepower.icyExpected', providers.gradleProperty('icyCompatibilityTest').getOrElse('false')
+            }
         }
 
         gameTestServer {

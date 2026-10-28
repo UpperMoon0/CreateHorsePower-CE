@@ -103,6 +103,8 @@ public class AnimalPowerEngine {
     private int efficiencyPercent = 100;
     private int invalidBlockCount = 0;
     private String cachedWorkerName = "";
+    private String workerEntityId = "";
+    private boolean workerRequiresIcyPermission;
 
     private RedstoneMode redstoneMode;
     private boolean lastRedstoneState = false;
@@ -396,6 +398,11 @@ public class AnimalPowerEngine {
 
         if (workerUuid != null) {
             compound.putUUID("WorkerUUID", workerUuid);
+            compound.putString("WorkerEntityId", workerEntityId);
+            compound.putBoolean("WorkerRequiresIcyPermission", workerRequiresIcyPermission);
+        } else {
+            compound.remove("WorkerEntityId");
+            compound.remove("WorkerRequiresIcyPermission");
         }
         if (lastKnownWorkerPos != null) {
             compound.putLong("WorkerPos", lastKnownWorkerPos.asLong());
@@ -441,6 +448,9 @@ public class AnimalPowerEngine {
     }
 
     public void read(CompoundTag compound, boolean clientPacket) {
+        workerEntityId = compound.getString("WorkerEntityId");
+        workerRequiresIcyPermission = compound.getBoolean("WorkerRequiresIcyPermission")
+                || net.steampn.createhorsepower.compat.IcyBetterHorses.isBreed(workerEntityId);
         if (compound.contains("RpmModifier")) rpmModifier = compound.getFloat("RpmModifier");
         if (compound.contains("PathStressModifier")) pathStressModifier = compound.getFloat("PathStressModifier");
         if (compound.contains("HasValidWorkingBlocks")) hasValidWorkingBlocks = compound.getBoolean("HasValidWorkingBlocks");
@@ -593,6 +603,7 @@ public class AnimalPowerEngine {
         WorkerAttachmentControl.markAttached(
                 worker, host.pos(), crankInstanceUuid, attachment, attachmentStack, attachmentItemConsumed);
         this.cachedWorkerMob = worker;
+        cacheWorkerPermission(worker);
         this.workerUuid = worker.getUUID();
         this.lastKnownWorkerPos = worker.blockPosition();
         this.assignments.clear();
@@ -710,11 +721,14 @@ public class AnimalPowerEngine {
 
     private void releaseAttachmentBackend(Level level, @Nullable UUID workerUuid, @Nullable Mob cachedWorker,
                                           boolean dropRequested, AttachmentMode mode) {
-        Mob loaded = cachedWorker;
         ServerLevel serverLevel = level instanceof ServerLevel server ? server : null;
+        // The cached body may already have been serialized and unloaded. Never
+        // return attachment items or clear a leash on an unindexed stale copy;
+        // its durable detach policy will handle the real body when it loads.
+        Mob loaded = null;
         if (serverLevel != null && workerUuid != null) {
             Entity indexed = serverLevel.getEntity(workerUuid);
-            if (indexed instanceof Mob mob) loaded = mob;
+            if (indexed instanceof Mob mob && !mob.isRemoved()) loaded = mob;
         }
 
         if (mode == AttachmentMode.VANILLA_LEASH) {
@@ -845,6 +859,8 @@ public class AnimalPowerEngine {
         this.workerEligible = false;
         this.workerRadius = DEFAULT_RADIUS;
         this.cachedWorkerName = "";
+        this.workerEntityId = "";
+        this.workerRequiresIcyPermission = false;
         this.speedBonusPercent = 0.0f;
         this.healthBonusPercent = 0.0f;
         this.workerOrbitAngle = Double.NaN;
@@ -1162,6 +1178,7 @@ public class AnimalPowerEngine {
         boolean radiusChanged = false;
 
         if (worker != null) {
+            cacheWorkerPermission(worker);
             this.workerResolved = true;
             missingWorkerTicks = 0;
             lastInspectedMissingWorker = null;
@@ -1356,6 +1373,21 @@ public class AnimalPowerEngine {
     @Nullable
     public UUID getWorkerUuid() {
         return workerUuid;
+    }
+
+    /** Saved authorization hint; an unavailable Icy body cannot prove a player's trust. */
+    public boolean requiresIcyWorkerPermission() {
+        return workerRequiresIcyPermission;
+    }
+
+    private void cacheWorkerPermission(Mob worker) {
+        String typeId = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(worker.getType()).toString();
+        boolean requires = net.steampn.createhorsepower.compat.IcyBetterHorses.isManaged(worker);
+        if (!typeId.equals(workerEntityId) || requires != workerRequiresIcyPermission) {
+            workerEntityId = typeId;
+            workerRequiresIcyPermission = requires;
+            host.markDirty();
+        }
     }
 
     @Nullable

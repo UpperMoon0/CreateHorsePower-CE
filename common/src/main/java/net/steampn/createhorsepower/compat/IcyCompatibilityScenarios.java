@@ -55,6 +55,12 @@ public final class IcyCompatibilityScenarios {
             horse.getClass().getMethod("bh_setOwner", UUID.class).invoke(horse, owner);
             h.assertTrue(IcyBetterHorses.mayAttach(horse, owner), "Owner may attach");
             h.assertTrue(!IcyBetterHorses.mayAttach(horse, UUID.randomUUID()), "Untrusted stranger must be rejected");
+            var gear = (net.minecraft.world.SimpleContainer) horse.getClass().getMethod("bh_getGearContainer").invoke(horse);
+            var cart = BuiltInRegistries.ITEM.get(CHPApi.id(IcyBetterHorses.NAMESPACE, "horse_cart"));
+            gear.setItem(3, new net.minecraft.world.item.ItemStack(cart));
+            h.assertTrue(!IcyBetterHorses.canWork(horse), "Real cart equipment must exclude competing movement");
+            gear.setItem(3, net.minecraft.world.item.ItemStack.EMPTY);
+            h.assertTrue(IcyBetterHorses.canWork(horse), "Removing cart must restore eligibility");
             horse.addTag(IcyBetterHorses.NAMESPACE + ":wagon_hitched");
             h.assertTrue(!IcyBetterHorses.canWork(horse), "Wagon must not share control");
             horse.discard();
@@ -108,8 +114,11 @@ public final class IcyCompatibilityScenarios {
         WorkerActivityControl.acquire(horse, crank.getBlockPos(), crank.engine().crankInstanceUuid());
         for (int x = 9; x <= 13; x++) for (int z = 2; z <= 6; z++) h.setBlock(new BlockPos(x, 1, z), Blocks.STONE);
         Class<?> placement = Class.forName("icy.betterhorses.net.HorsePlacement");
-        Object ok = placement.getMethod("teleport", net.minecraft.world.entity.animal.horse.AbstractHorse.class, BlockPos.class)
-                .invoke(null, horse, h.absolutePos(new BlockPos(11, 2, 4)));
+        var teleport = placement.getMethod("teleport", net.minecraft.world.entity.animal.horse.AbstractHorse.class, BlockPos.class);
+        Object failed = teleport.invoke(null, horse, h.absolutePos(new BlockPos(11, 70, 4)));
+        h.assertTrue(Boolean.FALSE.equals(failed) && horse.getUUID().equals(crank.engine().getWorkerUuid())
+                && WorkerAttachmentControl.hasMarker(horse), "Failed unsafe teleport must keep original attachment");
+        Object ok = teleport.invoke(null, horse, h.absolutePos(new BlockPos(11, 2, 4)));
         h.assertTrue(Boolean.TRUE.equals(ok), "Real Icy teleport must find isolated test floor");
         h.assertTrue(crank.engine().getWorkerUuid() == null, "Successful teleport mixin must release crank reservation");
         h.assertTrue(!horse.isLeashed() && !horse.isNoAi() && !WorkerAttachmentControl.hasMarker(horse), "Recall must restore AI and attachment");
@@ -166,6 +175,81 @@ public final class IcyCompatibilityScenarios {
                     h.succeed();
                 });
             } catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
+        });
+    }
+
+    public static void vanillaSwapRetainsWorker(GameTestHelper h) {
+        if (!present(h)) { h.succeed(); return; }
+        AbstractHorseCrankBlockEntity crank = crank(h);
+        Horse original = h.spawn(EntityType.HORSE, new BlockPos(6, 2, 4));
+        original.setTamed(true);
+        original.setLeashedTo(LeashFenceKnotEntity.getOrCreateKnot(h.getLevel(), crank.getBlockPos()), false);
+        crank.engine().attachWorker(original, WorkerResolver.resolve(original));
+        UUID id = original.getUUID();
+        h.runAfterDelay(8, () -> {
+            var current = h.getLevel().getEntity(id);
+            h.assertTrue(current instanceof Horse && current != original, "Real Icy first-tick swap must replace vanilla body");
+            Horse replacement = (Horse) current;
+            h.assertTrue(IcyBetterHorses.isBreed(BuiltInRegistries.ENTITY_TYPE.getKey(replacement.getType()).toString()), "Replacement must be a real released breed");
+            h.assertTrue(id.equals(crank.engine().getWorkerUuid()) && crank.engine().isWorkerAttachmentValid(replacement), "Exact UUID claim and delayed leash must survive real conversion");
+            crank.detachWorker(true);
+            h.assertTrue(!replacement.isNoAi() && !replacement.isLeashed(), "Conversion release must restore original AI and leash state");
+            h.succeed();
+        });
+    }
+
+    public static void permissionInteractionsAndTrust(GameTestHelper h) throws Exception {
+        if (!present(h)) { h.succeed(); return; }
+        AbstractHorseCrankBlockEntity crank = crank(h);
+        Horse horse = breed(h, "morgan_horse");
+        var owner = h.makeMockSurvivalPlayer();
+        var stranger = h.makeMockSurvivalPlayer();
+        var trusted = h.makeMockSurvivalPlayer();
+        horse.getClass().getMethod("bh_setOwner", UUID.class).invoke(horse, owner.getUUID());
+        var lead = new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.LEAD);
+        horse.setLeashedTo(stranger, false);
+        HorseCrankInteractions.attachAt(h.getLevel(), crank.getBlockPos(), crank.getBlockState(), stranger, lead);
+        h.assertTrue(crank.engine().getWorkerUuid() == null && horse.getLeashHolder() == stranger,
+                "Unauthorized attach must not claim a horse or transfer its lead");
+        Class<?> stateClass = Class.forName("icy.betterhorses.net.HorseTrackerState");
+        Object state = stateClass.getMethod("get", net.minecraft.server.MinecraftServer.class).invoke(null, h.getLevel().getServer());
+        stateClass.getMethod("trust", UUID.class, UUID.class, String.class).invoke(state, owner.getUUID(), trusted.getUUID(), "test-trusted");
+        horse.setLeashedTo(trusted, false);
+        HorseCrankInteractions.attachAt(h.getLevel(), crank.getBlockPos(), crank.getBlockState(), trusted, lead);
+        h.assertTrue(horse.getUUID().equals(crank.engine().getWorkerUuid()), "Actual trusted-player interaction must attach");
+        h.assertTrue(HorseCrankInteractions.detachAt(h.getLevel(), crank.getBlockPos(), crank.getBlockState(), stranger)
+                == HorseCrankInteractions.Outcome.FAIL && horse.getUUID().equals(crank.engine().getWorkerUuid()),
+                "Unauthorized detach must leave claim intact");
+        h.assertTrue(HorseCrankInteractions.detachAt(h.getLevel(), crank.getBlockPos(), crank.getBlockState(), trusted)
+                == HorseCrankInteractions.Outcome.SUCCESS && crank.engine().getWorkerUuid() == null,
+                "Trusted player must be able to release through actual interaction");
+        h.succeed();
+    }
+
+    public static void tickingOrbitAndWagonHandoff(GameTestHelper h) {
+        if (!present(h)) { h.succeed(); return; }
+        AbstractHorseCrankBlockEntity crank = crank(h);
+        Horse horse = breed(h, "arabian_horse");
+        horse.setLeashedTo(LeashFenceKnotEntity.getOrCreateKnot(h.getLevel(), crank.getBlockPos()), false);
+        crank.engine().attachWorker(horse, WorkerResolver.resolve(horse));
+        double x = horse.getX(), z = horse.getZ();
+        h.runAfterDelay(10, () -> {
+            h.assertTrue(crank.engine().generatedSpeed() != 0 && horse.isNoAi() && WorkerActivityControl.hasMarker(horse),
+                    "Real active engine must generate and own AI suppression");
+            h.assertTrue(Math.hypot(horse.getX() - x, horse.getZ() - z) > 0.01, "Real worker must orbit across ticks");
+            var wagon = h.spawn(EntityType.COW, new BlockPos(8, 2, 4));
+            try {
+                Class.forName("icy.betterhorses.net.BhWagonHitch").getMethod("mark", net.minecraft.world.entity.Mob.class,
+                        net.minecraft.world.entity.Entity.class).invoke(null, horse, wagon);
+            } catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
+            // The third-party wagon sets its own NoAI after Icy's mark boundary.
+            horse.setNoAi(true);
+            h.assertTrue(crank.engine().getWorkerUuid() == null && !WorkerActivityControl.hasMarker(horse)
+                    && !WorkerAttachmentControl.hasMarker(horse), "Wagon hook must release old crank before handoff");
+            crank.engine().afterHostTick();
+            h.assertTrue(horse.isNoAi() && horse.getTags().contains(IcyBetterHorses.NAMESPACE + ":wagon_hitched"),
+                    "Old engine must not undo incoming wagon ownership");
+            h.succeed();
         });
     }
 

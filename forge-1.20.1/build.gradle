@@ -68,6 +68,12 @@ minecraft {
         server {
             property 'forge.enabledGameTestNamespaces', mod_id
             args '--nogui'
+            if (providers.gradleProperty('chpRestartPhase').isPresent()) {
+                workingDirectory project.file(providers.gradleProperty('chpRestartDirectory').get())
+                property 'createhorsepower.restart.phase', providers.gradleProperty('chpRestartPhase').get()
+                property 'createhorsepower.restart.dir', project.file(providers.gradleProperty('chpRestartDirectory').get()).absolutePath
+                property 'createhorsepower.icyExpected', providers.gradleProperty('icyCompatibilityTest').getOrElse('false')
+            }
         }
 
         gameTestServer {
