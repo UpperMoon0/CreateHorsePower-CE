@@ -47,6 +47,10 @@ public final class IcyCompatibilityScenarios {
         for (String name : IcyBetterHorses.BREEDS) {
             Horse horse = breed(h, name);
             h.assertTrue(WorkerResolver.resolve(horse).isValid(), "Every released breed must be eligible: " + name);
+            h.assertTrue(net.steampn.createhorsepower.content.stats.BuiltinProfiles.worker(horse.getType()).orElseThrow()
+                    .equals(net.steampn.createhorsepower.content.stats.BuiltinProfiles.HORSE), "Released breeds must use horse profile");
+            h.assertTrue(net.steampn.createhorsepower.content.stats.BuiltinProfiles.workerTier(horse.getType()).orElseThrow()
+                    == net.steampn.createhorsepower.content.stats.BuiltinProfiles.WorkerTier.LARGE, "Legacy large tier must apply");
             UUID owner = UUID.randomUUID();
             horse.getClass().getMethod("bh_setOwner", UUID.class).invoke(horse, owner);
             h.assertTrue(IcyBetterHorses.mayAttach(horse, owner), "Owner may attach");
@@ -112,6 +116,14 @@ public final class IcyCompatibilityScenarios {
         h.succeed();
     }
     public static void snapshotRecallReleasesVirtualWorker(GameTestHelper h) throws Exception {
+        snapshotRecall(h, false);
+    }
+
+    public static void snapshotRecallReleasesLeashedWorker(GameTestHelper h) throws Exception {
+        snapshotRecall(h, true);
+    }
+
+    private static void snapshotRecall(GameTestHelper h, boolean leashed) throws Exception {
         if (!present(h)) { h.succeed(); return; }
         AbstractHorseCrankBlockEntity crank = crank(h);
         Horse horse = breed(h, "arabian_horse");
@@ -122,7 +134,12 @@ public final class IcyCompatibilityScenarios {
                 CHPApi.modId("icy_test_virtual"), 1, java.util.Set.of(CHPApi.id("minecraft", "lead")),
                 java.util.Set.of(), net.steampn.createhorsepower.content.attachment.AttachmentMode.VIRTUAL_TETHER,
                 3, java.util.Set.of(), java.util.Set.of(), java.util.Set.of(), false, true, 1);
-        crank.engine().attachWorker(horse, WorkerResolver.resolve(horse), profile, net.minecraft.world.item.ItemStack.EMPTY, false);
+        if (leashed) {
+            horse.setLeashedTo(LeashFenceKnotEntity.getOrCreateKnot(h.getLevel(), crank.getBlockPos()), false);
+            crank.engine().attachWorker(horse, WorkerResolver.resolve(horse));
+        } else {
+            crank.engine().attachWorker(horse, WorkerResolver.resolve(horse), profile, net.minecraft.world.item.ItemStack.EMPTY, false);
+        }
         WorkerActivityControl.acquire(horse, crank.getBlockPos(), crank.engine().crankInstanceUuid());
         Class<?> tracker = Class.forName("icy.betterhorses.net.HorseTracker");
         tracker.getMethod("register", net.minecraft.world.entity.animal.horse.AbstractHorse.class).invoke(null, horse);
@@ -143,7 +160,11 @@ public final class IcyCompatibilityScenarios {
                 h.assertTrue(crank.engine().getWorkerUuid() == null, "Snapshot recall must relinquish the old reservation");
                 h.assertTrue(!WorkerAttachmentControl.hasMarker(recalled) && !WorkerActivityControl.hasMarker(recalled)
                         && !recalled.isNoAi(), "Recalled virtual worker must retain no stale control or NoAI");
-                h.succeed();
+                h.runAfterDelay(3, () -> {
+                    h.assertTrue(!recalled.isLeashed() && !WorkerAttachmentControl.hasMarker(recalled)
+                            && !WorkerActivityControl.hasMarker(recalled), "Delayed saved leash must not reattach after recall");
+                    h.succeed();
+                });
             } catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
         });
     }

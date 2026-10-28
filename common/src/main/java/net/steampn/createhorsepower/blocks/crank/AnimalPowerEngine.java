@@ -722,8 +722,13 @@ public class AnimalPowerEngine {
             // profile item independently. Previously the early return here
             // permanently lost consumed custom vanilla-leash attachments.
             CHPUtils.cleanUpLeash(level, host.pos(), workerUuid, dropRequested);
-            if (loaded != null && WorkerAttachmentControl.isOwnedBy(loaded, host.pos(), crankInstanceUuid)) {
-                WorkerAttachmentControl.releaseConsumedAttachmentItemIfRequested(loaded, dropRequested);
+            if (serverLevel != null && loaded != null
+                    && WorkerAttachmentControl.isOwnedBy(loaded, host.pos(), crankInstanceUuid)) {
+                // A just-restored body may still carry a delayed knot leash.
+                // Clean that saved backend before clearing its ownership marker;
+                // resolved live leashes were already dropped above, so neither
+                // the lead nor the consumed profile item is returned twice.
+                WorkerAttachmentControl.releasePersistedAttachment(loaded, serverLevel, host.pos(), dropRequested);
             }
             return;
         }

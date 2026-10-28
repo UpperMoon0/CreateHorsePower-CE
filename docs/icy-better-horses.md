@@ -78,8 +78,8 @@ The optional CI workflow uploads logs and JUnit evidence.
 Acceptance scenarios exercise all fifteen real entity factories, owner rejection,
 transport exclusion, custom body save/load with delayed leash restoration and crank
 NBT reload, successful real teleport, and Icy's actual snapshot reconstruction path
-with a virtual attachment. Unit tests reject wrong namespace/cart/unknown IDs and
-preserve existing TFC profile behavior.
+with virtual and vanilla-leash attachments. Unit tests reject wrong namespace/cart/unknown IDs.
+Profile checks run inside the real game to avoid bootstrapping Minecraft registries in plain JUnit.
 
 These are automated dedicated-server scenarios. A real two-process world restart,
 client animation/rendering, player-driven menus, trusted-player UX, and manual

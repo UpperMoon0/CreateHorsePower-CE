@@ -19,4 +19,6 @@ public final class IcyCompatibilityGameTests {
     public static void successfulRecallReleasesControl(GameTestHelper h) throws Exception { IcyCompatibilityScenarios.successfulRecallReleasesControl(h); }
     @GameTest(template = "minecraft:kinetic_network")
     public static void snapshotRecallReleasesVirtualWorker(GameTestHelper h) throws Exception { IcyCompatibilityScenarios.snapshotRecallReleasesVirtualWorker(h); }
+    @GameTest(template = "minecraft:kinetic_network")
+    public static void snapshotRecallReleasesLeashedWorker(GameTestHelper h) throws Exception { IcyCompatibilityScenarios.snapshotRecallReleasesLeashedWorker(h); }
 }

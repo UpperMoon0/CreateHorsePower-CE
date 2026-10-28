@@ -6,15 +6,14 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class IcyProfilesTest {
     @Test
-    void everyReleasedBreedUsesHorseProfileWithoutNamespaceWideOptIn() {
+    void everyReleasedBreedUsesExactNamespaceWithoutNamespaceWideOptIn() {
         assertEquals(15, IcyBetterHorses.BREEDS.size());
         for (String breed : IcyBetterHorses.BREEDS) {
-            assertEquals(BuiltinProfiles.HORSE, BuiltinProfiles.optionalWorker("icys-better-horses:" + breed).orElseThrow());
+            assertTrue(IcyBetterHorses.isBreed("icys-better-horses:" + breed));
         }
         for (String excluded : new String[]{"icys_better_horses:arabian_horse", "icys-better-horses:horse_cart", "icys-better-horses:unknown_horse", "other:arabian_horse"}) {
-            assertTrue(BuiltinProfiles.optionalWorker(excluded).isEmpty(), excluded);
+            assertFalse(IcyBetterHorses.isBreed(excluded), excluded);
         }
         assertFalse(IcyBetterHorses.isBreed(null));
-        assertEquals(BuiltinProfiles.HORSE, BuiltinProfiles.optionalWorker("tfc:horse").orElseThrow());
     }
 }
