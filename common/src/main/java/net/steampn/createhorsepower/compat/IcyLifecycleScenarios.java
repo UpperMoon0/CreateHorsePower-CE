@@ -46,8 +46,8 @@ public final class IcyLifecycleScenarios {
         if (!Boolean.getBoolean("createhorsepower.icyExpected")) { h.succeed(); return; }
         AbstractHorseCrankBlockEntity crank = crank(h);
         Horse horse = horse(h);
-        var owner = h.makeMockSurvivalPlayer();
-        var stranger = h.makeMockSurvivalPlayer();
+        var owner = IcyTestActors.survival(h);
+        var stranger = IcyTestActors.survival(h);
         h.assertTrue(!owner.getUUID().equals(stranger.getUUID()), "Distinct ownership test actors are required");
         horse.getClass().getMethod("bh_setOwner", UUID.class).invoke(horse, owner.getUUID());
         horse.setLeashedTo(LeashFenceKnotEntity.getOrCreateKnot(h.getLevel(), crank.getBlockPos()), false);
@@ -85,7 +85,7 @@ public final class IcyLifecycleScenarios {
     }
 
     private static int count(GameTestHelper h, Item item) {
-        AABB bounds = new AABB(h.absolutePos(new BlockPos(0, 0, 0)), h.absolutePos(new BlockPos(15, 8, 15)));
+        AABB bounds = new AABB(net.minecraft.world.phys.Vec3.atLowerCornerOf(h.absolutePos(new BlockPos(0, 0, 0))), net.minecraft.world.phys.Vec3.atLowerCornerOf(h.absolutePos(new BlockPos(15, 8, 15))));
         return h.getLevel().getEntitiesOfClass(ItemEntity.class, bounds, e -> e.getItem().is(item))
                 .stream().mapToInt(e -> e.getItem().getCount()).sum();
     }

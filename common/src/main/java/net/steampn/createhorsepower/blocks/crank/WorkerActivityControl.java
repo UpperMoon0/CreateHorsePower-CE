@@ -323,6 +323,7 @@ public final class WorkerActivityControl {
         CompoundTag marker = new CompoundTag();
         marker.putBoolean(PREVIOUS_NO_AI_KEY, previousNoAi);
         if (crankPos != null) {
+            marker.putString("CrankDimension", mob.level().dimension().location().toString());
             marker.putLong(CRANK_POS_KEY, crankPos.asLong());
         }
         if (crankUuid != null) {

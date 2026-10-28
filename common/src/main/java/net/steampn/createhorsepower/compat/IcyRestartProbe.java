@@ -32,14 +32,19 @@ import java.util.UUID;
  */
 public final class IcyRestartProbe {
     private static final String PHASE = System.getProperty("createhorsepower.restart.phase", "");
-    private static final BlockPos[] CRANKS = {new BlockPos(8, 70, 8), new BlockPos(40, 70, 8)};
+    private static final BlockPos[] CRANKS = {new BlockPos(2048 + 8, 70, 2048 + 8), new BlockPos(2048 + 40, 70, 2048 + 8)};
     private static final UUID[] WORKERS = new UUID[2];
     private static final UUID[] IDENTITIES = new UUID[2];
     private static final double[] SAMPLE_X = new double[2];
     private static final double[] SAMPLE_Z = new double[2];
     private static final int[] SAMPLE_TICK = new int[2];
     private static final Properties EVIDENCE = new Properties();
+    private static final Mob[] BEFORE_UNLOAD = new Mob[2];
+    private static final AbstractHorseCrankBlockEntity[] CRANKS_BEFORE_UNLOAD = new AbstractHorseCrankBlockEntity[2];
     private static int ticks;
+    private static int chunkStage;
+    private static int stageStartedTick;
+    private static int sampleServerTick;
     private static boolean initialized;
     private static boolean sampled;
     private static boolean done;
@@ -56,56 +61,117 @@ public final class IcyRestartProbe {
             if (!PHASE.equals("write") && !PHASE.equals("read")) throw new IllegalStateException("Unknown restart phase " + PHASE);
             ServerLevel level = server.overworld();
             if (level == null) return;
-            if (++ticks > 600) throw new IllegalStateException("Restart probe exceeded 600 actual server ticks");
+            if (++ticks > 600) throw new IllegalStateException("Restart probe exceeded 600 actual server ticks (chunkStage=" + chunkStage + ")");
             if (!initialized) initialize(level);
-            if (ticks < 60) return;
-            if (!sampled) {
+            if (chunkStage == 1) {
+                // Do not ask for block entities/chunks while awaiting unload:
+                // every lookup here is an index or already-loaded-state query.
                 for (int i = 0; i < CRANKS.length; i++) {
-                    Mob worker = requireWorker(level, i);
-                    AbstractHorseCrankBlockEntity crank = requireCrank(level, i);
-                    require(worker.getUUID().equals(crank.engine().getWorkerUuid()), "Loaded crank lost saved worker UUID " + i);
-                    require(IDENTITIES[i].equals(crank.engine().crankInstanceUuid()), "Crank instance UUID changed across restart " + i);
-                    require(crank.engine().isWorkerAttachmentValid(worker), "Attachment did not recover " + i);
-                    require(worker.isNoAi(), "Working worker must have AI suppression " + i);
-                    SAMPLE_X[i] = worker.getX();
-                    SAMPLE_Z[i] = worker.getZ();
-                    SAMPLE_TICK[i] = worker.tickCount;
+                    if (level.getEntity(WORKERS[i]) != null || level.hasChunkAt(CRANKS[i])) return;
                 }
-                sampled = true;
+                for (int i = 0; i < CRANKS.length; i++) {
+                    require(BEFORE_UNLOAD[i].getRemovalReason() == Entity.RemovalReason.UNLOADED_TO_CHUNK,
+                            "Worker vanished for a reason other than real chunk unloading " + i);
+                    EVIDENCE.setProperty("worker." + i + ".chunkUnloaded", "true");
+                }
+                forceTestChunks(level, true);
+                chunkStage = 2;
+                stageStartedTick = ticks;
                 return;
             }
-            if (ticks < 90) return;
-            for (int i = 0; i < CRANKS.length; i++) {
-                Mob worker = requireWorker(level, i);
-                AbstractHorseCrankBlockEntity crank = requireCrank(level, i);
-                double dx = worker.getX() - SAMPLE_X[i];
-                double dz = worker.getZ() - SAMPLE_Z[i];
-                double displacement = Math.sqrt(dx * dx + dz * dz);
-                require(worker.tickCount >= SAMPLE_TICK[i] + 20, "Indexed worker is not actually ticking " + i);
-                require(displacement > 0.02D, "Worker did not actually orbit after restart " + i);
-                require(Math.abs(crank.engine().generatedSpeed()) > 0.01F, "Crank has no live generated output " + i);
-                UUID expectedUuid = WORKERS[i];
-                long count = level.getEntitiesOfClass(Mob.class, new AABB(CRANKS[i]).inflate(12),
-                        candidate -> expectedUuid.equals(candidate.getUUID())).size();
-                require(count == 1, "Expected exactly one indexed body for persisted worker " + i + ", found " + count);
-                EVIDENCE.setProperty("worker." + i + ".uuid", worker.getUUID().toString());
-                EVIDENCE.setProperty("worker." + i + ".type", BuiltInRegistries.ENTITY_TYPE.getKey(worker.getType()).toString());
-                EVIDENCE.setProperty("worker." + i + ".crank", crank.engine().crankInstanceUuid().toString());
-                EVIDENCE.setProperty("worker." + i + ".displacement", Double.toString(displacement));
-                EVIDENCE.setProperty("worker." + i + ".tickDelta", Integer.toString(worker.tickCount - SAMPLE_TICK[i]));
-                EVIDENCE.setProperty("worker." + i + ".rpm", Float.toString(crank.engine().generatedSpeed()));
-                if (PHASE.equals("read")) {
-                    crank.detachWorker(true);
-                    require(!worker.isLeashed(), "Detach left a leash after restart " + i);
-                    require(!WorkerAttachmentControl.hasMarker(worker) && !WorkerActivityControl.hasMarker(worker), "Detach left ownership markers " + i);
-                    require(worker.isNoAi() == (i == 1), "Original NoAI baseline was not restored " + i);
-                    EVIDENCE.setProperty("worker." + i + ".restoredNoAi", Boolean.toString(worker.isNoAi()));
+            if (chunkStage == 2) {
+                if (ticks - stageStartedTick < 60) return;
+                for (int i = 0; i < CRANKS.length; i++) {
+                    require(requireWorker(level, i) != BEFORE_UNLOAD[i], "Chunk reload reused an unloaded object " + i);
+                    require(requireCrank(level, i) != CRANKS_BEFORE_UNLOAD[i], "Chunk reload reused a block entity " + i);
+                    EVIDENCE.setProperty("worker." + i + ".chunkReloaded", "true");
                 }
+                captureSamples(level);
+                chunkStage = 3;
+                return;
+            }
+            if (ticks < 60) return;
+            if (!sampled) {
+                captureSamples(level);
+                return;
+            }
+            if (ticks - sampleServerTick < 30) return;
+            verifySamples(level);
+            if (PHASE.equals("write") && chunkStage == 0) {
+                for (int i = 0; i < CRANKS.length; i++) {
+                    BEFORE_UNLOAD[i] = requireWorker(level, i);
+                    CRANKS_BEFORE_UNLOAD[i] = requireCrank(level, i);
+                    EVIDENCE.setProperty("worker." + i + ".preUnloadDisplacement", EVIDENCE.getProperty("worker." + i + ".displacement"));
+                }
+                server.saveEverything(true, true, true);
+                forceTestChunks(level, false);
+                chunkStage = 1;
+                stageStartedTick = ticks;
+                return;
             }
             server.saveEverything(true, true, true);
-            finish(server, "PASS", "actual indexed worker ticks, orbit and power verified");
+            finish(server, "PASS", PHASE.equals("write")
+                    ? "actual indexed ticks, orbit and chunk reload verified; world saved for a fresh JVM"
+                    : "persisted workers resumed in a fresh JVM; original AI and attachments restored");
         } catch (Throwable failure) {
             finish(server, "FAIL", failure.toString());
+        }
+    }
+
+    private static void captureSamples(ServerLevel level) {
+        for (int i = 0; i < CRANKS.length; i++) {
+            Mob worker = requireWorker(level, i);
+            AbstractHorseCrankBlockEntity crank = requireCrank(level, i);
+            require(worker.getUUID().equals(crank.engine().getWorkerUuid()), "Loaded crank lost saved worker UUID " + i);
+            require(IDENTITIES[i].equals(crank.engine().crankInstanceUuid()), "Crank instance UUID changed across reload " + i);
+            require(crank.engine().isWorkerAttachmentValid(worker), "Attachment did not recover " + i);
+            require(worker.isNoAi(), "Working worker must have AI suppression " + i);
+            SAMPLE_X[i] = worker.getX();
+            SAMPLE_Z[i] = worker.getZ();
+            SAMPLE_TICK[i] = worker.tickCount;
+        }
+        sampled = true;
+        sampleServerTick = ticks;
+    }
+
+    private static void verifySamples(ServerLevel level) {
+        for (int i = 0; i < CRANKS.length; i++) {
+            Mob worker = requireWorker(level, i);
+            AbstractHorseCrankBlockEntity crank = requireCrank(level, i);
+            double dx = worker.getX() - SAMPLE_X[i];
+            double dz = worker.getZ() - SAMPLE_Z[i];
+            double displacement = Math.sqrt(dx * dx + dz * dz);
+            require(worker.tickCount >= SAMPLE_TICK[i] + 20, "Indexed worker is not actually ticking " + i);
+            require(displacement > 0.02D, "Worker did not actually orbit after reload " + i);
+            require(Math.abs(crank.engine().generatedSpeed()) > 0.01F, "Crank has no live generated output " + i);
+            UUID expectedUuid = WORKERS[i];
+            long count = level.getEntitiesOfClass(Mob.class, new AABB(CRANKS[i]).inflate(12),
+                    candidate -> expectedUuid.equals(candidate.getUUID())).size();
+            require(count == 1, "Expected exactly one indexed body for persisted worker " + i + ", found " + count);
+            EVIDENCE.setProperty("worker." + i + ".uuid", worker.getUUID().toString());
+            EVIDENCE.setProperty("worker." + i + ".type", BuiltInRegistries.ENTITY_TYPE.getKey(worker.getType()).toString());
+            EVIDENCE.setProperty("worker." + i + ".crank", crank.engine().crankInstanceUuid().toString());
+            EVIDENCE.setProperty("worker." + i + ".displacement", Double.toString(displacement));
+            EVIDENCE.setProperty("worker." + i + ".tickDelta", Integer.toString(worker.tickCount - SAMPLE_TICK[i]));
+            EVIDENCE.setProperty("worker." + i + ".rpm", Float.toString(crank.engine().generatedSpeed()));
+            if (PHASE.equals("read")) {
+                crank.detachWorker(true);
+                require(!worker.isLeashed(), "Detach left a leash after restart " + i);
+                require(!WorkerAttachmentControl.hasMarker(worker) && !WorkerActivityControl.hasMarker(worker), "Detach left ownership markers " + i);
+                require(worker.isNoAi() == (i == 1), "Original NoAI baseline was not restored " + i);
+                EVIDENCE.setProperty("worker." + i + ".restoredNoAi", Boolean.toString(worker.isNoAi()));
+            }
+        }
+    }
+
+    private static void forceTestChunks(ServerLevel level, boolean forced) {
+        for (BlockPos pos : CRANKS) {
+            // Tickets are restricted to the probe's distant isolated fixtures,
+            // outside vanilla spawn tickets and independent of any player.
+            for (int x = (pos.getX() >> 4) - 1; x <= (pos.getX() >> 4) + 1; x++) {
+                for (int z = (pos.getZ() >> 4) - 1; z <= (pos.getZ() >> 4) + 1; z++) level.setChunkForced(x, z, forced);
+            }
+            if (forced) level.getChunkAt(pos);
         }
     }
 
@@ -118,14 +184,7 @@ public final class IcyRestartProbe {
         EVIDENCE.setProperty("icy", Boolean.toString(icy));
         EVIDENCE.setProperty("phase", PHASE);
         EVIDENCE.setProperty("pid", Long.toString(ProcessHandle.current().pid()));
-        for (BlockPos pos : CRANKS) {
-            // These tickets exist solely in the isolated probe world so workers
-            // keep ticking on a playerless dedicated test server.
-            for (int x = (pos.getX() >> 4) - 1; x <= (pos.getX() >> 4) + 1; x++) {
-                for (int z = (pos.getZ() >> 4) - 1; z <= (pos.getZ() >> 4) + 1; z++) level.setChunkForced(x, z, true);
-            }
-            level.getChunkAt(pos);
-        }
+        forceTestChunks(level, true);
         if (PHASE.equals("read")) {
             Properties saved = new Properties();
             try (InputStream in = Files.newInputStream(directory().resolve("restart-write.properties"))) { saved.load(in); }

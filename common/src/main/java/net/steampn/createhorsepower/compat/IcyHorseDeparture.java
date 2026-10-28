@@ -17,16 +17,24 @@ public final class IcyHorseDeparture {
     public static void release(AbstractHorse horse) {
         if (!(horse.level() instanceof ServerLevel level)
                 || level.getEntity(horse.getUUID()) != horse
-                || !WorkerAttachmentControl.hasMarker(horse)) return;
-        BlockPos pos = WorkerAttachmentControl.markerCrankPos(horse);
-        UUID owner = WorkerAttachmentControl.markerCrankUuid(horse);
-        String sourceDimension = horse.getPersistentData().getCompound(WorkerAttachmentControl.MARKER_KEY)
-                .getString("CrankDimension");
+                || (!WorkerAttachmentControl.hasMarker(horse) && !WorkerActivityControl.hasMarker(horse))) return;
+        boolean attachment = WorkerAttachmentControl.hasMarker(horse);
+        BlockPos pos = attachment ? WorkerAttachmentControl.markerCrankPos(horse) : WorkerActivityControl.markerCrankPos(horse);
+        UUID owner = attachment ? WorkerAttachmentControl.markerCrankUuid(horse) : WorkerActivityControl.markerCrankUuid(horse);
+        String sourceDimension = horse.getPersistentData().getCompound(attachment
+                ? WorkerAttachmentControl.MARKER_KEY : WorkerActivityControl.MARKER_KEY).getString("CrankDimension");
         AbstractHorseCrankBlockEntity source = null;
         ServerLevel sourceLevel = null;
         if (pos != null && owner != null) {
             for (ServerLevel candidate : level.getServer().getAllLevels()) {
                 if (!sourceDimension.isEmpty() && !sourceDimension.equals(candidate.dimension().location().toString())) continue;
+                if (candidate != level && !sourceDimension.isEmpty()) {
+                    var existing = net.steampn.createhorsepower.platform.CHPApi.deferredDetaches().get(candidate, horse.getUUID());
+                    if (existing == null || existing.matches(pos, owner)) {
+                        net.steampn.createhorsepower.platform.CHPApi.deferredDetaches().put(candidate, horse.getUUID(),
+                                new net.steampn.createhorsepower.platform.DeferredDetachStore.Entry(pos, owner, false));
+                    }
+                }
                 if (!candidate.hasChunkAt(pos)) continue;
                 if (candidate.getBlockEntity(pos) instanceof AbstractHorseCrankBlockEntity crank
                         && owner.equals(crank.engine().crankInstanceUuid())

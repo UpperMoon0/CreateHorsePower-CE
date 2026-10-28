@@ -48,7 +48,10 @@ minecraft {
         configureEach {
             workingDirectory project.file('run')
 
-            property 'mixin.config', 'createhorsepower.compat.mixins.json'
+            // Dev runs use class/resource directories, so the release jar's
+            // MixinConfigs manifest is not scanned. Mixin 0.8.5 consumes its
+            // --mixin.config CLI option; it does not read a mixin.config JVM property.
+            args '--mixin.config', 'createhorsepower.compat.mixins.json'
             property 'forge.logging.markers', 'REGISTRIES'
             property 'forge.logging.console.level', 'debug'
             property 'mixin.env.remapRefMap', 'true'

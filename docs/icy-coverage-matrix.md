@@ -27,10 +27,11 @@ all four combinations in separate dedicated-server processes.
 | Loaded teleport success/failure and exact release hook | `successfulRecallReleasesControl` | Actual Icy method and mixin in development runtime |
 | Icy snapshot reconstruction, virtual and vanilla-leash cleanup | `snapshotRecallReleasesVirtualWorker`, `snapshotRecallReleasesLeashedWorker` | Actual upstream reconstruction path; private invocation bypasses public-command authorization |
 | Real vanilla-to-breed replacement retains exact worker identity | `vanillaSwapRetainsWorker` | Actual first-tick Icy replacement and later ticks |
+| Actual chunk unload/reload, persisted worker/crank identity and resumed orbit | Write phase of `IcyRestartProbe` | Test tickets are removed; loaded chunk and UUID index absence plus `UNLOADED_TO_CHUNK` and new instances are required |
 | Real process restart, same UUID/body and crank identity, resumed orbit/output | `IcyRestartProbe`, Python runner, four restart jobs | Two separate JVM PIDs and same saved world; read phase never creates workers |
 | Both original NoAI baselines and attachment release after restart | Two restart fixtures, `NoAI=false` and `NoAI=true` before attachment | Actual loaded entities after fresh process; marker/leash cleanup asserted |
 | Existing vanilla/TFC/script and generic lifecycle regressions | Standard full CI | Complete existing no-Icy suites; not proof of Icy-specific behavior |
-| Trusted player full interaction, transport assignment during active work, public recall authorization/failure, duplicate claims, break/death/disconnect, actual chunk unload | Additional compatibility scenarios required or explicit open gap | Do not infer from the rows above |
+| Trusted player full interaction, transport assignment during active work, public recall authorization/failure, duplicate claims, break/death/disconnect | Additional compatibility scenarios required or explicit open gap | Do not infer from the rows above |
 | Production release-jar optional mixin packaging and linkage | Separate artifact inspection/smoke checks | Development GameTests alone do not prove packaged-jar loading |
 | Client animation/rendering and player-driven UI | Manual acceptance still required | No automated dedicated-server visual evidence |
 
@@ -43,8 +44,14 @@ world. The dedicated server binds localhost on an ephemeral port and creates a
 flat `probe-world`. Test-only chunk tickets let real workers tick without players.
 No live server or TFG world is used.
 
-The write phase creates two fixtures, observes at least twenty real worker ticks,
-position displacement, and nonzero generated RPM, then saves and stops normally.
+The write phase creates two distant fixtures outside spawn tickets and observes
+at least twenty real worker ticks, position displacement, and nonzero generated RPM.
+It saves, removes only its test chunk tickets, and waits until the loaded-chunk
+queries and authoritative entity indices are both empty. It requires the old bodies
+to report `UNLOADED_TO_CHUNK`, then re-forces the test chunks and requires new loaded
+entity/block-entity instances with the same persisted identities and fresh orbit ticks.
+It saves again and stops normally. A retained external ticket causes a timeout,
+not a simulated unload or a skipped assertion.
 The read phase starts a new JVM against exactly that world, resolves the saved
 worker UUIDs through the server entity index, checks unique nearby bodies and
 unchanged crank identities, observes resumed ticking/orbit/output, and releases

@@ -56,7 +56,7 @@ public final class IcyCompatibilityScenarios {
             h.assertTrue(IcyBetterHorses.mayAttach(horse, owner), "Owner may attach");
             h.assertTrue(!IcyBetterHorses.mayAttach(horse, UUID.randomUUID()), "Untrusted stranger must be rejected");
             var gear = (net.minecraft.world.SimpleContainer) horse.getClass().getMethod("bh_getGearContainer").invoke(horse);
-            var cart = BuiltInRegistries.ITEM.get(CHPApi.id(IcyBetterHorses.NAMESPACE, "horse_cart"));
+            var cart = BuiltInRegistries.ITEM.get(CHPApi.id(IcyBetterHorses.NAMESPACE, "horse_cart_gear"));
             gear.setItem(3, new net.minecraft.world.item.ItemStack(cart));
             h.assertTrue(!IcyBetterHorses.canWork(horse), "Real cart equipment must exclude competing movement");
             gear.setItem(3, net.minecraft.world.item.ItemStack.EMPTY);
@@ -202,9 +202,9 @@ public final class IcyCompatibilityScenarios {
         if (!present(h)) { h.succeed(); return; }
         AbstractHorseCrankBlockEntity crank = crank(h);
         Horse horse = breed(h, "morgan_horse");
-        var owner = h.makeMockSurvivalPlayer();
-        var stranger = h.makeMockSurvivalPlayer();
-        var trusted = h.makeMockSurvivalPlayer();
+        var owner = IcyTestActors.survival(h);
+        var stranger = IcyTestActors.survival(h);
+        var trusted = IcyTestActors.survival(h);
         horse.getClass().getMethod("bh_setOwner", UUID.class).invoke(horse, owner.getUUID());
         var lead = new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.LEAD);
         horse.setLeashedTo(stranger, false);
@@ -249,6 +249,31 @@ public final class IcyCompatibilityScenarios {
             crank.engine().afterHostTick();
             h.assertTrue(horse.isNoAi() && horse.getTags().contains(IcyBetterHorses.NAMESPACE + ":wagon_hitched"),
                     "Old engine must not undo incoming wagon ownership");
+            h.succeed();
+        });
+    }
+
+    public static void activityOnlyDepartureAndForeignRecovery(GameTestHelper h) {
+        if (!present(h)) { h.succeed(); return; }
+        AbstractHorseCrankBlockEntity crank = crank(h);
+        Horse legacy = breed(h, "arabian_horse");
+        legacy.setLeashedTo(LeashFenceKnotEntity.getOrCreateKnot(h.getLevel(), crank.getBlockPos()), false);
+        crank.engine().attachWorker(legacy, WorkerResolver.resolve(legacy));
+        WorkerActivityControl.acquire(legacy, crank.getBlockPos(), crank.engine().crankInstanceUuid());
+        legacy.getPersistentData().remove(WorkerAttachmentControl.MARKER_KEY);
+        IcyHorseDeparture.release(legacy);
+        h.assertTrue(!legacy.isNoAi() && !WorkerActivityControl.hasMarker(legacy) && crank.engine().getWorkerUuid() == null,
+                "Legacy activity-only command departure must restore baseline immediately");
+        Horse foreign = breed(h, "morgan_horse");
+        foreign.setLeashedTo(LeashFenceKnotEntity.getOrCreateKnot(h.getLevel(), crank.getBlockPos()), false);
+        crank.engine().attachWorker(foreign, WorkerResolver.resolve(foreign));
+        WorkerActivityControl.acquire(foreign, h.absolutePos(new BlockPos(12, 2, 10)), UUID.randomUUID());
+        IcyHorseDeparture.release(foreign);
+        h.assertTrue(WorkerActivityControl.hasMarker(foreign) && WorkerRecoveryQueue.isPendingForTesting(foreign.getUUID()),
+                "Foreign activity marker must retain bounded recovery scheduling");
+        h.runAfterDelay(4, () -> {
+            h.assertTrue(!foreign.isNoAi() && !WorkerActivityControl.hasMarker(foreign),
+                    "Foreign orphan activity must still recover after departure");
             h.succeed();
         });
     }
