@@ -134,6 +134,67 @@ public final class IcyLifecycleScenarios {
         noDropTombstone(h, false, true);
     }
 
+    public static void snapshotRecallHonorsSettledNoDrop(GameTestHelper h) throws Exception {
+        snapshotRecallDetachPolicy(h, false);
+    }
+
+    public static void snapshotRecallPreservesForeignDetachPolicy(GameTestHelper h) throws Exception {
+        snapshotRecallDetachPolicy(h, true);
+    }
+
+    private static void snapshotRecallDetachPolicy(GameTestHelper h, boolean foreign) throws Exception {
+        if (!Boolean.getBoolean("createhorsepower.icyExpected")) { h.succeed(); return; }
+        AbstractHorseCrankBlockEntity crank = crank(h);
+        Horse horse = horse(h);
+        horse.getClass().getMethod("bh_setOwner", UUID.class).invoke(horse, UUID.randomUUID());
+        horse.getClass().getMethod("bh_setBond", int.class).invoke(horse, 2);
+        var profile = new AttachmentProfile(CHPApi.modId("icy_snapshot_disposition"), 1,
+                Set.of(CHPApi.id("minecraft", "saddle")), Set.of(), AttachmentMode.VANILLA_LEASH,
+                3, Set.of(), Set.of(), Set.of(), true, true, 1);
+        horse.setLeashedTo(LeashFenceKnotEntity.getOrCreateKnot(h.getLevel(), crank.getBlockPos()), false);
+        crank.engine().attachWorker(horse, WorkerResolver.resolve(horse), profile, new ItemStack(Items.SADDLE), true);
+        WorkerActivityControl.acquire(horse, crank.getBlockPos(), crank.engine().crankInstanceUuid());
+        Class.forName("icy.betterhorses.net.HorseTracker").getMethod("register",
+                net.minecraft.world.entity.animal.horse.AbstractHorse.class).invoke(null, horse);
+        UUID worker = horse.getUUID();
+        horse.remove(Entity.RemovalReason.UNLOADED_TO_CHUNK);
+        h.runAfterDelay(2, () -> {
+            try {
+                h.assertTrue(h.getLevel().getEntity(worker) == null, "Original snapshot body must be unavailable");
+                crank.engine().detachWorker(false);
+                // The original reservation no longer exists, so snapshot recall
+                // must settle its marker without using a live source engine.
+                h.assertTrue(crank.engine().getWorkerUuid() == null, "Original reservation must be released");
+                var policy = new net.steampn.createhorsepower.platform.DeferredDetachStore.Entry(
+                        crank.getBlockPos(), foreign ? UUID.randomUUID() : crank.engine().crankInstanceUuid(), false);
+                CHPApi.deferredDetaches().put(h.getLevel(), worker, policy);
+                int saddles = count(h, Items.SADDLE), leads = count(h, Items.LEAD);
+                var respawn = Class.forName("icy.betterhorses.net.HorseManagement").getDeclaredMethod(
+                        "respawnFromSnapshot", net.minecraft.server.MinecraftServer.class, UUID.class,
+                        net.minecraft.server.level.ServerLevel.class, double.class, double.class, double.class);
+                respawn.setAccessible(true);
+                BlockPos target = h.absolutePos(new BlockPos(11, 2, 4));
+                Horse recalled = (Horse) respawn.invoke(null, h.getLevel().getServer(), worker, h.getLevel(),
+                        target.getX() + 0.5, (double) target.getY(), target.getZ() + 0.5);
+                h.assertTrue(recalled != null && h.getLevel().getEntity(worker) == recalled,
+                        "Actual Icy snapshot method must register the replacement");
+                h.runAfterDelay(4, () -> {
+                    int returned = foreign ? 1 : 0;
+                    h.assertTrue(count(h, Items.SADDLE) == saddles + returned && count(h, Items.LEAD) == leads + returned,
+                            "Recall fallback must honor only its exact owner's settled item disposition");
+                    h.assertTrue(!recalled.isLeashed() && !recalled.isNoAi()
+                            && !WorkerAttachmentControl.hasMarker(recalled) && !WorkerActivityControl.hasMarker(recalled),
+                            "Recall must clear saved attachment/AI even when no items are returned");
+                    h.assertTrue(foreign ? policy.equals(CHPApi.deferredDetaches().get(h.getLevel(), worker))
+                                    : CHPApi.deferredDetaches().get(h.getLevel(), worker) == null,
+                            "Only the matching settled policy may be consumed");
+                    if (foreign) CHPApi.deferredDetaches().remove(h.getLevel(), worker);
+                    h.succeed();
+                });
+            } catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
+        });
+    }
+
     private static void noDropTombstone(GameTestHelper h, boolean unload, boolean breakCrank) {
         if (!Boolean.getBoolean("createhorsepower.icyExpected")) { h.succeed(); return; }
         AbstractHorseCrankBlockEntity crank = crank(h);

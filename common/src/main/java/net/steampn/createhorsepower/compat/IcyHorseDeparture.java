@@ -25,11 +25,17 @@ public final class IcyHorseDeparture {
                 ? WorkerAttachmentControl.MARKER_KEY : WorkerActivityControl.MARKER_KEY).getString("CrankDimension");
         AbstractHorseCrankBlockEntity source = null;
         ServerLevel sourceLevel = null;
+        boolean dropAttachment = true;
         if (pos != null && owner != null) {
             for (ServerLevel candidate : level.getServer().getAllLevels()) {
                 if (!sourceDimension.isEmpty() && !sourceDimension.equals(candidate.dimension().location().toString())) continue;
                 if (candidate != level && !sourceDimension.isEmpty()) {
                     var existing = net.steampn.createhorsepower.platform.CHPApi.deferredDetaches().get(candidate, horse.getUUID());
+                    // An older settled no-drop policy applies to this recalled
+                    // snapshot too. The guard we write below protects a stale
+                    // original body only, so it must not suppress the first refund.
+                    dropAttachment = net.steampn.createhorsepower.platform.DeferredDetachStore.effectiveDropPolicy(
+                            existing, pos, owner, dropAttachment);
                     if (existing == null || existing.matches(pos, owner)) {
                         net.steampn.createhorsepower.platform.CHPApi.deferredDetaches().put(candidate, horse.getUUID(),
                                 new net.steampn.createhorsepower.platform.DeferredDetachStore.Entry(pos, owner, false));
@@ -48,13 +54,20 @@ public final class IcyHorseDeparture {
             }
         }
         if (source != null) {
+            if (sourceLevel != level && sourceDimension.isEmpty()) {
+                // A legacy dimensionless marker can still prove its source
+                // when exactly one loaded crank owns this reservation.
+                dropAttachment = net.steampn.createhorsepower.platform.DeferredDetachStore.effectiveDropPolicy(
+                        net.steampn.createhorsepower.platform.CHPApi.deferredDetaches().get(sourceLevel, horse.getUUID()),
+                        pos, owner, dropAttachment);
+            }
             // A source in another dimension cannot resolve this registered body.
             // Preserve a no-drop policy for any stale original body; return the
             // one attachment from the actual recalled body below instead.
-            source.detachWorker(sourceLevel == level);
+            source.detachWorker(sourceLevel == level && dropAttachment);
         }
         if (WorkerAttachmentControl.hasMarker(horse)) {
-            WorkerAttachmentControl.recoverAfterTimeout(horse, level);
+            WorkerAttachmentControl.recoverAfterTimeout(horse, level, dropAttachment);
         }
         // A conflicting activity marker is owned by another crank and survives.
         if (WorkerActivityControl.isOwnedBy(horse, pos, owner)) {

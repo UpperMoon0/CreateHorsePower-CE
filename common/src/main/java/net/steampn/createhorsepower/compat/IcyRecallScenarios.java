@@ -236,4 +236,79 @@ public final class IcyRecallScenarios {
             });
         });
     }
+
+    public static void crossDimensionRevivalHonorsSettledNoDrop(GameTestHelper helper) throws ReflectiveOperationException {
+        crossDimensionRevivalDisposition(helper, true);
+    }
+
+    public static void crossDimensionRevivalReturnsOneAttachment(GameTestHelper helper) throws ReflectiveOperationException {
+        crossDimensionRevivalDisposition(helper, false);
+    }
+
+    private static void crossDimensionRevivalDisposition(GameTestHelper helper, boolean settledNoDrop)
+            throws ReflectiveOperationException {
+        if (!present(helper)) return;
+        // The real public revival command can cross dimensions even though
+        // Icy's ordinary snapshot whistle deliberately cannot do so.
+        ServerPlayer player = player(helper);
+        for (int x = 1; x <= 15; x++) {
+            for (int z = 1; z <= 8; z++) helper.setBlock(new BlockPos(x, 1, z), Blocks.STONE);
+        }
+        var source = helper.getLevel().getServer().getLevel(net.minecraft.world.level.Level.NETHER);
+        helper.assertTrue(source != null && source != helper.getLevel(), "Independent source dimension must exist");
+        BlockPos sourcePos = new BlockPos(22000000, 100, 22000000);
+        helper.assertTrue(!source.hasChunkAt(sourcePos), "Source fixture must not load the old crank chunk");
+        var type = BuiltInRegistries.ENTITY_TYPE.get(CHPApi.id(IcyBetterHorses.NAMESPACE, "arabian_horse"));
+        Horse horse = (Horse) type.create(source);
+        helper.assertTrue(horse != null, "Real released source-dimension horse must be constructible");
+        horse.moveTo(sourcePos, 0, 0);
+        horse.setTamed(true);
+        data(horse, "bh_setOwner", UUID.class, player.getUUID());
+        data(horse, "bh_setBond", int.class, 2);
+        UUID owner = UUID.randomUUID();
+        var profile = new net.steampn.createhorsepower.content.attachment.AttachmentProfile(
+                CHPApi.modId("icy_cross_dimension_revival"), 1,
+                java.util.Set.of(CHPApi.id("minecraft", "saddle")), java.util.Set.of(),
+                net.steampn.createhorsepower.content.attachment.AttachmentMode.VIRTUAL_TETHER, 3,
+                java.util.Set.of(), java.util.Set.of(), java.util.Set.of(), true, true, 1);
+        WorkerAttachmentControl.markAttached(horse, sourcePos, owner, profile,
+                new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.SADDLE), true);
+        WorkerActivityControl.acquire(horse, sourcePos, owner);
+        if (settledNoDrop) CHPApi.deferredDetaches().put(source, horse.getUUID(),
+                new net.steampn.createhorsepower.platform.DeferredDetachStore.Entry(sourcePos, owner, false));
+        Class<?> stateType = Class.forName("icy.betterhorses.net.HorseTrackerState");
+        Object state = stateType.getMethod("get", MinecraftServer.class).invoke(null, helper.getLevel().getServer());
+        // A serializer fixture captures a real Icy source-level body without
+        // registering it or creating blocks/chunks in the other dimension.
+        stateType.getMethod("recordDeath", AbstractHorse.class).invoke(state, horse);
+        var bounds = new net.minecraft.world.phys.AABB(helper.absolutePos(new BlockPos(0, 0, 0)))
+                .expandTowards(16, 8, 16);
+        int before = helper.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, bounds,
+                item -> item.getItem().is(net.minecraft.world.item.Items.SADDLE)).size();
+        helper.assertTrue(command("revive", player, horse.getUUID()), "Real public revival must register destination body");
+        Horse revived = (Horse) helper.getLevel().getEntity(horse.getUUID());
+        helper.assertTrue(revived != null && revived.level() == helper.getLevel()
+                        && !WorkerAttachmentControl.hasMarker(revived) && !WorkerActivityControl.hasMarker(revived)
+                        && !revived.isNoAi(), "Cross-world revival must release attachment and restore baseline immediately");
+        int after = helper.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, bounds,
+                item -> item.getItem().is(net.minecraft.world.item.Items.SADDLE)).size();
+        helper.assertTrue(after == before + (settledNoDrop ? 0 : 1),
+                "Settled source no-drop must survive revival; a new stale-body guard must still return exactly one item");
+        var guard = CHPApi.deferredDetaches().get(source, horse.getUUID());
+        helper.assertTrue(guard != null && guard.matches(sourcePos, owner) && !guard.dropLead(),
+                "Source dimension must retain its exact no-drop guard for any stale original body");
+        var sourceBounds = new net.minecraft.world.phys.AABB(sourcePos).inflate(8);
+        int sourceItems = source.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, sourceBounds).size();
+        WorkerAttachmentControl.recoverAfterTimeout(horse, source);
+        helper.assertTrue(!WorkerAttachmentControl.hasMarker(horse) && !horse.isNoAi()
+                        && CHPApi.deferredDetaches().get(source, horse.getUUID()) == null
+                        && source.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, sourceBounds).size() == sourceItems,
+                "Stale source serializer fixture must consume the guard and restore AI without a second refund");
+        helper.assertTrue(!source.hasChunkAt(sourcePos), "Revival cleanup must never load the source crank chunk");
+        later(helper, 3, () -> {
+            helper.assertTrue(!revived.isNoAi() && !WorkerAttachmentControl.hasMarker(revived),
+                    "Destination must remain released after normal ticks");
+            helper.succeed();
+        });
+    }
 }

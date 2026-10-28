@@ -85,4 +85,16 @@ public final class IcyCompatibilityGameTests {
     @GameTest(template = "kinetic_network", timeoutTicks = 240)
     public static void noDropTombstoneSurvivesCrankRemoval(GameTestHelper h) throws Exception { net.steampn.createhorsepower.compat.IcyLifecycleScenarios.noDropTombstoneSurvivesCrankRemoval(h); }
 
+    @GameTest(template = "kinetic_network", timeoutTicks = 240)
+    public static void snapshotRecallHonorsSettledNoDrop(GameTestHelper h) throws Exception { net.steampn.createhorsepower.compat.IcyLifecycleScenarios.snapshotRecallHonorsSettledNoDrop(h); }
+
+    @GameTest(template = "kinetic_network", timeoutTicks = 240)
+    public static void snapshotRecallPreservesForeignDetachPolicy(GameTestHelper h) throws Exception { net.steampn.createhorsepower.compat.IcyLifecycleScenarios.snapshotRecallPreservesForeignDetachPolicy(h); }
+
+    @GameTest(template = "kinetic_network", timeoutTicks = 240)
+    public static void crossDimensionRevivalHonorsSettledNoDrop(GameTestHelper h) throws Exception { net.steampn.createhorsepower.compat.IcyRecallScenarios.crossDimensionRevivalHonorsSettledNoDrop(h); }
+
+    @GameTest(template = "kinetic_network", timeoutTicks = 240)
+    public static void crossDimensionRevivalReturnsOneAttachment(GameTestHelper h) throws Exception { net.steampn.createhorsepower.compat.IcyRecallScenarios.crossDimensionRevivalReturnsOneAttachment(h); }
+
 }
