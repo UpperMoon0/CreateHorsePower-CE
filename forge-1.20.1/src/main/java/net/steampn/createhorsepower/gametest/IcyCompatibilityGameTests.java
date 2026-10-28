@@ -13,6 +13,15 @@ public final class IcyCompatibilityGameTests {
     public static void recognitionAndPolicy(GameTestHelper h) throws Exception { IcyCompatibilityScenarios.recognitionAndPolicy(h); }
 
     @GameTest(template = "kinetic_network")
+    public static void bondThresholdsScaleRpmExactlyOnce(GameTestHelper h) throws Exception { net.steampn.createhorsepower.compat.IcyStatScenarios.bondThresholdsScaleRpmExactlyOnce(h); }
+
+    @GameTest(template = "kinetic_network")
+    public static void inheritedStatsSurviveReloadAndDriveOutput(GameTestHelper h) throws Exception { net.steampn.createhorsepower.compat.IcyStatScenarios.inheritedStatsSurviveReloadAndDriveOutput(h); }
+
+    @GameTest(template = "kinetic_network", timeoutTicks = 320)
+    public static void workingCrankRefreshesBondAndHealth(GameTestHelper h) throws Exception { net.steampn.createhorsepower.compat.IcyStatScenarios.workingCrankRefreshesBondAndHealth(h); }
+
+    @GameTest(template = "kinetic_network")
     public static void replacementAndSavedWorker(GameTestHelper h) { IcyCompatibilityScenarios.replacementAndSavedWorker(h); }
 
     @GameTest(template = "kinetic_network")

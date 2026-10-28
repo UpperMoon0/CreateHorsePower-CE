@@ -17,6 +17,8 @@ Create and the respective loader are required. The core gameplay — worker prof
 
 On both loaders, Jade integration activates automatically when Jade is installed. NeoForge also supports the optional KubeJS integration; neither mod is required. TerraFirmaCraft is also optional: when present, CE provides built-in worker defaults for supported TFC livestock and path defaults for common TFC soil/rock families without adding a hard dependency.
 
+Icy's Better Horses **2.1.7** is optional on both loaders. All fifteen released breeds can work cranks with Icy ownership/trust, recall and transport rules preserved. See the [integration contract and coverage](docs/icy-better-horses.md).
+
 ## Highlights
 
 - Persistent Horse Cranks with durable worker ownership and orphan-leash recovery across chunk unload/save/reload cycles.
@@ -88,7 +90,7 @@ Vanilla lead support is bundled and works on a fresh install. `harness`, `yoke`,
 - Pack-defined path data overrides CE bundled path defaults; weighted mixed-path evaluation still averages the resolved per-block profiles normally.
 - NeoForge bundled defaults are no longer shipped as Data Maps, so Data Maps consistently represent explicit datapack/packmaker overrides.
 
-See the unified [1.2.8 release notes](changelog/1.2.8.md) for the current cross-loader release changes.
+See the unified [1.2.9 release notes](changelog/1.2.9.md) for the current cross-loader release changes.
 
 ## Building
 

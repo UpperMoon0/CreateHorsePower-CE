@@ -22,6 +22,9 @@ all four combinations in separate dedicated-server processes.
 |---|---|---|
 | Exact breed ID allowlist, unknown/cart/wrong namespace exclusion | `IcyProfilesTest` | Plain JUnit; no entity runtime |
 | All fifteen released entity factories and profiles | `recognitionAndPolicy` | Actual optional-mod GameTest |
+| All fifteen breeds' bond thresholds, repeated/reset updates and no duplicate CHP bonus | `bondThresholdsScaleRpmExactlyOnce` | Actual released bond API and effective speed/jump attributes; independent expected RPM factors |
+| Real offspring inheritance, independent speed/health output, jump exclusion and bonded NBT recovery | `inheritedStatsSurviveReloadAndDriveOutput` | Actual public offspring factory; offspring aged to adults for work; two serialized reloads in one JVM, not natural mating or a process restart |
+| Attached crank refreshes bond RPM and max-health capacity, then restores baseline | `workingCrankRefreshesBondAndHealth` | Actual entity/engine ticks, movement, live RPM and total SU; unchanged worker identity |
 | Owner/stranger authorization, cart and wagon eligibility | `recognitionAndPolicy` | Actual public Icy API; direct policy calls, not full player interaction |
 | Body NBT and crank state reload, delayed leash restoration | `replacementAndSavedWorker` | Serialized reload in one JVM; not a process restart |
 | Loaded teleport success/failure and exact release hook | `successfulRecallReleasesControl` | Actual Icy method and mixin in development runtime |

@@ -21,6 +21,13 @@ balance tier as vanilla horses. They remain subject to pack profiles, machine
 policies, taming/baby/undead configuration, and individual movement-speed and
 max-health attribute scaling. Unknown IDs and the horse cart are not workers.
 
+With default individual-stat balance, inherited movement speed scales RPM and
+maximum health scales stress capacity. Icy's bond modifier already changes effective
+movement speed, so CHP counts that modifier once through the normal attribute path;
+it does not add a second bond multiplier or turn jump strength into crank power.
+Explicit pack profiles, legacy output overrides and disabled individual-stat scaling
+retain their existing precedence and behavior.
+
 ## Behavior
 
 - Icy remains optional. No Icy classes appear in CHP method signatures or bundled
@@ -80,6 +87,11 @@ transport exclusion, custom body save/load with delayed leash restoration and cr
 NBT reload, successful real teleport, and Icy's actual snapshot reconstruction path
 with virtual and vanilla-leash attachments. Unit tests reject wrong namespace/cart/unknown IDs.
 Profile checks run inside the real game to avoid bootstrapping Minecraft registries in plain JUnit.
+Stat regressions additionally check all breeds at bond boundaries (including repeated
+and reset updates), actual offspring-factory inheritance with independent speed/health
+effects, jump exclusion, repeated serialized reload without stacked bond modifiers,
+and live crank output refresh after bond and max-health changes. Offspring are aged
+to adults for work; these checks do not claim natural mating or player-driven breeding.
 
 The separate-process probe additionally saves and reopens the same fresh test world
 in distinct JVMs, and explicitly unloads/reloads real chunks before restart. It
