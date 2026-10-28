@@ -33,7 +33,7 @@ all four combinations in separate dedicated-server processes.
 | Existing vanilla/TFC/script and generic lifecycle regressions | Standard full CI | Complete existing no-Icy suites; not proof of Icy-specific behavior |
 | Trusted-player attach/detach, unauthorized operations and unloaded owner reservation | `permissionInteractionsAndTrust`, `unauthorizedDetachCannotHandleOwnedOrUnavailableHorse`, permission-hint JUnit | Actual interaction methods + real Icy trust store; mock actors |
 | Active wagon handoff and cart install/remove | `tickingOrbitAndWagonHandoff`, `activeCartEquipmentPausesAndResumesAfterTicks` | Live ticking/output; real Icy gear/handoff API, third-party wagon represented by a test entity |
-| Public loaded/snapshot whistle/send-home success and authorization/bond/unsafe failure | Five `IcyRecallScenarios` methods | Public management API, real snapshots and registered replacement bodies |
+| Public loaded/snapshot whistle/send-home success and authorization/bond/unsafe failure | Four `IcyRecallScenarios` command methods | Public management API, real snapshots and registered replacement bodies |
 | Successful/failed public revival | `revivalRespectsFailureAndReleases` | Actual death record and public revive command; no fabricated CHP reconstruction |
 | Crank block removal and both AI baselines | `crankBreakRestoresActiveAi`, `crankBreakPreservesOriginalNoAi` | Actual block lifecycle and ticking entities |
 | Worker death and no resurrection | `deadWorkerDoesNotResurrectOrKeepGeneration` | Real damage/removal and later server ticks |
@@ -57,7 +57,10 @@ The write phase creates two distant fixtures outside spawn tickets and observes
 at least twenty real worker ticks, position displacement, and nonzero generated RPM.
 It saves, removes only its test chunk tickets, and waits until the loaded-chunk
 queries and authoritative entity indices are both empty. It requires the old bodies
-to report `UNLOADED_TO_CHUNK`, then re-forces the test chunks and requires new loaded
+to report `UNLOADED_TO_CHUNK` and the old block entities to be invalidated by actual
+chunk unloading. It holds these absent/invalidated conditions for twenty consecutive
+server ticks and flushes saves before re-forcing, avoiding cancellation of a pending
+asynchronous unload. It then requires new loaded
 entity/block-entity instances with the same persisted identities and fresh orbit ticks.
 It saves again and stops normally. A retained external ticket causes a timeout,
 not a simulated unload or a skipped assertion.

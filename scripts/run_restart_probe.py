@@ -82,8 +82,11 @@ def main() -> int:
     if results[0].get("pid") == results[1].get("pid"):
         raise RuntimeError("Restart phases unexpectedly share one JVM PID")
     for i in range(2):
-        if results[0].get(f"worker.{i}.chunkUnloaded") != "true" or results[0].get(f"worker.{i}.chunkReloaded") != "true":
-            raise RuntimeError("Write phase did not observe real chunk and entity unloading/reloading")
+        if (results[0].get(f"worker.{i}.chunkUnloaded") != "true"
+                or results[0].get(f"worker.{i}.blockEntityUnloaded") != "true"
+                or int(results[0].get(f"worker.{i}.unloadedQuiescenceTicks", "0")) < 20
+                or results[0].get(f"worker.{i}.chunkReloaded") != "true"):
+            raise RuntimeError("Write phase did not observe completed chunk/entity/BE unloading and reloading")
         for field in ["uuid", "crank", "type"]:
             key = f"worker.{i}.{field}"
             if results[0].get(key) != results[1].get(key):

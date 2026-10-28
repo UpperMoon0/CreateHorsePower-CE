@@ -45,6 +45,7 @@ public final class IcyRestartProbe {
     private static int chunkStage;
     private static int stageStartedTick;
     private static int sampleServerTick;
+    private static int fullyUnloadedSince = -1;
     private static boolean initialized;
     private static boolean sampled;
     private static boolean done;
@@ -67,12 +68,27 @@ public final class IcyRestartProbe {
                 // Do not ask for block entities/chunks while awaiting unload:
                 // every lookup here is an index or already-loaded-state query.
                 for (int i = 0; i < CRANKS.length; i++) {
-                    if (level.getEntity(WORKERS[i]) != null || level.hasChunkAt(CRANKS[i])) return;
-                }
-                for (int i = 0; i < CRANKS.length; i++) {
+                    // FULL accessibility and entity sections can disappear before
+                    // ChunkMap finishes its pending-unload/save callback. Only
+                    // actual Level.unload invalidates the old block entity.
+                    if (level.getEntity(WORKERS[i]) != null || level.hasChunkAt(CRANKS[i])
+                            || !CRANKS_BEFORE_UNLOAD[i].isRemoved()) {
+                        fullyUnloadedSince = -1;
+                        return;
+                    }
                     require(BEFORE_UNLOAD[i].getRemovalReason() == Entity.RemovalReason.UNLOADED_TO_CHUNK,
                             "Worker vanished for a reason other than real chunk unloading " + i);
+                }
+                if (fullyUnloadedSince < 0) fullyUnloadedSince = ticks;
+                // Let the chunk source's recent-lookup caches drain while every
+                // observed fixture remains absent and invalidated. Re-forcing
+                // immediately can legitimately cancel an asynchronous unload.
+                if (ticks - fullyUnloadedSince < 20) return;
+                server.saveEverything(true, true, true);
+                for (int i = 0; i < CRANKS.length; i++) {
                     EVIDENCE.setProperty("worker." + i + ".chunkUnloaded", "true");
+                    EVIDENCE.setProperty("worker." + i + ".blockEntityUnloaded", "true");
+                    EVIDENCE.setProperty("worker." + i + ".unloadedQuiescenceTicks", Integer.toString(ticks - fullyUnloadedSince));
                 }
                 forceTestChunks(level, true);
                 chunkStage = 2;

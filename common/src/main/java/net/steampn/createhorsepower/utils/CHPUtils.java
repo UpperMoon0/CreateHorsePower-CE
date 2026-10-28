@@ -102,7 +102,7 @@ public class CHPUtils {
                 boolean effectiveDrop = reconcileDurableDetachPolicy(serverLevel, pos, workerUuid, dropLead);
                 Entity entity = serverLevel.getEntity(workerUuid);
                 if (entity instanceof Mob mob && isLeashedToKnotAt(mob, pos)) {
-                    CHPDiagnostics.event("leash_cleanup_uuid", level, pos, null, mob, "dropLead=" + dropLead);
+                    CHPDiagnostics.event("leash_cleanup_uuid", level, pos, null, mob, "dropLead=" + effectiveDrop);
                     mob.dropLeash(true, effectiveDrop);
                 }
             }
