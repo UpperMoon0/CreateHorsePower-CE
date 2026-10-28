@@ -679,6 +679,7 @@ public class AnimalPowerEngine {
         UUID detachedWorkerUuid = workerUuid != null ? workerUuid : worker != null ? worker.getUUID() : null;
         Level level = level();
         AttachmentMode detachedMode = attachmentMode;
+        dropAttachment = effectiveDetachDrop(level, detachedWorkerUuid, dropAttachment);
         CHPDiagnostics.event("worker_detach", level, host.pos(), crankInstanceUuid, worker,
                 "worker_uuid=" + detachedWorkerUuid + " drop_attachment=" + dropAttachment
                         + " backend=" + detachedMode.serializedName());
@@ -704,13 +705,14 @@ public class AnimalPowerEngine {
         UUID detachedWorkerUuid = workerUuid != null ? workerUuid : worker != null ? worker.getUUID() : null;
         Level level = level();
         AttachmentMode detachedMode = attachmentMode;
-        rememberDeferredDetachPolicy(level, detachedWorkerUuid, true);
+        boolean dropAttachment = effectiveDetachDrop(level, detachedWorkerUuid, true);
+        rememberDeferredDetachPolicy(level, detachedWorkerUuid, dropAttachment);
         if (level instanceof ServerLevel serverLevel && detachedWorkerUuid != null) {
-            persistDurableDetachPolicy(serverLevel, detachedWorkerUuid, true);
+            persistDurableDetachPolicy(serverLevel, detachedWorkerUuid, dropAttachment);
         }
         stopWorking();
         if (level != null && !level.isClientSide()) {
-            releaseAttachmentBackend(level, detachedWorkerUuid, worker, true, detachedMode);
+            releaseAttachmentBackend(level, detachedWorkerUuid, worker, dropAttachment, detachedMode);
             clearLoadedAttachmentMarker(level, detachedWorkerUuid, worker);
             if (worker != null || detachedWorkerUuid != null) {
                 CHPApi.scripts().fireWorkerDetached(worker, host.pos(), level);
@@ -754,10 +756,17 @@ public class AnimalPowerEngine {
         }
     }
 
+    private boolean effectiveDetachDrop(@Nullable Level level, @Nullable UUID worker, boolean requested) {
+        if (!(level instanceof ServerLevel server) || worker == null) return requested;
+        return DeferredDetachStore.effectiveDropPolicy(CHPApi.deferredDetaches().get(server, worker),
+                host.pos(), crankInstanceUuid, requested);
+    }
+
     private void persistDurableDetachPolicy(ServerLevel level, UUID detachedWorkerUuid, boolean dropRequested) {
         DeferredDetachStore.Entry existing = CHPApi.deferredDetaches().get(level, detachedWorkerUuid);
+        dropRequested = DeferredDetachStore.effectiveDropPolicy(existing, host.pos(), crankInstanceUuid, dropRequested);
         Entity loaded = level.getEntity(detachedWorkerUuid);
-        if (loaded instanceof Mob) {
+        if (loaded instanceof Mob mob && !mob.isRemoved()) {
             if (existing != null && existing.matches(host.pos(), crankInstanceUuid)) {
                 CHPApi.deferredDetaches().remove(level, detachedWorkerUuid);
             }

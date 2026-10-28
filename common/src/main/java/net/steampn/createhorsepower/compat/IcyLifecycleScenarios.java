@@ -122,4 +122,73 @@ public final class IcyLifecycleScenarios {
             });
         });
     }
+    public static void noDropTombstoneSurvivesOldCrankReload(GameTestHelper h) {
+        noDropTombstone(h, true, false);
+    }
+
+    public static void loadedNoDropTombstoneSurvivesDirectLeashCleanup(GameTestHelper h) {
+        noDropTombstone(h, false, false);
+    }
+
+    public static void noDropTombstoneSurvivesCrankRemoval(GameTestHelper h) {
+        noDropTombstone(h, false, true);
+    }
+
+    private static void noDropTombstone(GameTestHelper h, boolean unload, boolean breakCrank) {
+        if (!Boolean.getBoolean("createhorsepower.icyExpected")) { h.succeed(); return; }
+        AbstractHorseCrankBlockEntity crank = crank(h);
+        Horse horse = horse(h);
+        var profile = new AttachmentProfile(CHPApi.modId("icy_no_drop_tombstone"), 1,
+                Set.of(CHPApi.id("minecraft", "saddle")), Set.of(), AttachmentMode.VANILLA_LEASH,
+                3, Set.of(), Set.of(), Set.of(), true, true, 1);
+        horse.setLeashedTo(LeashFenceKnotEntity.getOrCreateKnot(h.getLevel(), crank.getBlockPos()), false);
+        crank.engine().attachWorker(horse, WorkerResolver.resolve(horse), profile, new ItemStack(Items.SADDLE), true);
+        h.runAfterDelay(8, () -> {
+            h.assertTrue(crank.engine().isWorking() && horse.isNoAi(), "Real engine must own active body before stale-source test");
+            CompoundTag body = horse.saveWithoutId(new CompoundTag());
+            CompoundTag oldCrank = new CompoundTag();
+            crank.engine().write(oldCrank, false);
+            int saddles = count(h, Items.SADDLE), leads = count(h, Items.LEAD);
+            var type = horse.getType();
+            UUID worker = horse.getUUID();
+            if (unload) horse.remove(Entity.RemovalReason.UNLOADED_TO_CHUNK);
+            CHPApi.deferredDetaches().put(h.getLevel(), worker,
+                    new net.steampn.createhorsepower.platform.DeferredDetachStore.Entry(
+                            crank.getBlockPos(), crank.engine().crankInstanceUuid(), false));
+            h.runAfterDelay(2, () -> {
+                if (!unload && !breakCrank) {
+                    net.steampn.createhorsepower.utils.CHPUtils.cleanUpLeash(h.getLevel(), crank.getBlockPos(), worker, true);
+                    var retained = CHPApi.deferredDetaches().get(h.getLevel(), worker);
+                    h.assertTrue(retained != null && !retained.dropLead(),
+                            "Physical-only direct cleanup must retain no-drop policy for profile item cleanup");
+                }
+                crank.engine().read(oldCrank, false);
+                if (breakCrank) h.setBlock(new BlockPos(4, 2, 4), Blocks.AIR);
+                else crank.engine().detachWorker(true);
+                h.assertTrue(count(h, Items.SADDLE) == saddles && count(h, Items.LEAD) == leads,
+                        "Old crank detach/break request must not upgrade settled no-drop attachment");
+                if (unload) {
+                    var preserved = CHPApi.deferredDetaches().get(h.getLevel(), worker);
+                    h.assertTrue(preserved != null && !preserved.dropLead(), "Old BE reload/detach must preserve source tombstone");
+                    Horse restored = (Horse) type.create(h.getLevel());
+                    restored.load(body);
+                    h.getLevel().addFreshEntity(restored);
+                    h.runAfterDelay(4, () -> {
+                        h.assertTrue(count(h, Items.SADDLE) == saddles && count(h, Items.LEAD) == leads,
+                                "Late stale body must not duplicate an attachment already returned by recall");
+                        h.assertTrue(!restored.isNoAi() && !restored.isLeashed()
+                                && !WorkerAttachmentControl.hasMarker(restored) && !WorkerActivityControl.hasMarker(restored),
+                                "No-drop recovery must still clear real stale-body AI and leash");
+                        h.succeed();
+                    });
+                } else {
+                    h.assertTrue(!horse.isNoAi() && !horse.isLeashed()
+                            && !WorkerAttachmentControl.hasMarker(horse) && !WorkerActivityControl.hasMarker(horse),
+                            "Loaded no-drop cleanup must restore AI and clear exact attachment");
+                    h.succeed();
+                }
+            });
+        });
+    }
+
 }

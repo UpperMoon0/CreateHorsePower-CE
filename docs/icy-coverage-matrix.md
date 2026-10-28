@@ -31,8 +31,17 @@ all four combinations in separate dedicated-server processes.
 | Real process restart, same UUID/body and crank identity, resumed orbit/output | `IcyRestartProbe`, Python runner, four restart jobs | Two separate JVM PIDs and same saved world; read phase never creates workers |
 | Both original NoAI baselines and attachment release after restart | Two restart fixtures, `NoAI=false` and `NoAI=true` before attachment | Actual loaded entities after fresh process; marker/leash cleanup asserted |
 | Existing vanilla/TFC/script and generic lifecycle regressions | Standard full CI | Complete existing no-Icy suites; not proof of Icy-specific behavior |
-| Trusted player full interaction, transport assignment during active work, public recall authorization/failure, duplicate claims, break/death/disconnect | Additional compatibility scenarios required or explicit open gap | Do not infer from the rows above |
-| Production release-jar optional mixin packaging and linkage | Separate artifact inspection/smoke checks | Development GameTests alone do not prove packaged-jar loading |
+| Trusted-player attach/detach, unauthorized operations and unloaded owner reservation | `permissionInteractionsAndTrust`, `unauthorizedDetachCannotHandleOwnedOrUnavailableHorse`, permission-hint JUnit | Actual interaction methods + real Icy trust store; mock actors |
+| Active wagon handoff and cart install/remove | `tickingOrbitAndWagonHandoff`, `activeCartEquipmentPausesAndResumesAfterTicks` | Live ticking/output; real Icy gear/handoff API, third-party wagon represented by a test entity |
+| Public loaded/snapshot whistle/send-home success and authorization/bond/unsafe failure | Five `IcyRecallScenarios` methods | Public management API, real snapshots and registered replacement bodies |
+| Successful/failed public revival | `revivalRespectsFailureAndReleases` | Actual death record and public revive command; no fabricated CHP reconstruction |
+| Crank block removal and both AI baselines | `crankBreakRestoresActiveAi`, `crankBreakPreservesOriginalNoAi` | Actual block lifecycle and ticking entities |
+| Worker death and no resurrection | `deadWorkerDoesNotResurrectOrKeepGeneration` | Real damage/removal and later server ticks |
+| Duplicate UUID and foreign-crank rejection | `duplicateUuidAndForeignClaimCannotTakeControl` | Actual server index rejects duplicate body; second engine cannot steal claim |
+| Owner disappearance after knot transfer | `ownerDisconnectDoesNotOrphanKnotAssignment` | Mock player removal; not a real socket disconnect |
+| Same-owner no-drop preservation through old crank reload, direct leash cleanup and block removal | Three `noDropTombstone` lifecycle scenarios and `DeferredDetachDropPolicyTest` | Actual delayed bodies/item counts plus pure policy unit tests |
+| Stale-cache item disposition, legacy activity-only and foreign-marker recovery | `unloadedCachedBodyCannotReturnAttachmentTwice`, `activityOnlyDepartureAndForeignRecovery` | Actual saved bodies/markers and later entity ticks |
+| Production release-jar optional mixin packaging and linkage | `verify_compat_jar.py` in both optional CI jobs | Checks actual jar config, metadata, hook/plugin classes and any declared refmap; execution remains development-loader runtime |
 | Client animation/rendering and player-driven UI | Manual acceptance still required | No automated dedicated-server visual evidence |
 
 ## Separate-process probe contract

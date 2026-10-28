@@ -67,4 +67,13 @@ public final class IcyCompatibilityGameTests {
     @GameTest(template = "kinetic_network")
     public static void activityOnlyDepartureAndForeignRecovery(GameTestHelper h) { IcyCompatibilityScenarios.activityOnlyDepartureAndForeignRecovery(h); }
 
+    @GameTest(template = "kinetic_network", timeoutTicks = 240)
+    public static void noDropTombstoneSurvivesOldCrankReload(GameTestHelper h) throws Exception { net.steampn.createhorsepower.compat.IcyLifecycleScenarios.noDropTombstoneSurvivesOldCrankReload(h); }
+
+    @GameTest(template = "kinetic_network", timeoutTicks = 240)
+    public static void loadedNoDropTombstoneSurvivesDirectLeashCleanup(GameTestHelper h) throws Exception { net.steampn.createhorsepower.compat.IcyLifecycleScenarios.loadedNoDropTombstoneSurvivesDirectLeashCleanup(h); }
+
+    @GameTest(template = "kinetic_network", timeoutTicks = 240)
+    public static void noDropTombstoneSurvivesCrankRemoval(GameTestHelper h) throws Exception { net.steampn.createhorsepower.compat.IcyLifecycleScenarios.noDropTombstoneSurvivesCrankRemoval(h); }
+
 }

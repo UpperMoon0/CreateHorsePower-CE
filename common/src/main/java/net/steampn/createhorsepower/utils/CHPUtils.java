@@ -99,11 +99,11 @@ public class CHPUtils {
 
         if (workerUuid != null) {
             if (level instanceof ServerLevel serverLevel) {
-                reconcileDurableDetachPolicy(serverLevel, pos, workerUuid, dropLead);
+                boolean effectiveDrop = reconcileDurableDetachPolicy(serverLevel, pos, workerUuid, dropLead);
                 Entity entity = serverLevel.getEntity(workerUuid);
                 if (entity instanceof Mob mob && isLeashedToKnotAt(mob, pos)) {
                     CHPDiagnostics.event("leash_cleanup_uuid", level, pos, null, mob, "dropLead=" + dropLead);
-                    mob.dropLeash(true, dropLead);
+                    mob.dropLeash(true, effectiveDrop);
                 }
             }
 
@@ -165,28 +165,38 @@ public class CHPUtils {
      * legacy entry is consumed immediately so it cannot accumulate or become a
      * second persistent source of truth.
      */
-    private static void reconcileDurableDetachPolicy(
+    private static boolean reconcileDurableDetachPolicy(
             ServerLevel level,
             BlockPos crankPos,
             UUID workerUuid,
             boolean dropLead
     ) {
+        DeferredDetachStore.Entry existing = CHPApi.deferredDetaches().get(level, workerUuid);
+        Entity loaded = level.getEntity(workerUuid);
         if (!(level.getBlockEntity(crankPos) instanceof AbstractHorseCrankBlockEntity crank)) {
-            return;
+            // Removal callbacks can outlive the BE lookup. A loaded worker's
+            // exact attachment marker can still prove the tombstone owner.
+            if (existing != null && loaded instanceof Mob mob
+                    && net.steampn.createhorsepower.blocks.crank.WorkerAttachmentControl.isOwnedBy(
+                            mob, crankPos, existing.crankUuid())) {
+                return DeferredDetachStore.effectiveDropPolicy(existing, crankPos, existing.crankUuid(), dropLead);
+            }
+            return dropLead;
         }
 
         UUID crankUuid = crank.engine().crankInstanceUuid();
-        Entity loaded = level.getEntity(workerUuid);
-        if (loaded instanceof Mob) {
-            DeferredDetachStore.Entry existing = CHPApi.deferredDetaches().get(level, workerUuid);
-            if (existing != null && existing.matches(crankPos, crankUuid)) {
+        dropLead = DeferredDetachStore.effectiveDropPolicy(existing, crankPos, crankUuid, dropLead);
+        if (loaded instanceof Mob mob && !mob.isRemoved()) {
+            // This helper releases only the physical leash, not a consumed
+            // harness/profile item. Keep a no-drop tombstone until the owning
+            // engine captures it for full cleanup or worker recovery consumes it.
+            if (existing != null && existing.matches(crankPos, crankUuid) && existing.dropLead()) {
                 CHPApi.deferredDetaches().remove(level, workerUuid);
             }
             crank.engine().consumeDeferredDetachPolicy(workerUuid);
-            return;
+            return dropLead;
         }
 
-        DeferredDetachStore.Entry existing = CHPApi.deferredDetaches().get(level, workerUuid);
         if (existing != null && !existing.matches(crankPos, crankUuid)) {
             // A stale/foreign crank must not replace the authoritative detach
             // intent of the crank that actually owned this unloaded worker.
@@ -194,7 +204,7 @@ public class CHPUtils {
             CHPDiagnostics.event("deferred_detach_preserved", level, crankPos, crankUuid, null,
                     "worker_uuid=" + workerUuid + " existing_crank=" + existing.crankUuid()
                             + " existing_dropLead=" + existing.dropLead());
-            return;
+            return dropLead;
         }
 
         CHPApi.deferredDetaches().put(
@@ -205,6 +215,7 @@ public class CHPUtils {
         crank.engine().consumeDeferredDetachPolicy(workerUuid);
         CHPDiagnostics.event("deferred_detach_persisted", level, crankPos, crankUuid, null,
                 "worker_uuid=" + workerUuid + " dropLead=" + dropLead);
+        return dropLead;
     }
 
     public static InteractionResult killLeashEntity(Level level, BlockPos pos) {

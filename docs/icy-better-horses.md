@@ -81,10 +81,15 @@ NBT reload, successful real teleport, and Icy's actual snapshot reconstruction p
 with virtual and vanilla-leash attachments. Unit tests reject wrong namespace/cart/unknown IDs.
 Profile checks run inside the real game to avoid bootstrapping Minecraft registries in plain JUnit.
 
-These are automated dedicated-server scenarios. A real two-process world restart,
-client animation/rendering, player-driven menus, trusted-player UX, and manual
-in-game acceptance still require verification. Passing source checks or serialized
-reload tests must not be described as those manual checks passing.
+The separate-process probe additionally saves and reopens the same fresh test world
+in distinct JVMs, and explicitly unloads/reloads real chunks before restart. It
+checks actual worker tick counts, displacement, live output, UUID uniqueness, and
+both original NoAI baselines. See [the coverage matrix](icy-coverage-matrix.md).
+
+Client animation/rendering, player-driven menus, real network disconnects and manual
+in-game acceptance remain outside the dedicated-server evidence. Runtime hook tests
+use development loaders; separate packaging checks inspect the actual release jars.
+Passing automated checks must not be described as those manual checks passing.
 
 ## Licensing
 

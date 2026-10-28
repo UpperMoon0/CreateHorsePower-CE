@@ -19,6 +19,11 @@ public interface DeferredDetachStore {
         }
     }
 
+    /** An exact owner's no-drop tombstone cannot be upgraded by a stale crank request. */
+    static boolean effectiveDropPolicy(@Nullable Entry existing, BlockPos pos, UUID owner, boolean requested) {
+        return requested && (existing == null || !existing.matches(pos, owner) || existing.dropLead());
+    }
+
     void put(ServerLevel level, UUID workerUuid, Entry entry);
 
     @Nullable
