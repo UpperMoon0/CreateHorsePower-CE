@@ -53,6 +53,7 @@ def ALLOWED_ADAPTERS = [
         'net/steampn/createhorsepower/config/Config.java',
         'net/steampn/createhorsepower/compat/OptionalIntegrations.java',
         'net/steampn/createhorsepower/gametest/HorsePowerGameTests.java',
+        'net/steampn/createhorsepower/gametest/IcyCompatibilityGameTests.java',
         'net/steampn/createhorsepower/gametest/HorsePowerLifecycleGameTests.java',
         // Registry + registration glue (loader-specific registries)
         'net/steampn/createhorsepower/registry/CHPCreativeTabs.java',

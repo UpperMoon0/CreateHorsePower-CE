@@ -116,11 +116,13 @@ public final class BuiltinProfiles {
             return Optional.of(exact);
         }
         String id = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(type).toString();
-        return Optional.ofNullable(OPTIONAL_WORKER_TIERS.get(id));
+        return net.steampn.createhorsepower.compat.IcyBetterHorses.isBreed(id)
+                ? Optional.of(WorkerTier.LARGE) : Optional.ofNullable(OPTIONAL_WORKER_TIERS.get(id));
     }
 
     static Optional<WorkerStats> optionalWorker(String entityId) {
-        return Optional.ofNullable(OPTIONAL_WORKERS.get(entityId));
+        return net.steampn.createhorsepower.compat.IcyBetterHorses.isBreed(entityId)
+                ? Optional.of(HORSE) : Optional.ofNullable(OPTIONAL_WORKERS.get(entityId));
     }
 
     public static Optional<PathStats> path(Block block) {

@@ -181,7 +181,8 @@ public class WorkerResolver {
     }
 
     public static ResolvedWorker resolve(@Nullable Mob mob, String machineId) {
-        if (mob == null || !mob.isAlive()) {
+        if (mob == null || !mob.isAlive()
+                || !net.steampn.createhorsepower.compat.IcyBetterHorses.canWork(mob)) {
             return ResolvedWorker.INVALID;
         }
 

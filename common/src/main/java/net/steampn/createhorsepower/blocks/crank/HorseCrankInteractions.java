@@ -185,7 +185,8 @@ public final class HorseCrankInteractions {
         }
 
         Mob mob = mobsNearPlayer.get(0);
-        if (!attachment.supportsWorker(mob)) {
+        if (!attachment.supportsWorker(mob)
+                || !net.steampn.createhorsepower.compat.IcyBetterHorses.mayAttach(mob, player.getUUID())) {
             CHPDiagnostics.event("attach_rejected", level, pos, null, mob,
                     "reason=attachment_worker_incompatible profile=" + attachment.id());
             player.displayClientMessage(Component.translatable("tooltip.createhorsepower.horse_crank.notValidWorker"), true);

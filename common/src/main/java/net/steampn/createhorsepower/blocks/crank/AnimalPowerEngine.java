@@ -221,6 +221,7 @@ public class AnimalPowerEngine {
         return host.hasWorkerProperty()
                 && workerResolved
                 && workerEligible
+                && (cachedWorkerMob == null || net.steampn.createhorsepower.compat.IcyBetterHorses.canWork(cachedWorkerMob))
                 && hasValidWorkingBlocks
                 && !isStoppedByRedstone()
                 && !suppressGeneration
