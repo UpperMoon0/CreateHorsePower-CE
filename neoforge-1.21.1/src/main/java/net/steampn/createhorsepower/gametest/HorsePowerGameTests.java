@@ -714,17 +714,27 @@ public final class HorsePowerGameTests {
      * default Great ice path keeps the 2x RPM path bonus while path stress
      * scaling is disabled, leaving final stress capacity at exactly 32 SU.
      *
-     * The worker profile is injected directly so Forge's live config file
-     * watcher cannot race the fixture's base output values. The path toggle,
-     * block resolution, evaluator, crank update, and serialized output are
-     * still exercised through the real runtime path.
+     * The worker profile and one path-policy getter are scoped dependencies:
+     * mutating a watched loader config would let asynchronous reload callbacks
+     * race this fixture. Every other platform option and service remains real.
+     * Block resolution, evaluator, crank update, and serialized output exercise
+     * the actual runtime path with the disabled policy contract.
      */
     @GameTest(template = "empty")
     public static void disabledPathStressScalingKeeps32SuWhileGreatPathBoostsRpm(GameTestHelper helper) {
-        boolean oldStressScaling = Config.ENABLE_PATH_STRESS_SCALING.get();
+        var originalConfig = CHPApi.config();
+        var originalScripts = CHPApi.scripts();
+        var originalDetaches = CHPApi.deferredDetaches();
+        var originalItemStacks = CHPApi.itemStacks();
+        Config disabledPathPolicy = new Config() {
+            @Override public boolean enablePathStressScaling() { return false; }
+        };
 
         try {
-            Config.ENABLE_PATH_STRESS_SCALING.set(false);
+            CHPApi.init(disabledPathPolicy, originalScripts, net.minecraft.resources.ResourceLocation::fromNamespaceAndPath,
+                    originalDetaches, originalItemStacks);
+            helper.assertFalse(CHPApi.config().enablePathStressScaling(),
+                    "Fixture must provide the disabled path-stress policy to the engine");
 
             BlockPos localCrankPos = new BlockPos(4, 2, 4);
             BlockPos[] offsets = HorseCrankEngine.generateOffsetsForRadius(2.5f);
@@ -765,7 +775,8 @@ public final class HorsePowerGameTests {
             assertNear(helper, 32.0f, finalStress,
                     "32 SU base must remain exactly 32 SU on a Great path");
         } finally {
-            Config.ENABLE_PATH_STRESS_SCALING.set(oldStressScaling);
+            CHPApi.init(originalConfig, originalScripts, net.minecraft.resources.ResourceLocation::fromNamespaceAndPath,
+                    originalDetaches, originalItemStacks);
         }
 
         helper.succeed();

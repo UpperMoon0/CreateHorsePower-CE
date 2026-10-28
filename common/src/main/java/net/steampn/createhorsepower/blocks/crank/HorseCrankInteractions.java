@@ -48,6 +48,36 @@ public final class HorseCrankInteractions {
         return state.getValue(CrankProperties.HAS_WORKER) || CHPUtils.getKnot(level, pos).isPresent();
     }
 
+    /** Player handling honors Icy ownership; system removal/recovery uses the overload below. */
+    public static Outcome detachAt(Level level, BlockPos pos, BlockState state, Player player) {
+        if (!level.isClientSide() && !mayPlayerDetach(level, pos, player)) {
+            return Outcome.FAIL;
+        }
+        return detachAt(level, pos, state);
+    }
+
+    private static boolean mayPlayerDetach(Level level, BlockPos pos, Player player) {
+        if (level.getBlockEntity(pos) instanceof AbstractHorseCrankBlockEntity crank) {
+            UUID assigned = crank.engine().getWorkerUuid();
+            if (assigned != null && level instanceof ServerLevel server) {
+                Entity current = server.getEntity(assigned);
+                if (current instanceof Mob mob && !mob.isRemoved()) {
+                    // UUID-aware cleanup touches only this assigned worker, so
+                    // another mob sharing its knot must not veto vanilla detach.
+                    return net.steampn.createhorsepower.compat.IcyBetterHorses.mayAttach(mob, player.getUUID());
+                }
+                // Ownership/trust cannot be read from an unloaded Icy body's
+                // hint. Vanilla's UUID-aware deferred detach remains available.
+                return !crank.engine().requiresIcyWorkerPermission();
+            }
+        }
+        // Covers legacy orphan-knot cleanup without a BE worker UUID as well.
+        return level.getEntitiesOfClass(Mob.class, new AABB(pos).inflate(
+                net.steampn.createhorsepower.content.stats.WorkerStats.MAX_MOVEMENT_RADIUS + 4.0D),
+                mob -> CHPUtils.isLeashedToKnotAt(mob, pos)).stream().allMatch(
+                mob -> net.steampn.createhorsepower.compat.IcyBetterHorses.mayAttach(mob, player.getUUID()));
+    }
+
     /** Detaches the current worker (server side) and cleans up leash/knot state. */
     public static Outcome detachAt(Level level, BlockPos pos, BlockState state) {
         if (!level.isClientSide()) {
@@ -185,7 +215,8 @@ public final class HorseCrankInteractions {
         }
 
         Mob mob = mobsNearPlayer.get(0);
-        if (!attachment.supportsWorker(mob)) {
+        if (!attachment.supportsWorker(mob)
+                || !net.steampn.createhorsepower.compat.IcyBetterHorses.mayAttach(mob, player.getUUID())) {
             CHPDiagnostics.event("attach_rejected", level, pos, null, mob,
                     "reason=attachment_worker_incompatible profile=" + attachment.id());
             player.displayClientMessage(Component.translatable("tooltip.createhorsepower.horse_crank.notValidWorker"), true);

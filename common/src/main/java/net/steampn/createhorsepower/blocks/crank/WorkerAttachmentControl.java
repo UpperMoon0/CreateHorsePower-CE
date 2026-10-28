@@ -72,6 +72,7 @@ public final class WorkerAttachmentControl {
         }
 
         CompoundTag marker = new CompoundTag();
+        marker.putString("CrankDimension", mob.level().dimension().location().toString());
         marker.putLong(CRANK_POS_KEY, crankPos.asLong());
         marker.putUUID(CRANK_UUID_KEY, crankUuid);
         AttachmentMode mode = profile == null ? AttachmentMode.VANILLA_LEASH : profile.mode();
@@ -226,6 +227,11 @@ public final class WorkerAttachmentControl {
      * with the documented orphan default of dropping the lead.
      */
     public static void recoverAfterTimeout(Mob mob, ServerLevel level) {
+        recoverAfterTimeout(mob, level, true);
+    }
+
+    /** Explicit departure may also carry a settled no-drop policy from its source dimension. */
+    public static void recoverAfterTimeout(Mob mob, ServerLevel level, boolean dropRequested) {
         if (!hasMarker(mob)) {
             // Activity-only recovery may coexist with a durable record from a
             // different crank. Consume it only when the remaining activity
@@ -241,8 +247,13 @@ public final class WorkerAttachmentControl {
 
         BlockPos crankPos = markerCrankPos(mob);
         UUID crankUuid = markerCrankUuid(mob);
+        // Explicit recall also uses this bounded cleanup before the ordinary
+        // post-tick recovery queue. Honor an already-settled detach policy even
+        // when the original crank is unavailable; a foreign record is unrelated.
+        boolean dropLead = DeferredDetachStore.effectiveDropPolicy(
+                CHPApi.deferredDetaches().get(level, mob.getUUID()), crankPos, crankUuid, dropRequested);
         if (crankPos != null) {
-            releasePersistedAttachment(mob, level, crankPos, true);
+            releasePersistedAttachment(mob, level, crankPos, dropLead);
         }
         if (crankPos != null && crankUuid != null) {
             releaseActivityIfOwnedBy(mob, crankPos, crankUuid);
@@ -250,7 +261,7 @@ public final class WorkerAttachmentControl {
         removeDurableIfOwnedBy(level, mob.getUUID(), crankPos, crankUuid);
         mob.getPersistentData().remove(MARKER_KEY);
         CHPDiagnostics.event("attachment_recovery_timeout", level, crankPos, crankUuid, mob,
-                "dropLead=true old_chunk_force_loaded=false");
+                "dropLead=" + dropLead + " old_chunk_force_loaded=false");
     }
 
     private static void releaseActivityIfOwnedBy(Mob mob, BlockPos crankPos, UUID crankUuid) {

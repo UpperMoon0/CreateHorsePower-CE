@@ -48,6 +48,10 @@ minecraft {
         configureEach {
             workingDirectory project.file('run')
 
+            // Dev runs use class/resource directories, so the release jar's
+            // MixinConfigs manifest is not scanned. Mixin 0.8.5 consumes its
+            // --mixin.config CLI option; it does not read a mixin.config JVM property.
+            args '--mixin.config', 'createhorsepower.compat.mixins.json'
             property 'forge.logging.markers', 'REGISTRIES'
             property 'forge.logging.console.level', 'debug'
             property 'mixin.env.remapRefMap', 'true'
@@ -67,10 +71,17 @@ minecraft {
         server {
             property 'forge.enabledGameTestNamespaces', mod_id
             args '--nogui'
+            if (providers.gradleProperty('chpRestartPhase').isPresent()) {
+                workingDirectory project.file(providers.gradleProperty('chpRestartDirectory').get())
+                property 'createhorsepower.restart.phase', providers.gradleProperty('chpRestartPhase').get()
+                property 'createhorsepower.restart.dir', project.file(providers.gradleProperty('chpRestartDirectory').get()).absolutePath
+                property 'createhorsepower.icyExpected', providers.gradleProperty('icyCompatibilityTest').getOrElse('false')
+            }
         }
 
         gameTestServer {
-            property 'forge.enabledGameTestNamespaces', "${mod_id},minecraft"
+            property 'forge.enabledGameTestNamespaces', providers.gradleProperty('icyCompatibilityTest').getOrElse('false').toBoolean() ? 'createhorsepower_icy' : "${mod_id},minecraft,createhorsepower_icy"
+            property 'createhorsepower.icyExpected', providers.gradleProperty('icyCompatibilityTest').getOrElse('false')
         }
 
         data {
@@ -121,6 +132,12 @@ repositories {
 }
 
 dependencies {
+    // Opt-in, exact released artifacts: never packaged with CHP or required by users.
+    if (providers.gradleProperty('icyCompatibilityTest').getOrElse('false').toBoolean()) {
+        runtimeOnly(fg.deobf("maven.modrinth:icys-better-horses:kXpI9qsc"))
+        runtimeOnly(fg.deobf("maven.modrinth:geckolib:aC5KMoNg"))
+    }
+
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
 
     implementation(fg.deobf("com.simibubi.create:create-${minecraft_version}:${create_version}:slim") { transitive = false })
@@ -175,6 +192,7 @@ tasks.named('processResources', ProcessResources).configure {
 tasks.named('jar', Jar).configure {
     manifest {
         attributes([
+                'MixinConfigs'            : 'createhorsepower.compat.mixins.json',
                 'Specification-Title'     : mod_id,
                 'Specification-Vendor'    : mod_authors,
                 'Specification-Version'   : '1',

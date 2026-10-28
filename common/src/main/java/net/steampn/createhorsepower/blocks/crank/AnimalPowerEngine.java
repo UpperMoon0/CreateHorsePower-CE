@@ -103,6 +103,8 @@ public class AnimalPowerEngine {
     private int efficiencyPercent = 100;
     private int invalidBlockCount = 0;
     private String cachedWorkerName = "";
+    private String workerEntityId = "";
+    private boolean workerRequiresIcyPermission;
 
     private RedstoneMode redstoneMode;
     private boolean lastRedstoneState = false;
@@ -221,6 +223,7 @@ public class AnimalPowerEngine {
         return host.hasWorkerProperty()
                 && workerResolved
                 && workerEligible
+                && (cachedWorkerMob == null || net.steampn.createhorsepower.compat.IcyBetterHorses.canWork(cachedWorkerMob))
                 && hasValidWorkingBlocks
                 && !isStoppedByRedstone()
                 && !suppressGeneration
@@ -395,6 +398,11 @@ public class AnimalPowerEngine {
 
         if (workerUuid != null) {
             compound.putUUID("WorkerUUID", workerUuid);
+            compound.putString("WorkerEntityId", workerEntityId);
+            compound.putBoolean("WorkerRequiresIcyPermission", workerRequiresIcyPermission);
+        } else {
+            compound.remove("WorkerEntityId");
+            compound.remove("WorkerRequiresIcyPermission");
         }
         if (lastKnownWorkerPos != null) {
             compound.putLong("WorkerPos", lastKnownWorkerPos.asLong());
@@ -440,6 +448,9 @@ public class AnimalPowerEngine {
     }
 
     public void read(CompoundTag compound, boolean clientPacket) {
+        workerEntityId = compound.getString("WorkerEntityId");
+        workerRequiresIcyPermission = compound.getBoolean("WorkerRequiresIcyPermission")
+                || net.steampn.createhorsepower.compat.IcyBetterHorses.isBreed(workerEntityId);
         if (compound.contains("RpmModifier")) rpmModifier = compound.getFloat("RpmModifier");
         if (compound.contains("PathStressModifier")) pathStressModifier = compound.getFloat("PathStressModifier");
         if (compound.contains("HasValidWorkingBlocks")) hasValidWorkingBlocks = compound.getBoolean("HasValidWorkingBlocks");
@@ -592,6 +603,7 @@ public class AnimalPowerEngine {
         WorkerAttachmentControl.markAttached(
                 worker, host.pos(), crankInstanceUuid, attachment, attachmentStack, attachmentItemConsumed);
         this.cachedWorkerMob = worker;
+        cacheWorkerPermission(worker);
         this.workerUuid = worker.getUUID();
         this.lastKnownWorkerPos = worker.blockPosition();
         this.assignments.clear();
@@ -667,6 +679,7 @@ public class AnimalPowerEngine {
         UUID detachedWorkerUuid = workerUuid != null ? workerUuid : worker != null ? worker.getUUID() : null;
         Level level = level();
         AttachmentMode detachedMode = attachmentMode;
+        dropAttachment = effectiveDetachDrop(level, detachedWorkerUuid, dropAttachment);
         CHPDiagnostics.event("worker_detach", level, host.pos(), crankInstanceUuid, worker,
                 "worker_uuid=" + detachedWorkerUuid + " drop_attachment=" + dropAttachment
                         + " backend=" + detachedMode.serializedName());
@@ -692,13 +705,14 @@ public class AnimalPowerEngine {
         UUID detachedWorkerUuid = workerUuid != null ? workerUuid : worker != null ? worker.getUUID() : null;
         Level level = level();
         AttachmentMode detachedMode = attachmentMode;
-        rememberDeferredDetachPolicy(level, detachedWorkerUuid, true);
+        boolean dropAttachment = effectiveDetachDrop(level, detachedWorkerUuid, true);
+        rememberDeferredDetachPolicy(level, detachedWorkerUuid, dropAttachment);
         if (level instanceof ServerLevel serverLevel && detachedWorkerUuid != null) {
-            persistDurableDetachPolicy(serverLevel, detachedWorkerUuid, true);
+            persistDurableDetachPolicy(serverLevel, detachedWorkerUuid, dropAttachment);
         }
         stopWorking();
         if (level != null && !level.isClientSide()) {
-            releaseAttachmentBackend(level, detachedWorkerUuid, worker, true, detachedMode);
+            releaseAttachmentBackend(level, detachedWorkerUuid, worker, dropAttachment, detachedMode);
             clearLoadedAttachmentMarker(level, detachedWorkerUuid, worker);
             if (worker != null || detachedWorkerUuid != null) {
                 CHPApi.scripts().fireWorkerDetached(worker, host.pos(), level);
@@ -709,11 +723,14 @@ public class AnimalPowerEngine {
 
     private void releaseAttachmentBackend(Level level, @Nullable UUID workerUuid, @Nullable Mob cachedWorker,
                                           boolean dropRequested, AttachmentMode mode) {
-        Mob loaded = cachedWorker;
         ServerLevel serverLevel = level instanceof ServerLevel server ? server : null;
+        // The cached body may already have been serialized and unloaded. Never
+        // return attachment items or clear a leash on an unindexed stale copy;
+        // its durable detach policy will handle the real body when it loads.
+        Mob loaded = null;
         if (serverLevel != null && workerUuid != null) {
             Entity indexed = serverLevel.getEntity(workerUuid);
-            if (indexed instanceof Mob mob) loaded = mob;
+            if (indexed instanceof Mob mob && !mob.isRemoved()) loaded = mob;
         }
 
         if (mode == AttachmentMode.VANILLA_LEASH) {
@@ -721,8 +738,13 @@ public class AnimalPowerEngine {
             // profile item independently. Previously the early return here
             // permanently lost consumed custom vanilla-leash attachments.
             CHPUtils.cleanUpLeash(level, host.pos(), workerUuid, dropRequested);
-            if (loaded != null && WorkerAttachmentControl.isOwnedBy(loaded, host.pos(), crankInstanceUuid)) {
-                WorkerAttachmentControl.releaseConsumedAttachmentItemIfRequested(loaded, dropRequested);
+            if (serverLevel != null && loaded != null
+                    && WorkerAttachmentControl.isOwnedBy(loaded, host.pos(), crankInstanceUuid)) {
+                // A just-restored body may still carry a delayed knot leash.
+                // Clean that saved backend before clearing its ownership marker;
+                // resolved live leashes were already dropped above, so neither
+                // the lead nor the consumed profile item is returned twice.
+                WorkerAttachmentControl.releasePersistedAttachment(loaded, serverLevel, host.pos(), dropRequested);
             }
             return;
         }
@@ -734,10 +756,17 @@ public class AnimalPowerEngine {
         }
     }
 
+    private boolean effectiveDetachDrop(@Nullable Level level, @Nullable UUID worker, boolean requested) {
+        if (!(level instanceof ServerLevel server) || worker == null) return requested;
+        return DeferredDetachStore.effectiveDropPolicy(CHPApi.deferredDetaches().get(server, worker),
+                host.pos(), crankInstanceUuid, requested);
+    }
+
     private void persistDurableDetachPolicy(ServerLevel level, UUID detachedWorkerUuid, boolean dropRequested) {
         DeferredDetachStore.Entry existing = CHPApi.deferredDetaches().get(level, detachedWorkerUuid);
+        dropRequested = DeferredDetachStore.effectiveDropPolicy(existing, host.pos(), crankInstanceUuid, dropRequested);
         Entity loaded = level.getEntity(detachedWorkerUuid);
-        if (loaded instanceof Mob) {
+        if (loaded instanceof Mob mob && !mob.isRemoved()) {
             if (existing != null && existing.matches(host.pos(), crankInstanceUuid)) {
                 CHPApi.deferredDetaches().remove(level, detachedWorkerUuid);
             }
@@ -839,6 +868,8 @@ public class AnimalPowerEngine {
         this.workerEligible = false;
         this.workerRadius = DEFAULT_RADIUS;
         this.cachedWorkerName = "";
+        this.workerEntityId = "";
+        this.workerRequiresIcyPermission = false;
         this.speedBonusPercent = 0.0f;
         this.healthBonusPercent = 0.0f;
         this.workerOrbitAngle = Double.NaN;
@@ -1156,6 +1187,7 @@ public class AnimalPowerEngine {
         boolean radiusChanged = false;
 
         if (worker != null) {
+            cacheWorkerPermission(worker);
             this.workerResolved = true;
             missingWorkerTicks = 0;
             lastInspectedMissingWorker = null;
@@ -1350,6 +1382,21 @@ public class AnimalPowerEngine {
     @Nullable
     public UUID getWorkerUuid() {
         return workerUuid;
+    }
+
+    /** Saved authorization hint; an unavailable Icy body cannot prove a player's trust. */
+    public boolean requiresIcyWorkerPermission() {
+        return workerRequiresIcyPermission;
+    }
+
+    private void cacheWorkerPermission(Mob worker) {
+        String typeId = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(worker.getType()).toString();
+        boolean requires = net.steampn.createhorsepower.compat.IcyBetterHorses.isManaged(worker);
+        if (!typeId.equals(workerEntityId) || requires != workerRequiresIcyPermission) {
+            workerEntityId = typeId;
+            workerRequiresIcyPermission = requires;
+            host.markDirty();
+        }
     }
 
     @Nullable

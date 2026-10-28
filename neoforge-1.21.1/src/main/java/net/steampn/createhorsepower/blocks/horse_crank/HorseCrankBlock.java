@@ -71,8 +71,8 @@ public class HorseCrankBlock extends AbstractHorseCrankBlock implements IBE<Hors
     @Override
     protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hitResult) {
         if (HorseCrankInteractions.hasWorker(level, pos, state)) {
-            HorseCrankInteractions.detachAt(level, pos, state);
-            return InteractionResult.sidedSuccess(level.isClientSide);
+            return HorseCrankInteractions.detachAt(level, pos, state, player) == HorseCrankInteractions.Outcome.FAIL
+                    ? InteractionResult.FAIL : InteractionResult.sidedSuccess(level.isClientSide());
         }
 
         return InteractionResult.PASS;

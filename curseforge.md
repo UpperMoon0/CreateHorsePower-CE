@@ -17,6 +17,8 @@ The core Horse Crank gameplay — attaching a worker, validating a path, redston
 
 TerraFirmaCraft is optional on both loaders. When it is installed, CE supplies built-in worker defaults for supported TFC livestock and path defaults for common TFC soil/rock families without making TFC a required dependency.
 
+Icy's Better Horses **2.1.7** is optional on both loaders. CE supports all fifteen released breeds while respecting Icy ownership, trusted players, recall and transport rules. See the [integration contract](https://github.com/UpperMoon0/CreateHorsePower-CE/blob/main/docs/icy-better-horses.md) for the exact supported versions and acceptance coverage.
+
 ## Animal Power Framework
 
 The 1.2 update expands the Horse Crank into a data-driven framework while preserving its early-game Create role:
@@ -64,7 +66,7 @@ Worker precedence on NeoForge is KubeJS → shared worker JSON → explicit NeoF
 - Version 1.2.1 adds `workers.workerGroundSpeedScale`, `workers.minWorkerGroundSpeed`, `workers.maxWorkerGroundSpeed`, and `diagnostics.debugLogging`; their defaults are safe for existing worlds.
 - Back up important worlds before updating.
 
-Full release details: [unified 1.2.8 changelog](https://github.com/UpperMoon0/CreateHorsePower-CE/blob/main/changelog/1.2.8.md).
+Full release details: [unified 1.2.9 changelog](https://github.com/UpperMoon0/CreateHorsePower-CE/blob/main/changelog/1.2.9.md).
 
 ## Credits
 

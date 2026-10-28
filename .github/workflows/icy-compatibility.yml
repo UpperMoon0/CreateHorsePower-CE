@@ -1,0 +1,80 @@
+name: Icy compatibility
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: icy-compatibility-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  icy-runtime:
+    name: Icy 2.1.7 / ${{ matrix.project }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [forge-1.20.1, neoforge-1.21.1]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - run: chmod +x ./gradlew
+      - name: Build and unit tests with released optional dependencies
+        run: ./gradlew ":${{ matrix.project }}:build" -PicyCompatibilityTest=true --stacktrace --no-daemon
+      - name: Verify packaged optional integration
+        env:
+          PROJECT: ${{ matrix.project }}
+        run: |
+          VERSION=$(sed -n 's/^mod_version=//p' gradle.properties | tr -d '\r')
+          python3 scripts/verify_compat_jar.py "--${PROJECT%%-*}" "$PROJECT/build/libs/createhorsepower-ce-${PROJECT#*-}-${VERSION}.jar"
+      - name: Real Icy acceptance in isolated GameTest world
+        run: ./gradlew ":${{ matrix.project }}:runGameTestServer" -PicyCompatibilityTest=true --stacktrace --no-daemon
+      - name: Assert every compatibility scenario actually executed
+        run: python3 scripts/assert_icy_gametests.py --project "${{ matrix.project }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: icy-${{ matrix.project }}-evidence
+          path: |
+            ${{ matrix.project }}/run/logs
+            ${{ matrix.project }}/build/reports/tests
+            ${{ matrix.project }}/build/libs
+          if-no-files-found: ignore
+          retention-days: 7
+
+  restart-runtime:
+    name: Restart / ${{ matrix.project }} / Icy=${{ matrix.icy }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [forge-1.20.1, neoforge-1.21.1]
+        icy: ['true', 'false']
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - run: chmod +x ./gradlew
+      - name: Save, exit JVM, restart, tick real indexed workers, and release
+        run: python3 scripts/run_restart_probe.py --project "${{ matrix.project }}" --icy "${{ matrix.icy }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: restart-${{ matrix.project }}-icy-${{ matrix.icy }}
+          path: ${{ matrix.project }}/build/restart-evidence
+          if-no-files-found: error
+          retention-days: 7

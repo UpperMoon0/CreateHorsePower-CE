@@ -33,3 +33,6 @@ forge*changelog.txt
 src/generated/resources/.cache/
 logs/
 **/run-data/
+
+# Python verification scripts
+__pycache__/

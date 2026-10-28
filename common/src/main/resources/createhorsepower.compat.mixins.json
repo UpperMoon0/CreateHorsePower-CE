@@ -1,0 +1,12 @@
+{
+  "required": true,
+  "minVersion": "0.8.5",
+  "package": "net.steampn.createhorsepower.compat.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "mixins": [
+    "IcyHorsePlacementMixin",
+    "IcyHorseManagementMixin",
+    "IcyWagonHandoffMixin"
+  ],
+  "plugin": "net.steampn.createhorsepower.compat.mixin.IcyMixinPlugin"
+}

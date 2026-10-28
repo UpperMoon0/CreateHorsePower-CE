@@ -91,11 +91,18 @@ neoForge {
             server()
             programArgument '--nogui'
             systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+            if (providers.gradleProperty('chpRestartPhase').isPresent()) {
+                gameDirectory = project.file(providers.gradleProperty('chpRestartDirectory').get())
+                systemProperty 'createhorsepower.restart.phase', providers.gradleProperty('chpRestartPhase').get()
+                systemProperty 'createhorsepower.restart.dir', project.file(providers.gradleProperty('chpRestartDirectory').get()).absolutePath
+                systemProperty 'createhorsepower.icyExpected', providers.gradleProperty('icyCompatibilityTest').getOrElse('false')
+            }
         }
 
         gameTestServer {
             type = "gameTestServer"
-            systemProperty 'neoforge.enabledGameTestNamespaces', "${project.mod_id},minecraft"
+            systemProperty 'neoforge.enabledGameTestNamespaces', providers.gradleProperty('icyCompatibilityTest').getOrElse('false').toBoolean() ? 'createhorsepower_icy' : "${project.mod_id},minecraft,createhorsepower_icy"
+            systemProperty 'createhorsepower.icyExpected', providers.gradleProperty('icyCompatibilityTest').getOrElse('false')
         }
 
         data {
@@ -143,6 +150,13 @@ configurations {
 }
 
 dependencies {
+    // Opt-in, exact released artifacts: never packaged with CHP or required by users.
+    if (providers.gradleProperty('icyCompatibilityTest').getOrElse('false').toBoolean()) {
+        localRuntime("maven.modrinth:icys-better-horses:vfSQ99Gl")
+        localRuntime("maven.modrinth:geckolib:TSeTaM0B")
+        localRuntime("maven.modrinth:modonomicon:jH6bsw4F")
+    }
+
     implementation("com.simibubi.create:create-${minecraft_version}:${create_version}:slim") { transitive = false }
     implementation("net.createmod.ponder:Ponder-NeoForge-${minecraft_version}:${ponder_version}")
     compileOnly("dev.engine-room.flywheel:flywheel-neoforge-api-${minecraft_version}:${flywheel_version}")
