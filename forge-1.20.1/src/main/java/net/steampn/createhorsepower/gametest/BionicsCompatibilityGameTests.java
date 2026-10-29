@@ -36,4 +36,24 @@ public final class BionicsCompatibilityGameTests {
         requirePublishedApi(h);
         BionicsCompatibilityScenarios.stopResumeAndDetach(h);
     }
+
+    @GameTest(template = "kinetic_network", timeoutTicks = 200)
+    public static void realRiderWaterAndTamingPolicy(GameTestHelper h) {
+        requirePublishedApi(h);
+        // Exercise the *actual* loader config instead of only a mocked
+        // require-tame boolean. Restore synchronously before delayed water work.
+        boolean previous = net.steampn.createhorsepower.config.Config.REQUIRE_TAMED_HORSE.get();
+        net.steampn.createhorsepower.config.Config.REQUIRE_TAMED_HORSE.set(true);
+        try {
+            BionicsCompatibilityScenarios.realRiderWaterAndTamingPolicy(h);
+        } finally {
+            net.steampn.createhorsepower.config.Config.REQUIRE_TAMED_HORSE.set(previous);
+        }
+    }
+
+    @GameTest(template = "kinetic_network", timeoutTicks = 260)
+    public static void invalidTrackStopsRealFuelBurn(GameTestHelper h) {
+        requirePublishedApi(h);
+        BionicsCompatibilityScenarios.invalidTrackStopsRealFuelBurn(h);
+    }
 }
