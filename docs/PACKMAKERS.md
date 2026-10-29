@@ -51,7 +51,7 @@ Execution Lifecycle:
   Server-authoritative visual orbit gait (independent speed budget)
 ```
 
-Worker profiles and attachment profiles have loader-neutral datapack JSON surfaces; path resolution also supports loader-specific NeoForge Data Maps/KubeJS. See [Precedence Rules](#precedence-rules). In the current implementation, visible gait is deliberately independent from generated RPM: path/output multipliers can increase mechanical output without making animals sprint unrealistically fast.
+Worker profiles and attachment profiles have loader-neutral datapack JSON surfaces; path resolution also supports loader-specific NeoForge Data Maps/KubeJS. See [Precedence Rules](#precedence-rules). Visible gait is deliberately independent from generated RPM: path/output multipliers can increase mechanical output without making animals sprint unrealistically fast.
 
 ---
 
@@ -167,7 +167,7 @@ The source profile is chosen first using the normal KubeJS/shared-JSON/Data-Map/
 
 `speed_scaling` affects mechanical output only. The visual gait uses the separate server settings under `[workers]` documented below.
 
-In the current implementation, CE no longer ships its own bundled worker defaults as Data Map values. A value present in this Data Map is therefore an explicit datapack/packmaker override and stays above legacy server balance and CE bundled fallback profiles.
+CE keeps its bundled worker defaults in shared code rather than publishing them as Data Map values. A value present in this Data Map is therefore an explicit datapack/packmaker override and stays above legacy server balance and CE bundled fallback profiles.
 
 ### Path Stats Data Map (`createhorsepower:path_stats`)
 
@@ -194,7 +194,7 @@ In the current implementation, CE no longer ships its own bundled worker default
 | `speed_multiplier` | Float (>= 0) | `1.0` | Multiplier applied to mechanical RPM. |
 | `stress_multiplier` | Float (>= 0) | `1.0` | Multiplier applied to stress capacity. |
 
-In the current implementation, bundled CE path defaults are also resolved in common code instead of being shipped as Data Map values. Explicit datapack Data Maps remain above legacy path config and bundled defaults.
+Bundled CE path defaults are resolved in shared code instead of being published as Data Map values. Explicit datapack Data Maps remain above legacy path config and bundled defaults.
 
 ---
 
@@ -392,7 +392,7 @@ CE provides built-in TFC defaults for these IDs when they exist:
 - `tfc:dromedary_camel`
 - `tfc:bactrian_camel`
 
-In the current implementation, those TFC species defaults are bundled common-code fallbacks on both loaders rather than shipped NeoForge Data Map values. Shared worker JSON can override them on both loaders; NeoForge can additionally use an explicit Data Map or KubeJS profile. Changed legacy RPM/stress values can override their bundled base output according to the effective worker tier while preserving intended per-animal health scaling.
+Those TFC species defaults are bundled shared-code fallbacks on both loaders, not NeoForge Data Map values. Shared worker JSON can override them on both loaders; NeoForge can additionally use an explicit Data Map or KubeJS profile. Changed legacy RPM/stress values can override their bundled base output according to the effective worker tier while preserving intended per-animal health scaling.
 
 On Forge, registry IDs absent from the installed TFC version simply do nothing.
 
@@ -470,7 +470,7 @@ largeCreatures = ["minecraft:horse"]
     defaultRedstoneMode = "HIGH_STOPS"
 ```
 
-Bundled defaults keep vanilla dirt/grass, dirt path/gravel, and ice-family paths usable without manual config. Existing existing config files retain their stored legacy path entries rather than being rewritten.
+Bundled defaults keep vanilla dirt/grass, dirt path/gravel, and ice-family paths usable without manual config. Existing config files retain their stored legacy path entries rather than being rewritten.
 
 ### Visual gait settings
 
