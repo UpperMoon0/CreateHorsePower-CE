@@ -18,6 +18,7 @@ Enforced and reviewed with every release. "Full" means identical behavior to the
 | Durable unloaded-worker detach + orphan leash recovery | Full | Full |
 | Optional TerraFirmaCraft worker + terrain defaults | Full (shared registry-ID/path fallback; explicit Data Maps/KubeJS can override) | Full (shared registry-ID/path fallback; legacy config can override) |
 | Optional Icy's Better Horses 2.1.7 integration | Full within the [integration contract](icy-better-horses.md) | Full within the [integration contract](icy-better-horses.md) |
+| Optional Create: Bionics Oxhauler integration | Source-integrated; [two-mod runtime pending](create-bionics.md) | Source-integrated; [two-mod runtime pending](create-bionics.md) |
 | `/createhorsepower` diagnostics commands | Full | Full |
 | Transition-based `diagnostics.debugLogging` | Full | Full |
 | Create Goggles tooltips | Full | Full |
