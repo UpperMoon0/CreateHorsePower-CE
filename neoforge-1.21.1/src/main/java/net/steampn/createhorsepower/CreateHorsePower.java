@@ -69,6 +69,8 @@ public class CreateHorsePower {
         modContainer.registerConfig(ModConfig.Type.SERVER, Config.SPEC);
 
         NeoForge.EVENT_BUS.register(this);
+        NeoForge.EVENT_BUS.addListener(
+                net.steampn.createhorsepower.compat.CreateBionicsPartInteractions::onEntityInteract);
     }
 
     private void commonSetup(final FMLCommonSetupEvent event){
