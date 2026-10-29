@@ -176,7 +176,11 @@ public final class BionicsCompatibilityScenarios {
                 }
                 lastAngle[0] = angle;
                 if (++samples[0] < 150) {
-                    h.runAfterDelay(5, this);
+                    // GameTestInfo keys scheduled tasks by Runnable identity and
+                    // removes the current entry after invoking it. Scheduling
+                    // the same instance from inside run() gets deleted by that
+                    // removal; use a *fresh* callback object for each sample.
+                    h.runAfterDelay(5, () -> new Sampler().run());
                 } else {
                     int used = startFuel - get(robot, "getFuel");
                     h.assertTrue(totalAngle[0] >= 4 * Math.PI,
