@@ -1,0 +1,100 @@
+name: Bionics compatibility
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bionics-compatibility-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  real-bionics:
+    # Required non-skippable checks: mod presence, exact version and exact
+    # GameTest execution count. This is distinct from the Bionics-free CI.
+    name: Real Bionics ${{ matrix.version }} / ${{ matrix.project }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - project: forge-1.20.1
+            version: 2.0.0-source
+          - project: neoforge-1.21.1
+            version: 2.5.0-release
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up JDK 17 for pinned Forge Bionics source
+        if: matrix.project == 'forge-1.20.1'
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # IMPORTANT: Forge 2.0.0 is in public upstream source but has no
+      # verified official published jar. Build exact source, never masquerade
+      # as a downloadable release. This check is real-mod, but NOT a released-
+      # binary validation until the upstream publisher supplies a jar.
+      - name: Build exactly pinned upstream Forge Bionics 2.0.0 jar
+        if: matrix.project == 'forge-1.20.1'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone https://github.com/Dshbwlto/Create-Bionics-1.20.1.git upstream-bionics
+          cd upstream-bionics
+          git checkout --detach d597264a86c0e6d655e4bc9ffec23be292382882
+          test "$(git rev-parse HEAD)" = d597264a86c0e6d655e4bc9ffec23be292382882
+          chmod +x ./gradlew
+          ./gradlew build --stacktrace --no-daemon
+          test -s build/libs/createbionics-2.0.0.jar
+          mkdir -p ../forge-1.20.1/build/bionics-runtime
+          cp build/libs/createbionics-2.0.0.jar ../forge-1.20.1/build/bionics-runtime/createbionics-2.0.0.jar
+          sha256sum ../forge-1.20.1/build/bionics-runtime/createbionics-2.0.0.jar
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v4
+      - run: chmod +x ./gradlew
+
+      - name: Build CHP with actual pinned upstream Bionics runtime
+        env:
+          PROJECT: ${{ matrix.project }}
+        run: ./gradlew ":${PROJECT}:build" -PbionicsCompatibilityTest=true --stacktrace --no-daemon
+
+      - name: Execute isolated real Oxhauler GameTests
+        env:
+          PROJECT: ${{ matrix.project }}
+        run: ./gradlew ":${PROJECT}:runGameTestServer" -PbionicsCompatibilityTest=true --stacktrace --no-daemon
+
+      - name: Reject skipped scenarios, wrong versions and startup-only success
+        env:
+          PROJECT: ${{ matrix.project }}
+        run: python3 scripts/assert_bionics_gametests.py --project "$PROJECT"
+
+      - name: Save and reload a real Bionics entity through separate JVMs
+        env:
+          PROJECT: ${{ matrix.project }}
+        run: python3 scripts/run_bionics_restart_probe.py --project "$PROJECT"
+
+      - name: Upload isolated evidence on success or failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bionics-${{ matrix.project }}-evidence
+          path: |
+            ${{ matrix.project }}/run/logs
+            ${{ matrix.project }}/build/reports/tests
+            ${{ matrix.project }}/build/bionics-restart-evidence
+            ${{ matrix.project }}/build/bionics-runtime
+          if-no-files-found: ignore
+          retention-days: 7
