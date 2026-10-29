@@ -112,6 +112,48 @@ public final class BionicsCompatibilityScenarios {
         h.succeed();
     }
 
+    public static void realRiderWaterAndTamingPolicy(GameTestHelper h) {
+        Mob robot = oxhauler(h, 3, 500);
+        h.assertTrue(WorkerResolver.resolve(robot).isValid(),
+                "Assembled Oxhauler must work even with configured requireTamedHorse=true");
+        var rider = h.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+        h.assertTrue(rider.startRiding(robot, true), "Test player failed to mount real Oxhauler");
+        h.assertTrue(robot.isVehicle() && !CreateBionicsCompat.canWork(robot),
+                "Ridden real Bionics Oxhauler must be ineligible");
+        rider.stopRiding();
+        h.assertTrue(CreateBionicsCompat.canWork(robot),
+                "Real Oxhauler must become eligible after dismount");
+        h.setBlock(SPAWN, Blocks.WATER);
+        h.runAfterDelay(8, () -> {
+            h.assertTrue(robot.isInWater(), "Real robot did not enter a water block");
+            h.assertTrue(!WorkerResolver.resolve(robot).isValid(),
+                    "Submerged real Oxhauler must not generate power");
+            h.succeed();
+        });
+    }
+
+    public static void invalidTrackStopsRealFuelBurn(GameTestHelper h) {
+        AbstractHorseCrankBlockEntity crank = crank(h);
+        Mob robot = oxhauler(h, 3, 800);
+        attach(h, crank, robot);
+        h.runAfterDelay(40, () -> {
+            h.assertTrue(crank.engine().generatedSpeed() != 0, "Real crank must start before track removal");
+            for (BlockPos offset : HorseCrankEngine.generateOffsetsForRadius(3.0f)) {
+                h.setBlock(CRANK.offset(offset), Blocks.AIR);
+            }
+            h.runAfterDelay(100, () -> {
+                h.assertTrue(crank.engine().generatedSpeed() == 0,
+                        "Invalid path must stop real Bionics crank output");
+                int stoppedFuel = get(robot, "getFuel");
+                h.runAfterDelay(35, () -> {
+                    h.assertTrue(get(robot, "getFuel") == stoppedFuel,
+                            "Invalid-track shutdown must not consume Bionics fuel");
+                    h.succeed();
+                });
+            });
+        });
+    }
+
     public static void actualOrbitAndFuelDebit(GameTestHelper h) {
         AbstractHorseCrankBlockEntity crank = crank(h);
         Mob robot = oxhauler(h, 3, 2000);
