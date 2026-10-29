@@ -1,8 +1,8 @@
 # Feature Compatibility Matrix
 
-Enforced and reviewed with every release. "Full" means identical behavior to the rest of the mod on that version unless the row explicitly describes a loader-specific implementation.
+This matrix describes supported loader **families**, not a promise that every upstream dependency release is compatible. "Full" means the documented behavior is implemented for that loader, subject to the dependencies selected for each CE release. See the [release history](../changelog/) and [current CI](../.github/workflows/ci.yml) for exact supported artifacts and verified builds.
 
-| Feature | NeoForge 1.21.1 | Forge 1.20.1 |
+| Feature | NeoForge | Forge |
 |---|---|---|
 | Horse Crank block + block entity (attach/detach/wrench/comparator) | Full | Full |
 | Worker resolution (shared JSON + built-ins/tags/config; optional Data Maps on NeoForge) | Full | Full |
@@ -17,8 +17,8 @@ Enforced and reviewed with every release. "Full" means identical behavior to the
 | Reusable animal-power engine / bounded worker assignments | Full | Full |
 | Durable unloaded-worker detach + orphan leash recovery | Full | Full |
 | Optional TerraFirmaCraft worker + terrain defaults | Full (shared registry-ID/path fallback; explicit Data Maps/KubeJS can override) | Full (shared registry-ID/path fallback; legacy config can override) |
-| Optional Icy's Better Horses 2.1.7 integration | Full within the [integration contract](icy-better-horses.md) | Full within the [integration contract](icy-better-horses.md) |
-| Optional Create: Bionics Oxhauler integration | [Real 2.5.0 CI configured; client hitbox acceptance pending](create-bionics.md) | [Pinned 2.0.0 source-built CI configured; official release binary unverified](create-bionics.md) |
+| Optional Icy's Better Horses integration | Full within the [integration contract](icy-better-horses.md) | Full within the [integration contract](icy-better-horses.md) |
+| Optional Create: Bionics Oxhauler integration | [Server behavior and real multipart part interactions tested; client raycast/packet acceptance is separate](create-bionics.md) | [Server Oxhauler behavior exercised by a real-mod test suite; binary provenance tracked per release](create-bionics.md) |
 | `/createhorsepower` diagnostics commands | Full | Full |
 | Transition-based `diagnostics.debugLogging` | Full | Full |
 | Create Goggles tooltips | Full | Full |
@@ -33,6 +33,4 @@ Enforced and reviewed with every release. "Full" means identical behavior to the
 
 TerraFirmaCraft is never a required runtime dependency. CE only activates its built-in TFC defaults for registry IDs that actually exist. Those defaults are shared bundled fallbacks rather than NeoForge Data Map entries; shared worker JSON can override them on both loaders, with KubeJS/Data Maps providing additional NeoForge-only layers according to documented precedence.
 
-Rule: a feature may only be advertised as "supported" on a version when this
-matrix lists it as Full there. When porting a missing feature, move the row to
-Full in the same change.
+Rule: advertise a feature as supported for a loader only when the implementation and relevant tests justify it. Track release-specific verification, pinned dependencies and limitations in the matching [versioned release notes](../changelog/). Real server-side checks do not imply successful graphical-client multiplayer interaction or visual QA.
