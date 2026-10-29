@@ -209,19 +209,17 @@ public class WorkerResolver {
         }
 
         // Bionics Oxhaulers are assembled machines, not tameable livestock.
-        // Forge models one as an already-tamed AbstractHorse; NeoForge models
-        // one as an untamed TamableAnimal with no taming mechanic. Apply the
-        // animal-only taming rule consistently on both loaders, without
-        // relaxing the robot's fuel/assembly or other worker restrictions.
-        if ((stats.requiresTamed() || CHPApi.config().requireTamedHorse())
-                && !net.steampn.createhorsepower.compat.CreateBionicsCompat.bypassesAnimalTaming(
-                        net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(mob.getType()).toString())) {
-            if (mob instanceof AbstractHorse horse && !horse.isTamed()) {
-                return ResolvedWorker.INVALID;
-            }
-            if (mob instanceof TamableAnimal tamable && !tamable.isTame()) {
-                return ResolvedWorker.INVALID;
-            }
+        // Forge reports them tamed, while NeoForge inherits a false tame flag
+        // and supplies no taming mechanic. Preserve the exact animal policy
+        // for every other worker and both require-tame configuration sources.
+        boolean tamingRequired = stats.requiresTamed() || CHPApi.config().requireTamedHorse();
+        boolean isTamed = true; // Non-tameable worker types have no tame constraint.
+        if (mob instanceof AbstractHorse horse) isTamed = horse.isTamed();
+        if (mob instanceof TamableAnimal tamable) isTamed = tamable.isTame();
+        if (!net.steampn.createhorsepower.compat.CreateBionicsCompat.meetsTamingPolicy(
+                net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(mob.getType()).toString(),
+                tamingRequired, isTamed)) {
+            return ResolvedWorker.INVALID;
         }
 
         float baseRpm = stats.baseRpm();
