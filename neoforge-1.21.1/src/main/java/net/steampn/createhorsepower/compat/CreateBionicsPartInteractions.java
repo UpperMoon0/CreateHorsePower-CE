@@ -24,12 +24,14 @@ public final class CreateBionicsPartInteractions {
         if (!CreateBionicsCompat.shouldRedirectPartLead(entityId, true,
                 event.getEntity().getItemInHand(event.getHand()).is(Items.LEAD))) return;
 
-        // Calling Mob.interact directly does not re-fire this event; the
-        // player interaction event is emitted in Player.interactOn instead.
-        // The parent handles vanilla lead attach/drop with the same behavior
-        // as clicking the Oxhauler's central body, rather than tool-part
-        // mobInteract() mounting the player while a lead is held.
-        InteractionResult result = parent.interact(event.getEntity(), event.getHand());
+        // Use Player.interactOn rather than calling Mob.interact directly:
+        // NeoForge intercepts this event *before* Player.interactOn snapshots
+        // the held stack. A direct Mob.interact call would bypass the creative
+        // lead-count restoration and onPlayerDestroyItem for the last survival
+        // lead. Re-enter the normal player pipeline targeting the *parent*,
+        // where this listener's PartEntity filter prevents recursive routing.
+        // This also preserves other mods' standard parent-entity event hooks.
+        InteractionResult result = event.getEntity().interactOn(parent, event.getHand());
         event.setCancellationResult(result);
         event.setCanceled(true);
     }
