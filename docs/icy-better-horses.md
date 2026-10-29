@@ -1,6 +1,6 @@
 # Icy's Better Horses integration
 
-Icy's Better Horses remains **optional** on both supported Forge and NeoForge loader families. The current matched binary versions, source commits, Modrinth artifacts, licensing observations and CI evidence belong in the [versioned Icy acceptance record](../changelog/1.2.9-icy-acceptance.md), not in this stable API/behavior guide. Use the selected CE release metadata when installing optional dependencies.
+Icy's Better Horses remains **optional** on both supported Forge and NeoForge loader families. The current matched binary versions, source commits, Modrinth artifacts, licensing observations and CI evidence belong in the [versioned Icy acceptance record](../changelog/), not in this stable API/behavior guide. Use the selected CE release metadata when installing optional dependencies.
 
 ## Worker contract
 
@@ -37,7 +37,7 @@ Inherited movement speed contributes to mechanical RPM, and max health to stress
 
 ## Loader and compatibility limits
 
-CE provides supported **Forge and NeoForge builds**, not an arbitrary cross-loader jar. Do not mix their mod artifacts. Breed IDs added or changed upstream may require a pack-authored worker profile and a new compatibility check. Concurrent cart, wagon and crank controllers are intentionally excluded. Consult the [per-release test evidence](../changelog/1.2.9-icy-acceptance.md) and [current Actions history](https://github.com/UpperMoon0/CreateHorsePower-CE/actions) before claiming a particular third-party binary has been verified.
+CE provides supported **Forge and NeoForge builds**, not an arbitrary cross-loader jar. Do not mix their mod artifacts. Breed IDs added or changed upstream may require a pack-authored worker profile and a new compatibility check. Concurrent cart, wagon and crank controllers are intentionally excluded. Consult the [per-release test evidence](../changelog/) and [current Actions history](https://github.com/UpperMoon0/CreateHorsePower-CE/actions) before claiming a particular third-party binary has been verified.
 
 ## Reproducible verification
 
