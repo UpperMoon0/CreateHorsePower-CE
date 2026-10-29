@@ -97,6 +97,7 @@ neoForge {
                 systemProperty 'createhorsepower.restart.dir', project.file(providers.gradleProperty('chpRestartDirectory').get()).absolutePath
                 systemProperty 'createhorsepower.icyExpected', providers.gradleProperty('icyCompatibilityTest').getOrElse('false')
                 if (providers.gradleProperty('bionicsCompatibilityTest').getOrElse('false').toBoolean()) {
+                    systemProperty 'createhorsepower.bionicsExpected', 'true'
                     systemProperty 'createhorsepower.bionicsRestartPhase', providers.gradleProperty('chpRestartPhase').get()
                 }
             }
