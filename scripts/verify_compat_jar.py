@@ -21,7 +21,11 @@ def verify(path: Path, platform: str) -> dict:
         files = set(jar.namelist())
         assert CONFIG in files, f"{path}: missing optional mixin config"
         config = json.loads(jar.read(CONFIG))
-        assert set(config["mixins"]) == MIXINS, (\n            f"{path}: optional hooks differ from required Icy and Bionics mixins: "\n            f"missing={sorted(MIXINS - set(config[\'mixins\']))}, "\n            f"unexpected={sorted(set(config[\'mixins\']) - MIXINS)}"\n        )
+        assert set(config["mixins"]) == MIXINS, (
+            f"{path}: optional hooks differ from required Icy and Bionics mixins: "
+            f"missing={sorted(MIXINS - set(config['mixins']))}, "
+            f"unexpected={sorted(set(config['mixins']) - MIXINS)}"
+        )
         assert config["plugin"] == "net.steampn.createhorsepower.compat.mixin.IcyMixinPlugin", (
             f"{path}: missing bytecode-only optional bootstrap guard"
         )
