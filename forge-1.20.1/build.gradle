@@ -76,11 +76,17 @@ minecraft {
                 property 'createhorsepower.restart.phase', providers.gradleProperty('chpRestartPhase').get()
                 property 'createhorsepower.restart.dir', project.file(providers.gradleProperty('chpRestartDirectory').get()).absolutePath
                 property 'createhorsepower.icyExpected', providers.gradleProperty('icyCompatibilityTest').getOrElse('false')
+                if (providers.gradleProperty('bionicsCompatibilityTest').getOrElse('false').toBoolean()) {
+                    property 'createhorsepower.bionicsRestartPhase', providers.gradleProperty('chpRestartPhase').get()
+                }
             }
         }
 
         gameTestServer {
-            property 'forge.enabledGameTestNamespaces', providers.gradleProperty('icyCompatibilityTest').getOrElse('false').toBoolean() ? 'createhorsepower_icy' : "${mod_id},minecraft,createhorsepower_icy"
+            property 'forge.enabledGameTestNamespaces', providers.gradleProperty('bionicsCompatibilityTest').getOrElse('false').toBoolean()
+                    ? 'createhorsepower_bionics'
+                    : (providers.gradleProperty('icyCompatibilityTest').getOrElse('false').toBoolean() ? 'createhorsepower_icy' : "${mod_id},minecraft,createhorsepower_icy")
+            property 'createhorsepower.bionicsExpected', providers.gradleProperty('bionicsCompatibilityTest').getOrElse('false')
             property 'createhorsepower.icyExpected', providers.gradleProperty('icyCompatibilityTest').getOrElse('false')
         }
 
@@ -104,6 +110,9 @@ tasks.matching { it.name == 'runGameTestServer' }.configureEach {
 }
 
 repositories {
+    // CI builds the pinned upstream Forge 2.0.0 source: that upstream
+    // version has no published release jar. Never silently substitute a jar.
+    flatDir { dirs project.file('build/bionics-runtime') }
     maven {
         name = 'tterrag maven'
         url = 'https://maven.tterrag.com/'
@@ -132,6 +141,11 @@ repositories {
 }
 
 dependencies {
+    if (providers.gradleProperty('bionicsCompatibilityTest').getOrElse('false').toBoolean()) {
+        def jar = project.file('build/bionics-runtime/createbionics-2.0.0.jar')
+        if (!jar.isFile()) throw new GradleException("Missing pinned upstream Forge Bionics 2.0.0 jar: ${jar}; use the dedicated CI source-build step")
+        runtimeOnly(fg.deobf("bionics.local:createbionics:2.0.0"))
+    }
     // Opt-in, exact released artifacts: never packaged with CHP or required by users.
     if (providers.gradleProperty('icyCompatibilityTest').getOrElse('false').toBoolean()) {
         runtimeOnly(fg.deobf("maven.modrinth:icys-better-horses:kXpI9qsc"))
