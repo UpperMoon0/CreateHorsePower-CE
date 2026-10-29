@@ -107,3 +107,24 @@ jobs:
             ${{ matrix.project }}/build/reports/tests
           if-no-files-found: ignore
           retention-days: 7
+
+  bionics-integration:
+    name: Required real Bionics integration
+    needs: shared-gates
+    uses: ./.github/workflows/bionics-compatibility.yml
+
+  acceptance-gate:
+    name: Required runtime acceptance gate
+    if: always()
+    needs: [shared-gates, platform-runtime, bionics-integration]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require ordinary and real Bionics runtimes to pass
+        env:
+          PARITY: ${{ needs.shared-gates.result }}
+          NORMAL: ${{ needs.platform-runtime.result }}
+          BIONICS: ${{ needs.bionics-integration.result }}
+        run: |
+          test "$PARITY" = success
+          test "$NORMAL" = success
+          test "$BIONICS" = success
