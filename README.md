@@ -19,6 +19,8 @@ On both loaders, Jade integration activates automatically when Jade is installed
 
 Icy's Better Horses **2.1.7** is optional on both loaders. All fifteen released breeds can work cranks with Icy ownership/trust, recall and transport rules preserved. See the [integration contract and coverage](docs/icy-better-horses.md).
 
+Create: Bionics is also optional on both loaders. Its fully assembled, fueled **Oxhauler** can drive the Horse Crank, consuming its own finite fuel while working; other Bionics robots are not draft workers. See the [Bionics integration contract](docs/create-bionics.md) for exact behavior and verification limits.
+
 ## Highlights
 
 - Persistent Horse Cranks with durable worker ownership and orphan-leash recovery across chunk unload/save/reload cycles.
