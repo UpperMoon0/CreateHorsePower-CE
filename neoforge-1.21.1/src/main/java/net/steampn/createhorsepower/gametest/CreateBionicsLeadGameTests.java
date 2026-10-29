@@ -29,7 +29,7 @@ import net.steampn.createhorsepower.compat.CreateBionicsPartInteractions;
 public final class CreateBionicsLeadGameTests {
     private CreateBionicsLeadGameTests() {}
 
-    private static final class DestroyTracker {
+    public static final class DestroyTracker {
         private final Player player;
         private int calls;
         private ItemStack original = ItemStack.EMPTY;
