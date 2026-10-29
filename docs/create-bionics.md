@@ -6,6 +6,8 @@ Create Horse Power CE recognizes the **Oxhauler** robotic draft worker on suppor
 
 Only the registry ID `createbionics:oxhauler` selects this integration. Other Bionics robots are not automatically draft workers. CHP reads the public robot `getFuel()`, `setFuel(int)`, and `getAssembly()` methods through an optional, cached adapter. The two loader implementations have different fuel APIs: Forge exposes a creative Blaze Cake flag, while NeoForge exposes `isFueled()` and its own infinite-fuel sentinel. CHP recognizes each supported API variant separately and rejects unknown/ineffective fuel-setter behavior rather than granting free kinetic power.
 
+The Forge upstream Oxhauler currently invokes Create's **client-only ambient soundscape API** from its dedicated-server tick, which can read an unloaded client config and crash the server. CE's optional Bionics-only mixin guards that soundscape helper on the logical server while preserving the real entity's tick, movement, fuel behavior and client-side audio. The NeoForge implementation already guards the same helper.
+
 Bionics still controls robot inventory, assembly, fuel serialization, appearance, animations and multipart machinery. CHP handles crank output, worker assignment and safe recovery through its shared animal-power engine.
 
 ## In-game contract
