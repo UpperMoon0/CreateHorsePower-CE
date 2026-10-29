@@ -10,6 +10,9 @@ a = p.parse_args()
 root = Path(__file__).resolve().parents[1]
 fixture = root / a.project / "src/main/java/net/steampn/createhorsepower/gametest/BionicsCompatibilityGameTests.java"
 expected = fixture.read_text(encoding="utf-8").count("@GameTest(")
+if a.project == "neoforge-1.21.1":
+    actual_parts = fixture.parent / "BionicsPartGameTests.java"
+    expected += actual_parts.read_text(encoding="utf-8").count("@GameTest(")
 log_file = root / a.project / "run/logs/latest.log"
 if not log_file.is_file():
     raise SystemExit("No real GameTest server log: " + str(log_file))
