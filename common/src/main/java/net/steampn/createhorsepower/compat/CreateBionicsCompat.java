@@ -4,6 +4,9 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.entity.Mob;
 
 import java.lang.reflect.Method;
+import java.util.Collections;
+import java.util.Map;
+import java.util.WeakHashMap;
 
 /**
  * Optional Create: Bionics Oxhauler contract for Forge 1.20.1 and NeoForge 1.21.1.
@@ -25,9 +28,12 @@ public final class CreateBionicsCompat {
         return isOxhauler(BuiltInRegistries.ENTITY_TYPE.getKey(mob.getType()).toString());
     }
 
-    private record Api(Method fuel, Method setFuel, Method assembly, Method creativeCake) {
+    private record Api(Method fuel, Method setFuel, Method assembly, Method creativeCake,
+                       boolean neoForgeInfiniteFuel) {
         boolean available() {
-            return fuel != null && setFuel != null && assembly != null;
+            // Refuse unknown API variants rather than infer infinite fuel from a missing method.
+            return fuel != null && setFuel != null && assembly != null
+                    && (creativeCake != null || neoForgeInfiniteFuel);
         }
     }
 
@@ -43,22 +49,54 @@ public final class CreateBionicsCompat {
                     // Forge 1.20.1 stores an independent creative-cake flag.
                     creativeCake = type.getMethod("hasBlazeCake");
                 } catch (NoSuchMethodException ignored) {
-                    // NeoForge 1.21.1 uses fuel == -1 for infinite fuel.
                     creativeCake = null;
                 }
-                return new Api(fuel, setFuel, assembly, creativeCake);
+
+                // NeoForge 1.21.1 inherits isFueled() from AbstractRobot and
+                // uses fuel == -1. Forge 1.20.1 does neither.
+                boolean neoForgeInfiniteFuel = false;
+                if (creativeCake == null) {
+                    try {
+                        neoForgeInfiniteFuel = type.getMethod("isFueled").getReturnType() == boolean.class;
+                    } catch (NoSuchMethodException ignored) {
+                        // Unknown API, not an infinite-fuel grant.
+                    }
+                }
+                return new Api(fuel, setFuel, assembly, creativeCake, neoForgeInfiniteFuel);
             } catch (ReflectiveOperationException | SecurityException | LinkageError e) {
-                return new Api(null, null, null, null);
+                return new Api(null, null, null, null, false);
             }
         }
     };
 
-    static boolean operational(int assembly, int fuel, boolean riding, boolean inWater) {
-        return assembly >= 3 && (fuel > 0 || fuel == -1) && !riding && !inWater;
+    // Per-entity, fail-closed latch. A setter which throws or silently ignores a
+    // write must never allow a readable (but unchanged) fuel value to power ticks.
+    // Weak keys avoid retaining unloaded/discarded entities indefinitely.
+    private static final Map<Object, Boolean> FAILED_FUEL_WRITES =
+            Collections.synchronizedMap(new WeakHashMap<>());
+
+    static boolean operational(int assembly, int fuel, boolean riding, boolean inWater,
+                               boolean neoForgeInfiniteFuel) {
+        return assembly >= 3 && (fuel > 0 || (neoForgeInfiniteFuel && fuel == -1))
+                && !riding && !inWater;
     }
 
     static int fuelAfterWorkTick(int fuel, boolean creativeCake) {
         return fuel > 0 && !creativeCake ? fuel - 1 : fuel;
+    }
+
+    /** Shared by the live worker gate and reflection-backed regression fixtures. */
+    static boolean canUseFuel(Object entity, boolean riding, boolean inWater) {
+        if (FAILED_FUEL_WRITES.containsKey(entity)) return false;
+        Api api = API.get(entity.getClass());
+        if (!api.available()) return false;
+        try {
+            int assembly = ((Number) api.assembly().invoke(entity)).intValue();
+            int fuel = ((Number) api.fuel().invoke(entity)).intValue();
+            return operational(assembly, fuel, riding, inWater, api.neoForgeInfiniteFuel());
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+            return false;
+        }
     }
 
     /**
@@ -67,35 +105,44 @@ public final class CreateBionicsCompat {
      * Oxhauler cannot be controlled by the crank simultaneously.
      */
     public static boolean canWork(Mob mob) {
-        if (!isOxhauler(mob)) return true;
-        Api api = API.get(mob.getClass());
+        return !isOxhauler(mob) || canUseFuel(mob, mob.isVehicle() || mob.isPassenger(), mob.isInWater());
+    }
+
+    /**
+     * Consume a finite unit and confirm that Bionics actually stored the new
+     * value. A failed/no-op write latches the entity ineligible for work.
+     */
+    static boolean consumeFuel(Object entity) {
+        if (FAILED_FUEL_WRITES.containsKey(entity)) return false;
+        Api api = API.get(entity.getClass());
         if (!api.available()) return false;
         try {
-            int assembly = ((Number) api.assembly().invoke(mob)).intValue();
-            int fuel = ((Number) api.fuel().invoke(mob)).intValue();
-            return operational(assembly, fuel, mob.isVehicle() || mob.isPassenger(), mob.isInWater());
+            int fuel = ((Number) api.fuel().invoke(entity)).intValue();
+            if (fuel <= 0 && !(api.neoForgeInfiniteFuel() && fuel == -1)) return false;
+
+            boolean creativeCake = api.creativeCake() != null
+                    && Boolean.TRUE.equals(api.creativeCake().invoke(entity));
+            int next = fuelAfterWorkTick(fuel, creativeCake);
+            if (next == fuel) return true;
+
+            api.setFuel().invoke(entity, next);
+            if (((Number) api.fuel().invoke(entity)).intValue() != next) {
+                FAILED_FUEL_WRITES.put(entity, true);
+                return false;
+            }
+            return true;
         } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
-            return false; // Incompatible Bionics version: no free power.
+            FAILED_FUEL_WRITES.put(entity, true);
+            return false;
         }
     }
 
     /**
-     * Bionics charges fuel only while ridden. Charge exactly once per active
-     * crank tick too; preserve both variants' creative/infinite fuel behavior.
+     * Bionics charges fuel only while ridden. Charge once per active crank tick;
+     * return false immediately on any inability to pay so the engine can stop
+     * generation and refresh Create's kinetic network in the same tick.
      */
-    public static void consumeWorkFuel(Mob mob) {
-        if (!isOxhauler(mob)) return;
-        Api api = API.get(mob.getClass());
-        if (!api.available()) return;
-        try {
-            int fuel = ((Number) api.fuel().invoke(mob)).intValue();
-            boolean creativeCake = api.creativeCake() != null
-                    && Boolean.TRUE.equals(api.creativeCake().invoke(mob));
-            int next = fuelAfterWorkTick(fuel, creativeCake);
-            if (next != fuel) api.setFuel().invoke(mob, next);
-        } catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) {
-            // An API mismatch fails eligibility on the next tick if unreadable;
-            // never rewrite Bionics data or deplete another entity type.
-        }
+    public static boolean consumeWorkFuel(Mob mob) {
+        return !isOxhauler(mob) || consumeFuel(mob);
     }
 }
