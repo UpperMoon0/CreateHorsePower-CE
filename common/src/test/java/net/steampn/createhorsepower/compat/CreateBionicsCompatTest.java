@@ -30,6 +30,32 @@ class CreateBionicsCompatTest {
     }
 
     @Test
+    void assembledForgeAndNeoForgeRobotsBypassAnimalTamingRequirement() {
+        // The same registered robot is an AbstractHorse declared tamed in Forge
+        // and an untamed TamableAnimal in NeoForge with no taming interaction.
+        String forgeEntityId = "createbionics:oxhauler";
+        String neoForgeEntityId = "createbionics:oxhauler";
+        assertTrue(CreateBionicsCompat.bypassesAnimalTaming(forgeEntityId));
+        assertTrue(CreateBionicsCompat.bypassesAnimalTaming(neoForgeEntityId));
+        assertFalse(CreateBionicsCompat.bypassesAnimalTaming("minecraft:horse"));
+        assertFalse(CreateBionicsCompat.bypassesAnimalTaming("createbionics:anole"));
+        // The robot still needs fuel/assembly regardless of the exemption.
+        assertFalse(CreateBionicsCompat.operational(2, 20, false, false, true));
+        assertFalse(CreateBionicsCompat.operational(3, 0, false, false, true));
+        assertTrue(CreateBionicsCompat.operational(3, 20, false, false, true));
+    }
+
+    @Test
+    void onlyLeadsOnOxhaulerMultipartHitboxesAreForwarded() {
+        assertTrue(CreateBionicsCompat.shouldRedirectPartLead("createbionics:oxhauler", true, true));
+        assertFalse(CreateBionicsCompat.shouldRedirectPartLead("createbionics:oxhauler", false, true));
+        assertFalse(CreateBionicsCompat.shouldRedirectPartLead("createbionics:oxhauler", true, false));
+        assertFalse(CreateBionicsCompat.shouldRedirectPartLead("minecraft:horse", true, true));
+        assertFalse(CreateBionicsCompat.shouldRedirectPartLead("createbionics:anole", true, true));
+        assertFalse(CreateBionicsCompat.shouldRedirectPartLead(null, true, true));
+    }
+
+    @Test
     void burnsOneFuelOnlyForFiniteNonCreativeWork() {
         assertEquals(99, CreateBionicsCompat.fuelAfterWorkTick(100, false));
         assertEquals(0, CreateBionicsCompat.fuelAfterWorkTick(1, false));
