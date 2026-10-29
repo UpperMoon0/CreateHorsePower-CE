@@ -37,15 +37,15 @@ Create Horse Power CE turns the Horse Crank into a data-driven animal power fram
 ```text
 Execution Lifecycle:
   Leash Bound (#createhorsepower:attachment_items)
-        â†“
+        ↓
   Worker Resolution & Validation (Alive, Species, Baby rules, Tamed rules, Undead rules)
-        â†“
+        ↓
   Path Scanning (Weighted Average, Worst Block, Legacy)
-        â†“
+        ↓
   Redstone Evaluation (Ignore, High Stops, High Runs)
-        â†“
+        ↓
   beforeWorkStart (optional KubeJS hook on NeoForge)
-        â†“
+        ↓
   Mechanical RPM / Stress Generation
         +
   Server-authoritative visual orbit gait (independent speed budget)
@@ -538,4 +538,4 @@ For live incident debugging, enable `diagnostics.debugLogging`, reproduce the at
 
 ## Release-specific migrations
 
-This guide describes the current APIs and configuration precedence, not historical version transitions. For upgrades from older CE releases, consult the [historical migration notes](../changelog/1.2-migration-notes.md) and the matching [versioned changelog](../changelog/). Back up the world and server configuration before upgrading.
+This guide describes the current APIs and configuration precedence, not historical version transitions. For upgrades from older CE releases, consult the [historical migration notes](../changelog/) and the matching [versioned changelog](../changelog/). Back up the world and server configuration before upgrading.
