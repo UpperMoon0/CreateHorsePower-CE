@@ -223,7 +223,9 @@ public class AnimalPowerEngine {
         return host.hasWorkerProperty()
                 && workerResolved
                 && workerEligible
-                && (cachedWorkerMob == null || net.steampn.createhorsepower.compat.IcyBetterHorses.canWork(cachedWorkerMob))
+                && (cachedWorkerMob == null || (
+                        net.steampn.createhorsepower.compat.IcyBetterHorses.canWork(cachedWorkerMob)
+                        && net.steampn.createhorsepower.compat.CreateBionicsCompat.canWork(cachedWorkerMob)))
                 && hasValidWorkingBlocks
                 && !isStoppedByRedstone()
                 && !suppressGeneration
@@ -965,6 +967,9 @@ public class AnimalPowerEngine {
         // 4. Move animal along track if active
         if (isWorking && cachedWorkerMob != null) {
             moveWorkerTo(cachedWorkerMob);
+            // Bionics burns fuel while a player rides, but not when the crank
+            // supplies movement. Match that operating cost without a hard mod dependency.
+            net.steampn.createhorsepower.compat.CreateBionicsCompat.consumeWorkFuel(cachedWorkerMob);
         }
     }
 
