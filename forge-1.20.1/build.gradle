@@ -143,7 +143,8 @@ repositories {
 dependencies {
     if (providers.gradleProperty('bionicsCompatibilityTest').getOrElse('false').toBoolean()) {
         def jar = project.file('build/bionics-runtime/createbionics-2.0.0.jar')
-        if (!jar.isFile()) throw new GradleException("Missing pinned upstream Forge Bionics 2.0.0 jar: ${jar}; use the dedicated CI source-build step")
+        // The selected Forge runtime task will fail dependency resolution if this
+        // exact jar is missing. Other-loader Gradle configuration must remain possible.
         runtimeOnly(fg.deobf("bionics.local:createbionics:2.0.0"))
     }
     // Opt-in, exact released artifacts: never packaged with CHP or required by users.
