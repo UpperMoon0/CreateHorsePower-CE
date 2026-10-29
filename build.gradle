@@ -72,7 +72,9 @@ def PLATFORM_ONLY_SOURCES = [
         'net/steampn/createhorsepower/platform/ForgeItemStackPersistence.java',
         'net/steampn/createhorsepower/platform/NeoForgeItemStackPersistence.java',
         'net/steampn/createhorsepower/gametest/ForgeRecoveryEdgeGameTests.java',
-        'net/steampn/createhorsepower/gametest/NeoForgeRecoveryEdgeGameTests.java'
+        'net/steampn/createhorsepower/gametest/NeoForgeRecoveryEdgeGameTests.java',
+        // NeoForge-only PartEntity event hook for optional Bionics tool hitboxes.
+        'net/steampn/createhorsepower/compat/CreateBionicsPartInteractions.java'
 ] as Set
 def PLATFORM_ONLY_PREFIXES = [
         // Loader-specific integrations and data generation APIs.
