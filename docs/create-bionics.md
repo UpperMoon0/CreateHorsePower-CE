@@ -1,6 +1,6 @@
 # Optional Create: Bionics integration
 
-Create Horse Power CE recognizes the **Oxhauler** robotic draft worker on supported **Forge** and **NeoForge** builds. Both mods remain optional relative to each other: CE does not link Bionics classes or require Bionics in normal installations. The specific artifact/dependency pins and acceptance status for a release are recorded in its [versioned Bionics test record](../changelog/1.2.10-bionics-acceptance.md), not in this evergreen contract.
+Create Horse Power CE recognizes the **Oxhauler** robotic draft worker on supported **Forge** and **NeoForge** builds. Both mods remain optional relative to each other: CE does not link Bionics classes or require Bionics in normal installations. The specific artifact/dependency pins and acceptance status for a release are recorded in its [versioned Bionics test record](../changelog/), not in this evergreen contract.
 
 ## Integration boundary
 
@@ -29,4 +29,4 @@ Run the repository's **ordinary no-Bionics builds and GameTests** for both suppo
 
 **Server-side multipart tests are not client acceptance.** Real client raycasting, target hitbox selection, end-to-end interaction packets, render/animation results, and survival/creative behavior in multiplayer require separate client + dedicated-server evidence. Do not report those as verified merely because the headless GameTests are green.
 
-The current CI wiring lives in [the compatibility workflow](../.github/workflows/bionics-compatibility.yml), and the [main CI workflow](../.github/workflows/ci.yml) makes both loader lanes required. Dependency pins, source-versus-published-binary provenance, specific run outcomes and outstanding release acceptance belong in [release-scoped test evidence](../changelog/1.2.10-bionics-acceptance.md). Verify those records and the latest workflow run when preparing a release.
+The current CI wiring lives in [the compatibility workflow](../.github/workflows/bionics-compatibility.yml), and the [main CI workflow](../.github/workflows/ci.yml) makes both loader lanes required. Dependency pins, source-versus-published-binary provenance, specific run outcomes and outstanding release acceptance belong in [release-scoped test evidence](../changelog/). Verify those records and the latest workflow run when preparing a release.
