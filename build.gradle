@@ -73,6 +73,8 @@ def PLATFORM_ONLY_SOURCES = [
         'net/steampn/createhorsepower/platform/NeoForgeItemStackPersistence.java',
         'net/steampn/createhorsepower/gametest/ForgeRecoveryEdgeGameTests.java',
         'net/steampn/createhorsepower/gametest/NeoForgeRecoveryEdgeGameTests.java',
+        // Loader annotations and exact published-version assertions differ.
+        'net/steampn/createhorsepower/gametest/BionicsCompatibilityGameTests.java',
         // NeoForge-only PartEntity event hook for optional Bionics tool hitboxes.
         'net/steampn/createhorsepower/compat/CreateBionicsPartInteractions.java',
         // NeoForge-only GameTests for creative/survival lead interaction hooks.
