@@ -208,8 +208,14 @@ public class WorkerResolver {
             }
         }
 
-        // Check tamed constraint
-        if ((stats.requiresTamed() || CHPApi.config().requireTamedHorse())) {
+        // Bionics Oxhaulers are assembled machines, not tameable livestock.
+        // Forge models one as an already-tamed AbstractHorse; NeoForge models
+        // one as an untamed TamableAnimal with no taming mechanic. Apply the
+        // animal-only taming rule consistently on both loaders, without
+        // relaxing the robot's fuel/assembly or other worker restrictions.
+        if ((stats.requiresTamed() || CHPApi.config().requireTamedHorse())
+                && !net.steampn.createhorsepower.compat.CreateBionicsCompat.bypassesAnimalTaming(
+                        net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(mob.getType()).toString())) {
             if (mob instanceof AbstractHorse horse && !horse.isTamed()) {
                 return ResolvedWorker.INVALID;
             }
