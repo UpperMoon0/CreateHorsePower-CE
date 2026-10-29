@@ -78,7 +78,9 @@ def PLATFORM_ONLY_SOURCES = [
         // NeoForge-only PartEntity event hook for optional Bionics tool hitboxes.
         'net/steampn/createhorsepower/compat/CreateBionicsPartInteractions.java',
         // NeoForge-only GameTests for creative/survival lead interaction hooks.
-        'net/steampn/createhorsepower/gametest/CreateBionicsLeadGameTests.java'
+        'net/steampn/createhorsepower/gametest/CreateBionicsLeadGameTests.java',
+        // Actual NeoForge Bionics multipart hitboxes are loader-only.
+        'net/steampn/createhorsepower/gametest/BionicsPartGameTests.java'
 ] as Set
 def PLATFORM_ONLY_PREFIXES = [
         // Loader-specific integrations and data generation APIs.
