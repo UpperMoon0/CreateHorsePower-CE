@@ -964,12 +964,17 @@ public class AnimalPowerEngine {
             host.syncToClient();
         }
 
-        // 4. Move animal along track if active
+        // 4. Spend fuel before moving the worker. An ineffective Bionics fuel
+        // write must stop generation immediately, not leave the crank running
+        // with a readable but uncharged fuel value.
         if (isWorking && cachedWorkerMob != null) {
-            moveWorkerTo(cachedWorkerMob);
-            // Bionics burns fuel while a player rides, but not when the crank
-            // supplies movement. Match that operating cost without a hard mod dependency.
-            net.steampn.createhorsepower.compat.CreateBionicsCompat.consumeWorkFuel(cachedWorkerMob);
+            if (net.steampn.createhorsepower.compat.CreateBionicsCompat.consumeWorkFuel(cachedWorkerMob)) {
+                moveWorkerTo(cachedWorkerMob);
+            } else {
+                stopWorking();
+                host.refreshKinetic();
+                host.syncToClient();
+            }
         }
     }
 
