@@ -35,10 +35,15 @@ class CreateBionicsCompatTest {
         // and an untamed TamableAnimal in NeoForge with no taming interaction.
         String forgeEntityId = "createbionics:oxhauler";
         String neoForgeEntityId = "createbionics:oxhauler";
-        assertTrue(CreateBionicsCompat.bypassesAnimalTaming(forgeEntityId));
-        assertTrue(CreateBionicsCompat.bypassesAnimalTaming(neoForgeEntityId));
-        assertFalse(CreateBionicsCompat.bypassesAnimalTaming("minecraft:horse"));
-        assertFalse(CreateBionicsCompat.bypassesAnimalTaming("createbionics:anole"));
+        // requireTamedHorse=true: Forge's declared tame=true and NeoForge's
+        // never-tamed TamableAnimal must both qualify, with unchanged rules for
+        // actual livestock and unrelated robot entities.
+        assertTrue(CreateBionicsCompat.meetsTamingPolicy(forgeEntityId, true, true));
+        assertTrue(CreateBionicsCompat.meetsTamingPolicy(neoForgeEntityId, true, false));
+        assertTrue(CreateBionicsCompat.meetsTamingPolicy(neoForgeEntityId, false, false));
+        assertFalse(CreateBionicsCompat.meetsTamingPolicy("minecraft:horse", true, false));
+        assertTrue(CreateBionicsCompat.meetsTamingPolicy("minecraft:horse", true, true));
+        assertFalse(CreateBionicsCompat.meetsTamingPolicy("createbionics:anole", true, false));
         // The robot still needs fuel/assembly regardless of the exemption.
         assertFalse(CreateBionicsCompat.operational(2, 20, false, false, true));
         assertFalse(CreateBionicsCompat.operational(3, 0, false, false, true));
