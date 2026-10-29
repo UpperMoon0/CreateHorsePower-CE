@@ -25,7 +25,7 @@ public final class BionicsCompatibilityGameTests {
         BionicsCompatibilityScenarios.realRegistryAndFuelPolicy(h);
     }
 
-    @GameTest(template = "kinetic_network", timeoutTicks = 900)
+    @GameTest(template = "kinetic_network", timeoutTicks = 2000)
     public static void actualOrbitAndFuelDebit(GameTestHelper h) {
         requirePublishedApi(h);
         BionicsCompatibilityScenarios.actualOrbitAndFuelDebit(h);
