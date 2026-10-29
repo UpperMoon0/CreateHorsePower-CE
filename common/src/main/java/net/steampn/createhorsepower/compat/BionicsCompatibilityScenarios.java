@@ -159,37 +159,56 @@ public final class BionicsCompatibilityScenarios {
         Mob robot = oxhauler(h, 3, 2000);
         attach(h, crank, robot);
         final double[] lastAngle = {Double.NaN};
-        final double[] totalAngle = {0};
-        final int startFuel = get(robot, "getFuel");
+        final double[] signedAngle = {0.0};
+        final double[] totalAngle = {0.0};
+        final int[] direction = {0};
         final int[] samples = {0};
-        // Sample real server ticks; rotation is checked across more than one lap
-        // rather than inferring movement from a single position difference.
+        final int[] idleSamples = {0};
+        final int startFuel = get(robot, "getFuel");
+        final int maxSamples = 350; // 1,750 server ticks, bounded by GameTest timeout
+        // Wait for TWO measured orbits, not a fixed number of samples.
+        // New callbacks are essential: GameTestInfo keys tasks by Runnable identity.
         class Sampler implements Runnable {
             @Override public void run() {
+                int sample = ++samples[0];
                 double angle = Math.atan2(robot.getZ() - crank.getBlockPos().getZ() - 0.5,
                         robot.getX() - crank.getBlockPos().getX() - 0.5);
                 if (!Double.isNaN(lastAngle[0])) {
                     double delta = angle - lastAngle[0];
-                    while (delta > Math.PI) delta -= Math.PI * 2;
-                    while (delta < -Math.PI) delta += Math.PI * 2;
+                    while (delta > Math.PI) delta -= 2.0 * Math.PI;
+                    while (delta < -Math.PI) delta += 2.0 * Math.PI;
+                    // Allow a brief spin-up, then demand consistent direction
+                    // and continued actual movement, rather than just ticking.
+                    if (Math.abs(delta) > 0.005) {
+                        int currentDirection = delta > 0 ? 1 : -1;
+                        if (direction[0] == 0) direction[0] = currentDirection;
+                        h.assertTrue(currentDirection == direction[0],
+                                "Real Oxhauler reversed its orbit during power generation");
+                        idleSamples[0] = 0;
+                    } else if (sample > 12) {
+                        ++idleSamples[0];
+                        h.assertTrue(idleSamples[0] <= 16,
+                                "Real Oxhauler stalled before completing two revolutions");
+                    }
+                    signedAngle[0] += delta;
                     totalAngle[0] += Math.abs(delta);
                 }
                 lastAngle[0] = angle;
-                if (++samples[0] < 150) {
-                    // GameTestInfo keys scheduled tasks by Runnable identity and
-                    // removes the current entry after invoking it. Scheduling
-                    // the same instance from inside run() gets deleted by that
-                    // removal; use a *fresh* callback object for each sample.
-                    h.runAfterDelay(5, () -> new Sampler().run());
-                } else {
+                if (totalAngle[0] >= 4.0 * Math.PI) {
                     int used = startFuel - get(robot, "getFuel");
-                    h.assertTrue(totalAngle[0] >= 4 * Math.PI,
-                            "Real Oxhauler failed two full revolutions: " + totalAngle[0]);
-                    h.assertTrue(used > 100, "Real crank did not debit finite fuel on active ticks: " + used);
-                    h.assertTrue(robot.tickCount > 500, "Oxhauler did not receive real entity ticks");
+                    h.assertTrue(direction[0] != 0
+                                    && Math.abs(signedAngle[0]) >= 4.0 * Math.PI - 0.01,
+                            "Oxhauler did not travel two revolutions consistently");
+                    h.assertTrue(used > 100, "Real crank did not debit finite fuel: " + used);
+                    h.assertTrue(robot.tickCount > 500, "Real Oxhauler did not receive server ticks");
                     h.assertTrue(Math.abs(crank.engine().generatedSpeed()) > 0.01f,
                             "Real Create crank must generate speed from Bionics worker");
                     h.succeed();
+                } else if (sample >= maxSamples) {
+                    h.assertTrue(false, "Real Oxhauler did not complete two revolutions within "
+                            + (maxSamples * 5) + " ticks: " + totalAngle[0] + " rad");
+                } else {
+                    h.runAfterDelay(5, () -> new Sampler().run());
                 }
             }
         }
