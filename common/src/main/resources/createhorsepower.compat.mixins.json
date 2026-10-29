@@ -6,7 +6,8 @@
   "mixins": [
     "IcyHorsePlacementMixin",
     "IcyHorseManagementMixin",
-    "IcyWagonHandoffMixin"
+    "IcyWagonHandoffMixin",
+    "BionicsOxhaulerSoundscapeMixin"
   ],
   "plugin": "net.steampn.createhorsepower.compat.mixin.IcyMixinPlugin"
 }
