@@ -12,18 +12,28 @@ import net.steampn.createhorsepower.compat.BionicsCompatibilityScenarios;
 public final class BionicsCompatibilityGameTests {
     private BionicsCompatibilityGameTests() {}
 
+    private static void requirePublishedApi(GameTestHelper h) {
+        var mod = net.neoforged.fml.ModList.get().getModContainerById("createbionics");
+        h.assertTrue(mod.isPresent(), "Bionics jar must actually be loaded");
+        h.assertTrue(mod.isPresent() && "2.5.0".equals(mod.get().getModInfo().getVersion().toString()),
+                "Expected Bionics 2.5.0 exactly, not a different or missing release");
+    }
+
     @GameTest(template = "kinetic_network", timeoutTicks = 80)
     public static void realRegistryAndFuelPolicy(GameTestHelper h) {
+        requirePublishedApi(h);
         BionicsCompatibilityScenarios.realRegistryAndFuelPolicy(h);
     }
 
     @GameTest(template = "kinetic_network", timeoutTicks = 900)
     public static void actualOrbitAndFuelDebit(GameTestHelper h) {
+        requirePublishedApi(h);
         BionicsCompatibilityScenarios.actualOrbitAndFuelDebit(h);
     }
 
     @GameTest(template = "kinetic_network", timeoutTicks = 300)
     public static void stopResumeAndDetach(GameTestHelper h) {
+        requirePublishedApi(h);
         BionicsCompatibilityScenarios.stopResumeAndDetach(h);
     }
 }
