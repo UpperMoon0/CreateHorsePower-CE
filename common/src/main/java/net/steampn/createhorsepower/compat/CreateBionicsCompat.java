@@ -24,6 +24,26 @@ public final class CreateBionicsCompat {
         return OXHAULER_ID.equals(entityId);
     }
 
+    /**
+     * Bionics robots are machines assembled and fueled by the player, not
+     * livestock with a taming mechanic. Forge implements isTamed() as true,
+     * while NeoForge inherits a false TamableAnimal flag with no tame path.
+     * Restrict this policy exception to the verified Oxhauler registry ID.
+     */
+    public static boolean bypassesAnimalTaming(String entityId) {
+        return isOxhauler(entityId);
+    }
+
+    /**
+     * NeoForge Bionics' plough/harvester PartEntity forwards click actions
+     * straight to mobInteract(), bypassing the parent's normal leash handling.
+     * Redirect only lead clicks on Oxhauler parts; leave all other multipart
+     * and robot interactions to their owning mods.
+     */
+    public static boolean shouldRedirectPartLead(String parentEntityId, boolean isPart, boolean holdsLead) {
+        return isPart && holdsLead && isOxhauler(parentEntityId);
+    }
+
     private static boolean isOxhauler(Mob mob) {
         return isOxhauler(BuiltInRegistries.ENTITY_TYPE.getKey(mob.getType()).toString());
     }
