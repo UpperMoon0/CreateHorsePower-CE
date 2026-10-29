@@ -34,6 +34,11 @@ public final class CreateBionicsCompat {
         return isOxhauler(entityId);
     }
 
+    /** Keep existing tame requirements for livestock, regardless of loader. */
+    public static boolean meetsTamingPolicy(String entityId, boolean tamingRequired, boolean isTamed) {
+        return !tamingRequired || bypassesAnimalTaming(entityId) || isTamed;
+    }
+
     /**
      * NeoForge Bionics' plough/harvester PartEntity forwards click actions
      * straight to mobInteract(), bypassing the parent's normal leash handling.
