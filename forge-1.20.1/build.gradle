@@ -77,6 +77,7 @@ minecraft {
                 property 'createhorsepower.restart.dir', project.file(providers.gradleProperty('chpRestartDirectory').get()).absolutePath
                 property 'createhorsepower.icyExpected', providers.gradleProperty('icyCompatibilityTest').getOrElse('false')
                 if (providers.gradleProperty('bionicsCompatibilityTest').getOrElse('false').toBoolean()) {
+                    property 'createhorsepower.bionicsExpected', 'true'
                     property 'createhorsepower.bionicsRestartPhase', providers.gradleProperty('chpRestartPhase').get()
                 }
             }
