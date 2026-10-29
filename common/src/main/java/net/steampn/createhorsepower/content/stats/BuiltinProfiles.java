@@ -45,6 +45,10 @@ public final class BuiltinProfiles {
     public static final WorkerStats PIG = new WorkerStats(3.5f, 200.0f, 2.5f, 0.20f, 0.200f, 0.10f, 10.0f, false, false);
     public static final WorkerStats SHEEP = new WorkerStats(3.0f, 180.0f, 2.5f, 0.0f, 0.200f, 0.10f, 8.0f, false, false);
     public static final WorkerStats WOLF = new WorkerStats(4.0f, 150.0f, 2.5f, 0.0f, 0.300f, 0.0f, 20.0f, false, false);
+    // Powered robotic draft animal, not a vanilla horse. Its fixed base speed/health
+    // are not genetically variable and therefore do not receive animal-stat scaling.
+    public static final WorkerStats BIONICS_OXHAULER = new WorkerStats(
+            4.5f, 800.0f, 3.0f, 0.0f, 0.225f, 0.0f, 50.0f, false, false);
 
     public static final PathStats DIRT = PathStats.of(0.70f, 0.90f);
     public static final PathStats COARSE_DIRT = PathStats.of(0.75f, 0.90f);
@@ -79,7 +83,8 @@ public final class BuiltinProfiles {
             Map.entry("tfc:sheep", SHEEP),
             // TFC 1.21.x camel variants extend vanilla Camel through AbstractCamel.
             Map.entry("tfc:dromedary_camel", CAMEL),
-            Map.entry("tfc:bactrian_camel", CAMEL));
+            Map.entry("tfc:bactrian_camel", CAMEL),
+            Map.entry("createbionics:oxhauler", BIONICS_OXHAULER));
 
     private static final Map<String, WorkerTier> OPTIONAL_WORKER_TIERS = Map.ofEntries(
             Map.entry("tfc:horse", WorkerTier.LARGE),
@@ -89,7 +94,8 @@ public final class BuiltinProfiles {
             Map.entry("tfc:pig", WorkerTier.MEDIUM),
             Map.entry("tfc:sheep", WorkerTier.MEDIUM),
             Map.entry("tfc:dromedary_camel", WorkerTier.LARGE),
-            Map.entry("tfc:bactrian_camel", WorkerTier.LARGE));
+            Map.entry("tfc:bactrian_camel", WorkerTier.LARGE),
+            Map.entry("createbionics:oxhauler", WorkerTier.LARGE));
 
     private static final Map<Block, PathStats> PATHS = Map.ofEntries(
             Map.entry(Blocks.DIRT_PATH, PathStats.NORMAL), Map.entry(Blocks.DIRT, DIRT), Map.entry(Blocks.GRASS_BLOCK, DIRT),
