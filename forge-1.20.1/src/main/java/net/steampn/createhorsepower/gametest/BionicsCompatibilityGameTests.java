@@ -45,7 +45,7 @@ public final class BionicsCompatibilityGameTests {
         boolean previous = net.steampn.createhorsepower.config.Config.REQUIRE_TAMED_HORSE.get();
         net.steampn.createhorsepower.config.Config.REQUIRE_TAMED_HORSE.set(true);
         try {
-            BionicsCompatibilityScenarios.realRiderWaterAndTamingPolicy(h);
+            BionicsCompatibilityScenarios.realRiderWaterAndTamingPolicy(h, h.makeMockPlayer());
         } finally {
             net.steampn.createhorsepower.config.Config.REQUIRE_TAMED_HORSE.set(previous);
         }
