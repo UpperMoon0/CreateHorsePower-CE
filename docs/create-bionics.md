@@ -22,6 +22,20 @@ The robot's public `getFuel()`, `setFuel(int)`, and `getAssembly()` methods are 
 
 Both mods remain optional relative to each other. Pack-authored `createhorsepower/worker_profiles` and machine-specific overrides retain higher priority than the built-in output values. The robot's *operational* fuel/assembly/mount restrictions cannot be overridden with a datapack.
 
+## Reproducible real-mod CI acceptance (1.2.10)
+
+The opt-in `-PbionicsCompatibilityTest=true` lane is isolated from ordinary installations and standard **no-Bionics** builds. `createhorsepower_bionics` is its exclusive GameTest namespace. Every test verifies the actual Oxhauler registry, mod version, and assembly/fuel APIs **after entity insertion**; CI refuses startup-only or skipped-test success.
+
+- **Forge 1.20.1**: upstream source declares Bionics **2.0.0**, but no officially published Forge binary has been verified on upstream GitHub releases or Modrinth. CI builds pinned commit `d597264a86c0e6d655e4bc9ffec23be292382882` into a real Bionics jar. This is **source-built compatibility evidence, not released-binary acceptance**. A published binary and digest are still required for the release-jar criterion.
+- **NeoForge 1.21.1**: actual published Bionics **2.5.0** (Modrinth `fG2UIEqS`, Maven `maven.modrinth:lCwu0vBo:fG2UIEqS`). Requires **Create 6.0.9+**; the NeoForge project now uses Create 6.0.9-215 and its corresponding development versions.
+- The real-mod GameTests exercise assembly/fuel eligibility, at least two complete revolutions, generated crank speed and finite fuel, redstone stop/no fuel loss, detach/reattach. The CI assertion requires every test to actually execute.
+- A separate-process restart probe runs two **fresh JVMs** in one isolated world and checks the same entity UUID, crank UUID, assembly, fuel persistence, subsequent movement and output.
+- Normal CI remains Bionics-free and must pass on both loaders. Icy's Better Horses compatibility tests remain separate.
+
+### Remaining gaps before merge
+
+Headless GameTests **do not prove real client multiplayer raycasts and interaction packets** targeting the NeoForge plough and harvester parts. Run a real NeoForge client against a dedicated server with released Bionics 2.5.0; verify lead attach and removal on both part hitboxes in creative and survival (including last lead and both hands), and that other controls still mount normally. Retain client/server logs and packet evidence. Keep the matrix entry provisional until that acceptance and a verifiable Forge released 2.0.0 binary are available.
+
 ## Verification
 
 - `./gradlew testAllVersions verifySharedSources verifySharedResources` checks shared data/policy and JUnit regressions on both loader targets.
