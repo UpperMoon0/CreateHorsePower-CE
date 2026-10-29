@@ -101,9 +101,12 @@ public final class BionicsRestartProbe {
             need(!Files.exists(directory().resolve("bionics-write.properties")), "Refusing to overwrite saved evidence");
             for (int x = -6; x <= 6; x++) for (int z = -6; z <= 6; z++) {
                 BlockPos pos = CRANK_POS.offset(x, 0, z);
-                level.setBlock(pos.below(), Blocks.BEDROCK.defaultBlockState(), 3);
-                level.setBlock(pos, Blocks.COBBLESTONE.defaultBlockState(), 3);
-                level.setBlock(pos.above(), Blocks.AIR.defaultBlockState(), 3);
+                // PathEvaluator scans at crank Y-1, not at the robot's feet.
+                // Bedrock here would make path coverage zero, despite a visually
+                // present walking ring at the wrong elevation.
+                level.setBlock(pos.below(2), Blocks.BEDROCK.defaultBlockState(), 3);
+                level.setBlock(pos.below(), Blocks.COBBLESTONE.defaultBlockState(), 3);
+                level.setBlock(pos, Blocks.AIR.defaultBlockState(), 3);
             }
             level.setBlock(CRANK_POS, BlockRegister.HORSE_CRANK.get().defaultBlockState(), 3);
             EntityType<?> type = BuiltInRegistries.ENTITY_TYPE.get(CHPApi.id("createbionics", "oxhauler"));
@@ -121,6 +124,10 @@ public final class BionicsRestartProbe {
             var stats = WorkerResolver.resolve(mob);
             need(stats.isValid(), "Real Bionics work policy rejected configured worker");
             be.engine().attachWorker(mob, stats);
+            need(be.engine().hasValidWorkingBlocks,
+                    "Real Bionics restart fixture has an invalid crank path at its scanned height");
+            need(be.engine().getInvalidBlockCount() == 0,
+                    "Real Bionics restart fixture has unwalkable track blocks");
             workerId = mob.getUUID();
             crankId = be.engine().crankInstanceUuid();
         } else {
@@ -143,6 +150,8 @@ public final class BionicsRestartProbe {
         need(crankId.equals(be.engine().crankInstanceUuid()), "Crank changed identity on JVM restart");
         need(workerId.equals(be.engine().getWorkerUuid()), "Saved assignment changed on JVM restart");
         need(be.engine().isWorkerAttachmentValid(mob), "Saved leash/crank attachment was not recovered");
+        need(be.engine().hasValidWorkingBlocks,
+                "Persisted Bionics crank path became invalid after world reload");
         need(api(mob, "getAssembly") == 3, "Bionics assembly did not survive restart");
         need(CreateBionicsCompat.canWork(mob), "Restored real robot is ineligible");
         sampleX = mob.getX();
