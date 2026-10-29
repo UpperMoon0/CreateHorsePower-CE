@@ -5,6 +5,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.decoration.LeashFenceKnotEntity;
 import net.minecraft.world.level.block.Blocks;
 import net.steampn.createhorsepower.blocks.crank.AbstractHorseCrankBlockEntity;
@@ -112,11 +113,10 @@ public final class BionicsCompatibilityScenarios {
         h.succeed();
     }
 
-    public static void realRiderWaterAndTamingPolicy(GameTestHelper h) {
+    public static void realRiderWaterAndTamingPolicy(GameTestHelper h, Player rider) {
         Mob robot = oxhauler(h, 3, 500);
         h.assertTrue(WorkerResolver.resolve(robot).isValid(),
                 "Assembled Oxhauler must work even with configured requireTamedHorse=true");
-        var rider = h.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
         h.assertTrue(rider.startRiding(robot, true), "Test player failed to mount real Oxhauler");
         h.assertTrue(robot.isVehicle() && !CreateBionicsCompat.canWork(robot),
                 "Ridden real Bionics Oxhauler must be ineligible");
