@@ -1,75 +1,51 @@
-# Create Horse Power - CE
+# Create Horse Power — Community Edition
 
-**Create Horse Power - Community Edition** brings reliable animal-powered rotational generation to Create. Harness a supported mob to a Horse Crank, build a proper walking path, and power early factories without wind, water, steam, electricity, or engines.
+**Create Horse Power CE** brings animal-powered rotational generation to Create. Attach an eligible worker to a Horse Crank, build a valid circular path, and power early Create machines without advanced generators.
 
-CE is an independent, community-maintained fork of [Create Horse Power by SteamPunkNation](https://github.com/SteamPunkNation/CreateHorsePower). It intentionally retains the original `createhorsepower` mod ID for world compatibility. **Do not install CE and the original mod together.**
+This is an independent, community-maintained fork of [SteamPunkNation's Create Horse Power](https://github.com/SteamPunkNation/CreateHorsePower). CE retains the original `createhorsepower` mod ID for world compatibility. **Do not install the original mod and CE together.**
 
-## Requirements
+## Installation and compatibility
 
-| Component       | NeoForge build          | Forge build        |
-|-----------------|-------------------------|--------------------|
-| Minecraft       | 1.21.1                  | 1.20.1             |
-| Mod loader      | NeoForge 21.1.215+      | Forge 47.x         |
-| Java            | 21                      | 17                 |
-| Create          | >= 6.0.8, < 6.1.0       | >= 6.0.8, < 6.1.0  |
+CE offers **Forge** and **NeoForge** builds. Install the file matching your Minecraft version and mod loader, alongside the compatible version of Create. Required Java, loader, and Create versions vary by release; consult the selected CurseForge file's dependencies and [GitHub Releases](https://github.com/UpperMoon0/CreateHorsePower-CE/releases). Never mix Forge and NeoForge jars.
 
-The core Horse Crank gameplay — attaching a worker, validating a path, redstone modes, goggles and command diagnostics, shared worker/attachment datapack profiles, and bundled defaults — is identical on both versions. Jade is optional on both loaders. KubeJS, NeoForge Data Maps, and Ponder scenes remain NeoForge-only; Forge packmakers use the shared worker/attachment JSON layer for exact profiles and machine overrides (see the [compatibility matrix](https://github.com/UpperMoon0/CreateHorsePower-CE/blob/main/docs/COMPATIBILITY.md)).
+Core Horse Crank gameplay is available on both loaders. Optional integrations include:
 
-TerraFirmaCraft is optional on both loaders. When it is installed, CE supplies built-in worker defaults for supported TFC livestock and path defaults for common TFC soil/rock families without making TFC a required dependency.
+- **TerraFirmaCraft:** built-in worker defaults for supported livestock and path defaults for common ground types; TFC is not required.
+- **Icy's Better Horses:** supported breeds work as crank workers while respecting ownership, trusted-player, recall and transport rules. See the [Icy integration contract](https://github.com/UpperMoon0/CreateHorsePower-CE/blob/main/docs/icy-better-horses.md).
+- **Create: Bionics:** an assembled, fueled **Oxhauler** can act as a draft worker, with fuel consumption and safety checks handled by the integration. Bionics is optional. See the [Bionics integration contract](https://github.com/UpperMoon0/CreateHorsePower-CE/blob/main/docs/create-bionics.md) and the applicable release notes for precise qualification status; headless server GameTests are **not** proof of graphical-client multiplayer behavior.
+- **Jade:** optional HUD diagnostics on both loaders.
+- **KubeJS, Data Maps and Ponder:** additional NeoForge-only features; shared datapack worker and attachment profiles work on both loaders.
 
-Icy's Better Horses **2.1.7** is optional on both loaders. CE supports all fifteen released breeds while respecting Icy ownership, trusted players, recall and transport rules. See the [integration contract](https://github.com/UpperMoon0/CreateHorsePower-CE/blob/main/docs/icy-better-horses.md) for the exact supported versions and acceptance coverage.
+See the [feature compatibility matrix](https://github.com/UpperMoon0/CreateHorsePower-CE/blob/main/docs/COMPATIBILITY.md) for loader-specific details.
 
-## Animal Power Framework
+## Using the Horse Crank
 
-The 1.2 update expands the Horse Crank into a data-driven framework while preserving its early-game Create role:
+1. Place a Horse Crank and prepare a complete, valid walking path around it.
+2. Attach an eligible worker with a supported attachment item (a vanilla lead works by default).
+3. Connect the crank to your Create kinetic network. Output depends on the worker, terrain, configuration and active redstone mode.
 
-- Worker stats define RPM, stress capacity, movement radius, attribute scaling, taming/baby rules, and per-machine overrides. Exact worker profiles can be authored with shared datapack JSON on both loaders; NeoForge additionally supports Data Maps and KubeJS.
-- Path stats define speed and stress multipliers at runtime on both loaders. NeoForge packmakers can author arbitrary per-block values with Data Maps/KubeJS; Forge packmakers use the legacy path lists/multipliers plus CE bundled fallbacks.
-- Individual movement speed and max health can scale a worker's live mechanical output.
-- Visible animal gait is independent from mechanical RPM and is bounded to believable movement speeds.
-- Weighted-average, worst-block, and legacy path evaluation modes support different pack designs.
-- Redstone modes can stop, require, or ignore a signal and can be cycled with a Create wrench.
-- Attachment profiles can select exact items/tags and choose `vanilla_leash`, `harness`, `yoke`, or `virtual_tether` backends on both loaders. Vanilla lead is bundled; the other three modes are packmaker framework capabilities unless a pack supplies an item/profile.
-- Engineer's Goggles, Jade (both loaders), and `/createhorsepower` commands expose useful diagnostics.
-- Optional transition-based debug logging can be enabled with `diagnostics.debugLogging`; normal movement is not logged every tick.
-- Optional KubeJS startup profiles and lifecycle events support scripted packs (NeoForge 1.21.1 only).
+Sneak-use a Create wrench to cycle the crank's `HIGH_STOPS`, `HIGH_RUNS` and `IGNORE` redstone modes. Engineer's Goggles, optional Jade integration and `/createhorsepower` diagnostics help explain worker and path eligibility, RPM and stress output. Visual walking speed stays bounded independently of mechanical RPM.
 
-Movement radii are supported from 0.5 to 6.0 blocks. This cap keeps workers within normal Minecraft lead mechanics.
+## Flexible animal-power framework
 
-## Reliability Improvements
+- Configure worker RPM, stress capacity, movement radius, attribute scaling, eligibility and machine-specific overrides.
+- Evaluate paths with weighted-average, worst-block or legacy behavior and tune terrain multipliers.
+- Use shared datapack JSON for worker and attachment profiles on both loaders; NeoForge also supports additional KubeJS scripting and Data Map overrides.
+- Select profile-driven attachment items and supported leash, harness, yoke or virtual-tether backends. Non-vanilla items and profiles must be supplied by your pack or a companion mod.
+- Integrate eligible modded workers through documented optional integrations without requiring their mods for ordinary gameplay.
 
-- Persistent worker identity and durable attachment ownership across chunk reloads.
-- Each crank carries a persistent, real, position-independent instance UUID, so a replacement crank at the same coordinates never inherits a previous crank's worker ownership.
-- Unloaded detach intent is persisted at level scope, including `detachWorker(false)` no-drop semantics, so breaking/replacing the old crank cannot orphan the policy.
-- Recovery waits until vanilla has restored delayed leash data, then removes only the stale leash owned by the old crank. It does not force-load the old crank chunk and preserves a worker already leashed elsewhere.
-- Recovery timeout age survives worker unload/save/reload instead of restarting on chunk churn.
-- Workers recover their original AI state if crank control is orphaned, including workers that already had `NoAI=true` before attachment.
-- Stable direction handling beside existing Create kinetic networks.
-- Smooth server-authoritative worker movement with correct yaw tracking.
-- Live kinetic refresh when worker attributes change.
-- Unloaded workers, invalid paths, redstone stops, ineligible workers, and KubeJS vetoes remain distinct states.
+See the [Packmaker and Modder Guide](https://github.com/UpperMoon0/CreateHorsePower-CE/blob/main/docs/PACKMAKERS.md) for schemas, examples, configuration and precedence.
 
-## For Modpacks
+## Persistence and reliability
 
-Create Horse Power CE supports primitive, medieval, historical, and staged technology packs. Packmakers can customize workers, output, paths, attachment items, redstone behavior, and scripts (KubeJS on NeoForge 1.21.1) without editing Java code.
+CE tracks crank instances and worker ownership across chunk unloads and world reloads. Deferred detach and orphan-leash recovery avoid reclaiming a worker already assigned elsewhere. Workers recover their prior AI state when crank control ends. Movement, facing and kinetic output update through the server-authoritative system, with opt-in transition-based debug logs instead of per-tick spam.
 
-Read the complete [Packmaker and Modder Guide](https://github.com/UpperMoon0/CreateHorsePower-CE/blob/main/docs/PACKMAKERS.md) for schemas, examples, config keys, TFC defaults, precedence, diagnostics, commands, and KubeJS events.
+## Updating and support
 
-Worker precedence on NeoForge is KubeJS → shared worker JSON → explicit NeoForge Data Map → bundled fallback/legacy classification. On Forge it is shared worker JSON → bundled fallback/legacy classification. CE no longer ships bundled worker/path Data Maps; Data Maps represent explicit NeoForge pack overrides only.
+Back up worlds and configurations before upgrading. **Migration notes, exact dependency pins, and release-specific test evidence belong to the relevant [versioned changelog](https://github.com/UpperMoon0/CreateHorsePower-CE/tree/main/changelog/)** rather than this general description. Optional compatibility varies by the release you install.
 
-## Updating from CE 1.1
-
-- Legacy server-config keys remain at the TOML root.
-- Existing cranks preserve the old redstone-ignored behavior; newly placed cranks use the configured default mode.
-- CE does not ship bundled worker/path Data Maps. Fresh 1.2+ configs leave legacy path lists empty so richer bundled path defaults apply; upgraded 1.1 configs keep their stored lists and therefore preserve their old explicit path tuning.
-- Update any prerelease worker profile above a 6-block movement radius before loading it in 1.2; out-of-range Data Map or KubeJS values are rejected.
-- Version 1.2.1 adds `workers.workerGroundSpeedScale`, `workers.minWorkerGroundSpeed`, `workers.maxWorkerGroundSpeed`, and `diagnostics.debugLogging`; their defaults are safe for existing worlds.
-- Back up important worlds before updating.
-
-Full release details: [unified 1.2.9 changelog](https://github.com/UpperMoon0/CreateHorsePower-CE/blob/main/changelog/1.2.9.md).
+Report issues and browse the source at [UpperMoon0/CreateHorsePower-CE](https://github.com/UpperMoon0/CreateHorsePower-CE).
 
 ## Credits
 
-The original project, concept, and foundation were created by SteamPunkNation. Community Edition is maintained by UpperMoon0 with contributions from the original and community contributors.
-
-Source code and issue tracker: [UpperMoon0/CreateHorsePower-CE](https://github.com/UpperMoon0/CreateHorsePower-CE)
+Original concept and mod by SteamPunkNation. Community Edition is maintained by UpperMoon0 with contributions from community developers.
