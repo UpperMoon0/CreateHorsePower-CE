@@ -69,6 +69,8 @@ public class CreateHorsePower {
         modContainer.registerConfig(ModConfig.Type.SERVER, Config.SPEC);
 
         NeoForge.EVENT_BUS.register(this);
+        NeoForge.EVENT_BUS.addListener(
+                net.steampn.createhorsepower.compat.CreateBionicsPartInteractions::onEntityInteract);
     }
 
     private void commonSetup(final FMLCommonSetupEvent event){
@@ -79,6 +81,9 @@ public class CreateHorsePower {
         event.register(HorsePowerGameTests.class);
         event.register(HorsePowerLifecycleGameTests.class);
         event.register(NeoForgeRecoveryEdgeGameTests.class);
+        event.register(net.steampn.createhorsepower.gametest.CreateBionicsLeadGameTests.class);
+        event.register(net.steampn.createhorsepower.gametest.BionicsCompatibilityGameTests.class);
+        event.register(net.steampn.createhorsepower.gametest.BionicsPartGameTests.class);
     }
 
     @SubscribeEvent

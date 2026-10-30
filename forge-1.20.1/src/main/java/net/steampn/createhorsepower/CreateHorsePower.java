@@ -84,6 +84,7 @@ public class CreateHorsePower {
         event.register(HorsePowerGameTests.class);
         event.register(HorsePowerLifecycleGameTests.class);
         event.register(ForgeRecoveryEdgeGameTests.class);
+        event.register(net.steampn.createhorsepower.gametest.BionicsCompatibilityGameTests.class);
     }
 
     @SubscribeEvent

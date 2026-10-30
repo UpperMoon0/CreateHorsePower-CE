@@ -55,6 +55,8 @@ def ALLOWED_ADAPTERS = [
         'net/steampn/createhorsepower/gametest/HorsePowerGameTests.java',
         'net/steampn/createhorsepower/gametest/IcyCompatibilityGameTests.java',
         'net/steampn/createhorsepower/gametest/IcyRestartEvents.java',
+        // Loader-specific GameTest annotations and exact Bionics version checks.
+        'net/steampn/createhorsepower/gametest/BionicsCompatibilityGameTests.java',
         'net/steampn/createhorsepower/gametest/HorsePowerLifecycleGameTests.java',
         // Registry + registration glue (loader-specific registries)
         'net/steampn/createhorsepower/registry/CHPCreativeTabs.java',
@@ -72,7 +74,13 @@ def PLATFORM_ONLY_SOURCES = [
         'net/steampn/createhorsepower/platform/ForgeItemStackPersistence.java',
         'net/steampn/createhorsepower/platform/NeoForgeItemStackPersistence.java',
         'net/steampn/createhorsepower/gametest/ForgeRecoveryEdgeGameTests.java',
-        'net/steampn/createhorsepower/gametest/NeoForgeRecoveryEdgeGameTests.java'
+        'net/steampn/createhorsepower/gametest/NeoForgeRecoveryEdgeGameTests.java',
+        // NeoForge-only PartEntity event hook for optional Bionics tool hitboxes.
+        'net/steampn/createhorsepower/compat/CreateBionicsPartInteractions.java',
+        // NeoForge-only GameTests for creative/survival lead interaction hooks.
+        'net/steampn/createhorsepower/gametest/CreateBionicsLeadGameTests.java',
+        // Actual NeoForge Bionics multipart hitboxes are loader-only.
+        'net/steampn/createhorsepower/gametest/BionicsPartGameTests.java'
 ] as Set
 def PLATFORM_ONLY_PREFIXES = [
         // Loader-specific integrations and data generation APIs.

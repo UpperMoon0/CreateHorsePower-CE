@@ -11,15 +11,16 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Inspect optional targets as bytecode, never by loading Icy classes at bootstrap.
- * Loader metadata enforces the exact supported 2.1.7 version when Icy is present.
- * Missing optional classes are skipped; present targets must expose the supported methods.
+ * Inspect optional integration targets as bytecode, without defining upstream
+ * classes during bootstrap. Missing optional mods are skipped, but present
+ * targets must expose the exact public method names required by their hooks.
  */
 public final class IcyMixinPlugin implements IMixinConfigPlugin {
     private static final Map<String, Set<String>> TARGET_METHODS = Map.of(
             "icy.betterhorses.net.HorsePlacement", Set.of("teleport"),
             "icy.betterhorses.net.HorseManagement", Set.of("respawnFromSnapshot", "summonToPlayer", "revive"),
-            "icy.betterhorses.net.BhWagonHitch", Set.of("mark"));
+            "icy.betterhorses.net.BhWagonHitch", Set.of("mark"),
+            "net.dshbwlto.createbionics.entity.custom.OxhaulerEntity", Set.of("playSoundScape"));
 
     @Override
     public void onLoad(String mixinPackage) {}
@@ -39,13 +40,13 @@ public final class IcyMixinPlugin implements IMixinConfigPlugin {
             Set<String> actual = target.methods.stream().map(method -> method.name)
                     .collect(java.util.stream.Collectors.toSet());
             if (actual.containsAll(required)) return true;
-            throw new IllegalStateException("Unsupported Icy target " + targetClassName
-                    + ": required 2.1.7 methods " + required + " are missing for " + mixinClassName);
+            throw new IllegalStateException("Unsupported optional integration target " + targetClassName
+                    + ": required methods " + required + " are missing for " + mixinClassName);
         } catch (ClassNotFoundException absent) {
             // Absence is expected for this optional integration.
             return false;
         } catch (IOException failure) {
-            throw new IllegalStateException("Cannot inspect optional Icy target " + targetClassName, failure);
+            throw new IllegalStateException("Cannot inspect optional integration target " + targetClassName, failure);
         }
     }
 

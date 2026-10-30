@@ -182,7 +182,8 @@ public class WorkerResolver {
 
     public static ResolvedWorker resolve(@Nullable Mob mob, String machineId) {
         if (mob == null || !mob.isAlive()
-                || !net.steampn.createhorsepower.compat.IcyBetterHorses.canWork(mob)) {
+                || !net.steampn.createhorsepower.compat.IcyBetterHorses.canWork(mob)
+                || !net.steampn.createhorsepower.compat.CreateBionicsCompat.canWork(mob)) {
             return ResolvedWorker.INVALID;
         }
 
@@ -207,14 +208,18 @@ public class WorkerResolver {
             }
         }
 
-        // Check tamed constraint
-        if ((stats.requiresTamed() || CHPApi.config().requireTamedHorse())) {
-            if (mob instanceof AbstractHorse horse && !horse.isTamed()) {
-                return ResolvedWorker.INVALID;
-            }
-            if (mob instanceof TamableAnimal tamable && !tamable.isTame()) {
-                return ResolvedWorker.INVALID;
-            }
+        // Bionics Oxhaulers are assembled machines, not tameable livestock.
+        // Forge reports them tamed, while NeoForge inherits a false tame flag
+        // and supplies no taming mechanic. Preserve the exact animal policy
+        // for every other worker and both require-tame configuration sources.
+        boolean tamingRequired = stats.requiresTamed() || CHPApi.config().requireTamedHorse();
+        boolean isTamed = true; // Non-tameable worker types have no tame constraint.
+        if (mob instanceof AbstractHorse horse) isTamed = horse.isTamed();
+        if (mob instanceof TamableAnimal tamable) isTamed = tamable.isTame();
+        if (!net.steampn.createhorsepower.compat.CreateBionicsCompat.meetsTamingPolicy(
+                net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(mob.getType()).toString(),
+                tamingRequired, isTamed)) {
+            return ResolvedWorker.INVALID;
         }
 
         float baseRpm = stats.baseRpm();

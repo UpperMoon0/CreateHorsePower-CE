@@ -4,25 +4,19 @@ This matrix distinguishes implemented checks from execution evidence. A row is
 verified only when its named CI job passes on the PR's exact final head. Source
 review and ordinary JUnit are not substitutes for the released-mod runtime.
 
-## Exact artifacts
+## Artifact selection and evidence
 
-| Runtime | Icy optional dependency | Required extra dependencies |
-|---|---|---|
-| Forge 1.20.1, CHP's pinned Forge/Create versions | Modrinth `kXpI9qsc`, `icys-better-horses-2.1.7-forge-1.20.1.jar` | GeckoLib `aC5KMoNg` |
-| NeoForge 1.21.1, CHP's pinned NeoForge/Create versions | Modrinth `vfSQ99Gl`, `icys-better-horses-2.1.7-neo-1.21.1.jar` | GeckoLib `TSeTaM0B`, Modonomicon `jH6bsw4F` |
-| Each of the above without Icy | No Icy dependency | Existing CHP development dependencies retained |
+The `icy-runtime` jobs test the actual optional Icy artifacts and their loader-specific dependencies. The standard CI jobs test the complete no-Icy behavior. Dedicated restart jobs exercise Icy-present and Icy-absent modes in **separate JVMs**.
 
-The compatibility workflow's `icy-runtime` jobs exercise the first two rows.
-Normal CI exercises complete no-Icy builds and GameTests. `restart-runtime` runs
-all four combinations in separate dedicated-server processes.
+The exact tested artifacts, source branches/commits, Modrinth IDs and dependent mod versions are **release-scoped** and recorded in the [versioned changelog](../changelog/) and CI workflow. The matrix below describes what each test establishes independent of pinned releases.
 
 ## Behavior-to-evidence mapping
 
 | Behavior | Automated evidence | Evidence type / remaining limit |
 |---|---|---|
 | Exact breed ID allowlist, unknown/cart/wrong namespace exclusion | `IcyProfilesTest` | Plain JUnit; no entity runtime |
-| All fifteen released entity factories and profiles | `recognitionAndPolicy` | Actual optional-mod GameTest |
-| All fifteen breeds' bond thresholds, repeated/reset updates and no duplicate CHP bonus | `bondThresholdsScaleRpmExactlyOnce` | Actual released bond API and effective speed/jump attributes; independent expected RPM factors |
+| All configured supported entity factories and profiles | `recognitionAndPolicy` | Actual optional-mod GameTest |
+| All configured breeds' bond thresholds, repeated/reset updates and no duplicate CHP bonus | `bondThresholdsScaleRpmExactlyOnce` | Actual upstream bond API and effective speed/jump attributes; independent expected RPM factors |
 | Real offspring inheritance, independent speed/health output, jump exclusion and bonded NBT recovery | `inheritedStatsSurviveReloadAndDriveOutput` | Actual public offspring factory; offspring aged to adults for work; two serialized reloads in one JVM, not natural mating or a process restart |
 | Attached crank refreshes bond RPM and max-health capacity, then restores baseline | `workingCrankRefreshesBondAndHealth` | Actual entity/engine ticks, movement, live RPM and total SU; unchanged worker identity |
 | Owner/stranger authorization, cart and wagon eligibility | `recognitionAndPolicy` | Actual public Icy API; direct policy calls, not full player interaction |
@@ -43,7 +37,7 @@ all four combinations in separate dedicated-server processes.
 | Duplicate UUID and foreign-crank rejection | `duplicateUuidAndForeignClaimCannotTakeControl` | Actual server index rejects duplicate body; second engine cannot steal claim |
 | Owner disappearance after knot transfer | `ownerDisconnectDoesNotOrphanKnotAssignment` | Mock player removal; not a real socket disconnect |
 | Same-owner no-drop preservation through old crank reload, direct leash cleanup and block removal | Three `noDropTombstone` lifecycle scenarios and `DeferredDetachDropPolicyTest` | Actual delayed bodies/item counts plus pure policy unit tests |
-| Snapshot recall after original reservation settled, exact no-drop and foreign policy isolation | `snapshotRecallHonorsSettledNoDrop`, `snapshotRecallPreservesForeignDetachPolicy` | Actual released snapshot reconstruction and hook before post-tick recovery; exact item counts, AI/leash cleanup and policy consumption |
+| Snapshot recall after original reservation settled, exact no-drop and foreign policy isolation | `snapshotRecallHonorsSettledNoDrop`, `snapshotRecallPreservesForeignDetachPolicy` | Actual upstream snapshot reconstruction and hook before post-tick recovery; exact item counts, AI/leash cleanup and policy consumption |
 | Cross-dimension revival distinguishes settled no-drop from newly created stale-body guard | `crossDimensionRevivalHonorsSettledNoDrop`, `crossDimensionRevivalReturnsOneAttachment` | Actual public revival into destination dimension, source policy retained, zero versus one consumed saddle returned |
 | Stale-cache item disposition, legacy activity-only and foreign-marker recovery | `unloadedCachedBodyCannotReturnAttachmentTwice`, `activityOnlyDepartureAndForeignRecovery` | Actual saved bodies/markers and later entity ticks |
 | Production release-jar optional mixin packaging and linkage | `verify_compat_jar.py` in both optional CI jobs | Checks actual jar config, metadata, hook/plugin classes and any declared refmap; execution remains development-loader runtime |
@@ -51,8 +45,7 @@ all four combinations in separate dedicated-server processes.
 
 ## Separate-process probe contract
 
-Run `python3 scripts/run_restart_probe.py --project forge-1.20.1 --icy true`
-(or `neoforge-1.21.1`, and `--icy false`). The runner creates a fresh directory
+Run `python3 scripts/run_restart_probe.py --project <loader-project> --icy true` (or `--icy false`). Use the supported loader project name shown by the script's `--help` output. The runner creates a fresh directory
 under `<project>/build/restart-evidence/`; it cannot select or delete an existing
 world. The dedicated server binds localhost on an ephemeral port and creates a
 flat `probe-world`. Test-only chunk tickets let real workers tick without players.

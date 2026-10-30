@@ -11,7 +11,9 @@ from pathlib import Path
 
 CONFIG = "createhorsepower.compat.mixins.json"
 PACKAGE = "net/steampn/createhorsepower/compat/mixin/"
-MIXINS = {"IcyHorsePlacementMixin", "IcyHorseManagementMixin", "IcyWagonHandoffMixin"}
+ICY_MIXINS = {"IcyHorsePlacementMixin", "IcyHorseManagementMixin", "IcyWagonHandoffMixin"}
+BIONICS_MIXINS = {"BionicsOxhaulerSoundscapeMixin"}
+MIXINS = ICY_MIXINS | BIONICS_MIXINS
 
 
 def verify(path: Path, platform: str) -> dict:
@@ -19,14 +21,18 @@ def verify(path: Path, platform: str) -> dict:
         files = set(jar.namelist())
         assert CONFIG in files, f"{path}: missing optional mixin config"
         config = json.loads(jar.read(CONFIG))
-        assert set(config["mixins"]) == MIXINS, f"{path}: incomplete optional hooks"
+        assert set(config["mixins"]) == MIXINS, (
+            f"{path}: optional hooks differ from required Icy and Bionics mixins: "
+            f"missing={sorted(MIXINS - set(config['mixins']))}, "
+            f"unexpected={sorted(set(config['mixins']) - MIXINS)}"
+        )
         assert config["plugin"] == "net.steampn.createhorsepower.compat.mixin.IcyMixinPlugin", (
             f"{path}: missing bytecode-only optional bootstrap guard"
         )
         for name in MIXINS | {"IcyMixinPlugin"}:
             assert PACKAGE + name + ".class" in files, f"{path}: missing {name}"
-        # All injection selectors name Icy methods with remap=false. No refmap is
-        # needed for those selectors; if one is configured, it must be packaged.
+        # Optional integration selectors target upstream method names with remap=false.
+        # If a refmap is configured, the release jar must contain it.
         if config.get("refmap"):
             assert config["refmap"] in files, f"{path}: configured refmap is missing"
         if platform == "forge":
@@ -52,7 +58,9 @@ def verify(path: Path, platform: str) -> dict:
         )
     return {
         "jar": str(path), "platform": platform, "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-        "optional_icy_version": "2.1.7", "hooks_packaged": sorted(MIXINS), "result": "passed",
+        "optional_icy_version": "2.1.7", "icy_hooks_packaged": sorted(ICY_MIXINS),
+        "bionics_hooks_packaged": sorted(BIONICS_MIXINS), "hooks_packaged": sorted(MIXINS),
+        "result": "passed",
     }
 
 

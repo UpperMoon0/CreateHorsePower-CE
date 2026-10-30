@@ -96,12 +96,19 @@ neoForge {
                 systemProperty 'createhorsepower.restart.phase', providers.gradleProperty('chpRestartPhase').get()
                 systemProperty 'createhorsepower.restart.dir', project.file(providers.gradleProperty('chpRestartDirectory').get()).absolutePath
                 systemProperty 'createhorsepower.icyExpected', providers.gradleProperty('icyCompatibilityTest').getOrElse('false')
+                if (providers.gradleProperty('bionicsCompatibilityTest').getOrElse('false').toBoolean()) {
+                    systemProperty 'createhorsepower.bionicsExpected', 'true'
+                    systemProperty 'createhorsepower.bionicsRestartPhase', providers.gradleProperty('chpRestartPhase').get()
+                }
             }
         }
 
         gameTestServer {
             type = "gameTestServer"
-            systemProperty 'neoforge.enabledGameTestNamespaces', providers.gradleProperty('icyCompatibilityTest').getOrElse('false').toBoolean() ? 'createhorsepower_icy' : "${project.mod_id},minecraft,createhorsepower_icy"
+            systemProperty 'neoforge.enabledGameTestNamespaces', providers.gradleProperty('bionicsCompatibilityTest').getOrElse('false').toBoolean()
+                    ? 'createhorsepower_bionics'
+                    : (providers.gradleProperty('icyCompatibilityTest').getOrElse('false').toBoolean() ? 'createhorsepower_icy' : "${project.mod_id},minecraft,createhorsepower_icy")
+            systemProperty 'createhorsepower.bionicsExpected', providers.gradleProperty('bionicsCompatibilityTest').getOrElse('false')
             systemProperty 'createhorsepower.icyExpected', providers.gradleProperty('icyCompatibilityTest').getOrElse('false')
         }
 
@@ -150,6 +157,11 @@ configurations {
 }
 
 dependencies {
+    if (providers.gradleProperty('bionicsCompatibilityTest').getOrElse('false').toBoolean()) {
+        // Published NeoForge 1.21.1 Bionics 2.5.0; Modrinth version ID fG2UIEqS.
+        // Explicit pinned runtime dependency, never included in normal CHP jars.
+        localRuntime("maven.modrinth:lCwu0vBo:fG2UIEqS")
+    }
     // Opt-in, exact released artifacts: never packaged with CHP or required by users.
     if (providers.gradleProperty('icyCompatibilityTest').getOrElse('false').toBoolean()) {
         localRuntime("maven.modrinth:icys-better-horses:vfSQ99Gl")
@@ -158,7 +170,7 @@ dependencies {
     }
 
     implementation("com.simibubi.create:create-${minecraft_version}:${create_version}:slim") { transitive = false }
-    implementation("net.createmod.ponder:Ponder-NeoForge-${minecraft_version}:${ponder_version}")
+    implementation("net.createmod.ponder:ponder-neoforge:${ponder_version}+mc${minecraft_version}")
     compileOnly("dev.engine-room.flywheel:flywheel-neoforge-api-${minecraft_version}:${flywheel_version}")
     runtimeOnly("dev.engine-room.flywheel:flywheel-neoforge-${minecraft_version}:${flywheel_version}")
     implementation("com.tterrag.registrate:Registrate:${registrate_version}")

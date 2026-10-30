@@ -223,7 +223,9 @@ public class AnimalPowerEngine {
         return host.hasWorkerProperty()
                 && workerResolved
                 && workerEligible
-                && (cachedWorkerMob == null || net.steampn.createhorsepower.compat.IcyBetterHorses.canWork(cachedWorkerMob))
+                && (cachedWorkerMob == null || (
+                        net.steampn.createhorsepower.compat.IcyBetterHorses.canWork(cachedWorkerMob)
+                        && net.steampn.createhorsepower.compat.CreateBionicsCompat.canWork(cachedWorkerMob)))
                 && hasValidWorkingBlocks
                 && !isStoppedByRedstone()
                 && !suppressGeneration
@@ -962,9 +964,17 @@ public class AnimalPowerEngine {
             host.syncToClient();
         }
 
-        // 4. Move animal along track if active
+        // 4. Spend fuel before moving the worker. An ineffective Bionics fuel
+        // write must stop generation immediately, not leave the crank running
+        // with a readable but uncharged fuel value.
         if (isWorking && cachedWorkerMob != null) {
-            moveWorkerTo(cachedWorkerMob);
+            if (net.steampn.createhorsepower.compat.CreateBionicsCompat.consumeWorkFuel(cachedWorkerMob)) {
+                moveWorkerTo(cachedWorkerMob);
+            } else {
+                stopWorking();
+                host.refreshKinetic();
+                host.syncToClient();
+            }
         }
     }
 
