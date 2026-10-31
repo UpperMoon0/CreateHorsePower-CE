@@ -28,10 +28,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
 
-      # A release workflow only executes after merge; guard its publication
-      # ordering on every PR so a missing packaged-jar gate cannot ship.
-      - name: Verify release publication is gated by packaged-jar validation
-        run: python3 scripts/verify_release_workflow.py
+      # Parse the release job and test known bypass regressions before
+      # running any expensive loader/build jobs.
+      - name: Set up Python for release workflow validation
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Install release workflow YAML parser
+        run: python3 -m pip install --disable-pip-version-check PyYAML==6.0.3
+      - name: Test and verify release publication guard
+        run: |
+          python3 -m unittest discover -s scripts -p 'test_verify_release_workflow.py' -v
+          python3 scripts/verify_release_workflow.py
 
       - name: Set up JDK 21
         uses: actions/setup-java@v5
