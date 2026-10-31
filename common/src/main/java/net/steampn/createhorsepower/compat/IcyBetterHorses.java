@@ -7,7 +7,7 @@ import java.lang.reflect.Method;
 import java.util.Set;
 import java.util.UUID;
 
-/** Optional, server-safe adapter for the released 2.1.7 equine API on both loaders. */
+/** Optional, server-safe adapter for compatible released Icy equine APIs on both loaders. */
 public final class IcyBetterHorses {
     public static final String NAMESPACE = "icys-better-horses";
     public static final Set<String> BREEDS = Set.of(

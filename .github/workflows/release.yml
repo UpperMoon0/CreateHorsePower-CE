@@ -130,6 +130,20 @@ jobs:
             echo "changelog_path=$changelog_path"
           } >> "$GITHUB_OUTPUT"
 
+      # Validate the exact binaries about to be published, not just the source
+      # templates. Fail before any tag, GitHub Release or CurseForge upload.
+      - name: Verify packaged dependency ranges and optional integrations
+        if: steps.guard.outputs.release == 'true'
+        shell: bash
+        env:
+          FORGE_JAR: ${{ steps.release_file.outputs.forge_jar }}
+          NEOFORGE_JAR: ${{ steps.release_file.outputs.nf_jar }}
+        run: |
+          set -euo pipefail
+          python3 scripts/verify_compat_jar.py \
+            --forge "$FORGE_JAR" \
+            --neoforge "$NEOFORGE_JAR"
+
       # Tag creation is intentionally the LAST validation: a broken commit must
       # never get a release-looking tag before the build, parity checks, tests
       # and artifact validation have all succeeded. The invariant enforced
