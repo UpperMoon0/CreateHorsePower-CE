@@ -4,6 +4,7 @@
 import argparse
 import hashlib
 import json
+import re
 import sys
 import tomllib
 import zipfile
@@ -47,8 +48,23 @@ def verify(path: Path, platform: str) -> dict:
             )
         deps = metadata["dependencies"]["createhorsepower"]
         icy = [item for item in deps if item.get("modId") == "icys_better_horses"]
+        create = [item for item in deps if item.get("modId") == "create"]
         assert len(icy) == 1, f"{path}: expected one explicit optional Icy dependency contract"
-        assert icy[0]["versionRange"] == "[2.1.7]", f"{path}: unsupported Icy version range"
+        assert len(create) == 1, f"{path}: expected one Create dependency"
+        assert icy[0]["versionRange"] == "[2.1.7,)", f"{path}: incorrect Icy minimum version"
+        assert create[0]["versionRange"] == "[6.0.8,)", f"{path}: incorrect Create minimum version"
+        # All mod and loader dependencies must have a minimum but no hard maximum.
+        # Minecraft is different: each artifact is compiled against one Minecraft API.
+        minimum_only = re.compile(r"\[[^,\[\]\s]+,\)")
+        assert minimum_only.fullmatch(metadata.get("loaderVersion", "")), (
+            f"{path}: loader version range must have no upper bound"
+        )
+        for dep in deps:
+            if dep.get("modId") == "minecraft":
+                continue
+            assert minimum_only.fullmatch(dep.get("versionRange", "")), (
+                f"{path}: {dep.get('modId')} dependency must have no upper bound"
+            )
         if platform == "forge":
             assert icy[0].get("mandatory") is False, f"{path}: Icy accidentally required"
         else:
@@ -58,7 +74,7 @@ def verify(path: Path, platform: str) -> dict:
         )
     return {
         "jar": str(path), "platform": platform, "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-        "optional_icy_version": "2.1.7", "icy_hooks_packaged": sorted(ICY_MIXINS),
+        "optional_icy_min_version": "2.1.7", "icy_hooks_packaged": sorted(ICY_MIXINS),
         "bionics_hooks_packaged": sorted(BIONICS_MIXINS), "hooks_packaged": sorted(MIXINS),
         "result": "passed",
     }

@@ -6,7 +6,7 @@ This is an independent, community-maintained fork of [SteamPunkNation/CreateHors
 
 ## Compatibility and installation
 
-CE maintains **Forge** and **NeoForge** builds. Create and the matching Minecraft loader are required. Select a jar built for your loader/Minecraft combination, install its compatible Create dependency, and place CE in `mods/`. The matching Minecraft, loader, Create, Java and CE release requirements are defined by the project metadata and listed in [GitHub Releases](https://github.com/UpperMoon0/CreateHorsePower-CE/releases). Do not mix loader artifacts.
+CE maintains **Forge** and **NeoForge** builds. Create and the matching Minecraft loader are required. Select a jar built for your loader/Minecraft combination, install its compatible Create dependency, and place CE in `mods/`. The matching Minecraft, loader, Create, Java and CE release requirements are defined by the project metadata and listed in [GitHub Releases](https://github.com/UpperMoon0/CreateHorsePower-CE/releases). Do not mix loader artifacts. Runtime metadata declares minimum supported mod and loader versions without arbitrary upper caps; newer dependency versions are allowed to load but remain subject to compatibility testing. Each jar still targets a specific Minecraft version.
 
 The core behavior—worker profiles, path evaluation, redstone modes, commands and goggles tooltips—is shared. Some integrations differ by loader; refer to the [feature compatibility matrix](docs/COMPATIBILITY.md).
 

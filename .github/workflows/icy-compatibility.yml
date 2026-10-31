@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   icy-runtime:
-    name: Icy 2.1.7 / ${{ matrix.project }}
+    name: Icy 2.1.8 / ${{ matrix.project }}
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     strategy:

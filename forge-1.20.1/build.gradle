@@ -150,7 +150,7 @@ dependencies {
     }
     // Opt-in, exact released artifacts: never packaged with CHP or required by users.
     if (providers.gradleProperty('icyCompatibilityTest').getOrElse('false').toBoolean()) {
-        runtimeOnly(fg.deobf("maven.modrinth:icys-better-horses:kXpI9qsc"))
+        runtimeOnly(fg.deobf("maven.modrinth:icys-better-horses:bF0UKYak"))
         runtimeOnly(fg.deobf("maven.modrinth:geckolib:aC5KMoNg"))
     }
 
