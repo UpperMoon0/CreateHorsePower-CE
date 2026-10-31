@@ -28,6 +28,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
 
+      # A release workflow only executes after merge; guard its publication
+      # ordering on every PR so a missing packaged-jar gate cannot ship.
+      - name: Verify release publication is gated by packaged-jar validation
+        run: python3 scripts/verify_release_workflow.py
+
       - name: Set up JDK 21
         uses: actions/setup-java@v5
         with:
