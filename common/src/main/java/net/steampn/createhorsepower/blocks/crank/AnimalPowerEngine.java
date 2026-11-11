@@ -101,6 +101,7 @@ public class AnimalPowerEngine {
     private float speedBonusPercent = 0.0f;
     private float healthBonusPercent = 0.0f;
     private int efficiencyPercent = 100;
+    private int coveragePercent = 0;
     private int invalidBlockCount = 0;
     private String cachedWorkerName = "";
     private String workerEntityId = "";
@@ -279,6 +280,7 @@ public class AnimalPowerEngine {
         }
 
         tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.path_efficiency", efficiencyPercent + "%").withStyle(ChatFormatting.GRAY));
+        tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.path_coverage", coveragePercent + "%").withStyle(ChatFormatting.GRAY));
 
         if (speedBonusPercent != 0) {
             tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.speed_bonus", String.format("%+.1f%%", speedBonusPercent)).withStyle(ChatFormatting.AQUA));
@@ -444,6 +446,7 @@ public class AnimalPowerEngine {
             compound.putFloat("SpeedBonusPercent", speedBonusPercent);
             compound.putFloat("HealthBonusPercent", healthBonusPercent);
             compound.putInt("EfficiencyPercent", efficiencyPercent);
+            compound.putInt("CoveragePercent", coveragePercent);
             compound.putInt("InvalidBlockCount", invalidBlockCount);
             compound.putString("CachedWorkerName", cachedWorkerName);
         }
@@ -560,6 +563,7 @@ public class AnimalPowerEngine {
             speedBonusPercent = compound.getFloat("SpeedBonusPercent");
             healthBonusPercent = compound.getFloat("HealthBonusPercent");
             efficiencyPercent = compound.getInt("EfficiencyPercent");
+            coveragePercent = compound.getInt("CoveragePercent");
             invalidBlockCount = compound.getInt("InvalidBlockCount");
             cachedWorkerName = compound.getString("CachedWorkerName");
         } else {
@@ -1323,11 +1327,14 @@ public class AnimalPowerEngine {
         boolean valid = evalResult.isValid();
         int invalidCount = evalResult.invalidBlocks();
         int eff = Math.round(speedMult * 100.0f);
+        int coverage = evalResult.totalBlocks() == 0 ? 0
+                : Math.round(100.0f * evalResult.validBlocks() / evalResult.totalBlocks());
 
         boolean changed = (this.hasValidWorkingBlocks != valid)
                 || (this.rpmModifier != speedMult)
                 || (this.pathStressModifier != stressMult)
-                || (this.invalidBlockCount != invalidCount);
+                || (this.invalidBlockCount != invalidCount)
+                || (this.coveragePercent != coverage);
 
         if (changed) {
             boolean wasGenerating = hasValidWorkingBlocks && (rpmModifier > 0);
@@ -1335,6 +1342,7 @@ public class AnimalPowerEngine {
             this.rpmModifier = speedMult;
             this.pathStressModifier = stressMult;
             this.efficiencyPercent = eff;
+            this.coveragePercent = coverage;
             this.invalidBlockCount = invalidCount;
             CHPDiagnostics.event("path_state_changed", level, host.pos(), crankInstanceUuid, cachedWorkerMob,
                     "valid=" + valid + " speed_multiplier=" + speedMult + " stress_multiplier=" + stressMult
@@ -1359,6 +1367,10 @@ public class AnimalPowerEngine {
 
     public int getInvalidBlockCount() {
         return invalidBlockCount;
+    }
+
+    public int getCoveragePercent() {
+        return coveragePercent;
     }
 
     public float getSpeedBonusPercent() {
