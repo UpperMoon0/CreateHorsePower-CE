@@ -154,6 +154,12 @@ public final class HorsePowerGameTests {
         helper.assertTrue(snap.moved(), "A worker outside the ring should land safely on the track");
         helper.assertTrue(Math.abs(Math.hypot(outer.getX() - centerX, outer.getZ() - centerZ) - 2.5D)
                         < 0.005D, "Outside worker must land on the configured radius");
+        // This fixture runs beside other recovery tests; clean up its live
+        // vanilla leash so it cannot create stray lead items when reset.
+        engine.detachWorker(false);
+        horse.discard();
+        outer.discard();
+        knot.discard();
         helper.succeed();
     }
 
@@ -676,6 +682,10 @@ public final class HorsePowerGameTests {
                     Horse reloaded = reloadedHolder[0];
                     helper.assertTrue(reloaded != null, "reloaded worker fixture must be initialized");
 
+                    long leadsBefore = level.getEntitiesOfClass(
+                            ItemEntity.class, new AABB(reloaded.blockPosition()).inflate(8.0D),
+                            item -> item.getItem().is(Items.LEAD)).size();
+
                     // 1.20.1 restores persisted BlockPos leash data from Mob.tickLeash(),
                     // reached by Mob.tick(). Invoke that exact vanilla path because
                     // GameTest fixture mobs are not guaranteed a scheduler-driven tick.
@@ -702,11 +712,11 @@ public final class HorsePowerGameTests {
                             "Recovery must restore the worker's original NoAI=false state");
                     helper.assertTrue(CHPUtils.getKnot(level, worldCrankPos).isEmpty(),
                             "Recovery must remove the unused knot recreated from saved leash data");
-                    boolean spawnedLead = !level.getEntitiesOfClass(
+                    long leadsAfter = level.getEntitiesOfClass(
                             ItemEntity.class, new AABB(reloaded.blockPosition()).inflate(8.0D),
-                            item -> item.getItem().is(Items.LEAD)).isEmpty();
-                    helper.assertFalse(spawnedLead,
-                            "Deferred detachWorker(false) must not spawn a lead when the worker reloads");
+                            item -> item.getItem().is(Items.LEAD)).size();
+                    helper.assertTrue(leadsAfter == leadsBefore,
+                            "Deferred detachWorker(false) must not spawn a new lead when the worker reloads");
                 })
                 .thenSucceed();
     }
