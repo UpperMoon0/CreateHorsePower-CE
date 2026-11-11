@@ -1,7 +1,6 @@
 package net.steampn.createhorsepower.blocks.crank;
 
 import net.minecraft.world.entity.Mob;
-import net.minecraft.core.BlockPos;
 import net.steampn.createhorsepower.content.path.PathEvaluator;
 import net.minecraft.world.entity.animal.horse.Horse;
 
@@ -51,20 +50,30 @@ public final class WorkerOrbitMovement {
         boolean moved = deltaX * deltaX + deltaZ * deltaZ > MIN_MOVEMENT_SQUARED;
         float requestedYaw = moved ? yawFromMovement(deltaX, deltaZ) : mob.getYRot();
 
-        // Orbiting uses horizontal teleports at fixed Y. Verify the ground
-        // under every intermediate point, not only the final destination:
-        // neither air holes nor fences may be crossed for free between scans.
+        // The first attachment/recovery snap starts away from the ring.
+        // Do not treat the straight radial relocation as a walking step: the
+        // valid ring need not cover the crank's interior. Require a safe landing
+        // and a free entity bounding box, then use stepwise support checks for
+        // subsequent tangential motion along the established ring.
+        double radialDistance = Math.hypot(oldX - centerX, oldZ - centerZ);
+        boolean joiningRing = Math.abs(radialDistance - radius) > 0.125D;
         double distance = Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
-        int steps = Math.max(1, (int) Math.ceil(distance * 4.0D));
+        int steps = joiningRing ? 1 : Math.max(1, (int) Math.ceil(distance * 4.0D));
         for (int step = 1; step <= steps; step++) {
             double t = (double) step / steps;
-            BlockPos floor = BlockPos.containing(oldX + deltaX * t,
-                    mob.getY() - 0.125D, oldZ + deltaZ * t);
-            if (!PathEvaluator.isWalkableTile(mob.level(), floor)) {
+            double x = joiningRing ? targetX : oldX + deltaX * t;
+            double z = joiningRing ? targetZ : oldZ + deltaZ * t;
+            if (!PathEvaluator.supportsWorkerFootprint(
+                    mob.level(), x, mob.getY(), z, mob.getBbWidth())) {
                 return new Snapshot(oldX, oldZ, targetX, targetZ, mob.getX(), mob.getZ(),
                         currentAngle, newAngle, deltaX, deltaZ, requestedYaw,
                         mob.getYRot(), false, false);
             }
+        }
+        if (!mob.level().noCollision(mob, mob.getBoundingBox().move(deltaX, 0.0D, deltaZ))) {
+            return new Snapshot(oldX, oldZ, targetX, targetZ, mob.getX(), mob.getZ(),
+                    currentAngle, newAngle, deltaX, deltaZ, requestedYaw,
+                    mob.getYRot(), false, false);
         }
 
         mob.teleportTo(targetX, mob.getY(), targetZ);
