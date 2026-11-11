@@ -59,7 +59,12 @@ public final class HorsePowerGameTests {
         BlockPos crankPos = new BlockPos(4, 2, 4);
         BlockPos[] offsets = HorseCrankEngine.generateOffsetsForRadius(2.5f);
         for (BlockPos offset : offsets) {
-            helper.setBlock(crankPos.offset(offset), Blocks.STONE);
+            BlockPos floor = crankPos.offset(offset);
+            helper.setBlock(floor, Blocks.STONE);
+            // NeoForge's "empty" template includes invisible boundary barriers.
+            // A real walking orbit needs two clear blocks above every floor tile.
+            helper.setBlock(floor.above(), Blocks.AIR);
+            helper.setBlock(floor.above(2), Blocks.AIR);
         }
         helper.setBlock(crankPos.offset(offsets[0]), Blocks.ICE);
         assertWalkableRing(helper, crankPos, offsets);
@@ -113,7 +118,12 @@ public final class HorsePowerGameTests {
         BlockPos crankPos = new BlockPos(4, 2, 4);
         BlockPos[] offsets = HorseCrankEngine.generateOffsetsForRadius(2.5f);
         for (BlockPos offset : offsets) {
-            helper.setBlock(crankPos.offset(offset), Blocks.STONE);
+            BlockPos floor = crankPos.offset(offset);
+            helper.setBlock(floor, Blocks.STONE);
+            // NeoForge's "empty" template includes invisible boundary barriers.
+            // A real walking orbit needs two clear blocks above every floor tile.
+            helper.setBlock(floor.above(), Blocks.AIR);
+            helper.setBlock(floor.above(2), Blocks.AIR);
         }
         helper.setBlock(crankPos.offset(offsets[0]), Blocks.ICE);
         assertWalkableRing(helper, crankPos, offsets);
@@ -889,7 +899,10 @@ public final class HorsePowerGameTests {
             BlockPos localCrankPos = new BlockPos(4, 2, 4);
             BlockPos[] offsets = HorseCrankEngine.generateOffsetsForRadius(2.5f);
             for (BlockPos offset : offsets) {
-                helper.setBlock(localCrankPos.offset(offset), Blocks.ICE);
+                BlockPos floor = localCrankPos.offset(offset);
+                helper.setBlock(floor, Blocks.ICE);
+                helper.setBlock(floor.above(), Blocks.AIR);
+                helper.setBlock(floor.above(2), Blocks.AIR);
             }
             assertWalkableRing(helper, localCrankPos, offsets);
 
