@@ -25,7 +25,7 @@ class HorsePowerCITests(unittest.TestCase):
             jar = ci.jar_for(target, "1.2.12")
             jar.parent.mkdir(parents=True)
             with zipfile.ZipFile(jar, "w") as output:
-                output.writestr("net/steampn/createhorsepower/CreateHorsePower.class", b"valid class placeholder")
+                output.writestr("net/steampn/createhorsepower/CreateHorsePower.class", b"valid class placeholder" * 128)
 
     def test_target_names_and_main_only_delegate(self):
         self.assertEqual(ci.TARGETS, ("forge-1.20.1", "neoforge-1.21.1"))
