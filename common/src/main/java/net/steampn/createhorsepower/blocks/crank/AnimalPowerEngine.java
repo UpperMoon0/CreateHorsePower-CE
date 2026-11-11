@@ -1456,6 +1456,15 @@ public class AnimalPowerEngine {
         workerOrbitAngle = WorkerOrbitMovement.normalizeAngle(workerOrbitAngle + angularDelta);
         WorkerOrbitMovement.Snapshot movement = WorkerOrbitMovement.moveToAngle(
                 mob, centerX, centerZ, workerRadius, currentAngle, workerOrbitAngle);
+        if (Math.hypot(movement.targetX() - movement.actualX(),
+                movement.targetZ() - movement.actualZ()) > 1.0e-4D) {
+            // A newly opened gap must stop kinetic output immediately, not
+            // wait for the next scheduled path reevaluation.
+            checkPathBlocks();
+            stopWorking();
+            host.refreshKinetic();
+            host.syncToClient();
+        }
         WorkerActivityControl.clearHorizontalVelocity(mob);
     }
 }
