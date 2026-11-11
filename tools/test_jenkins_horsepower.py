@@ -1,6 +1,7 @@
 """Contracts for portable CI packaging, no network/Gradle invocation required."""
 import hashlib
 import json
+import subprocess
 from pathlib import Path
 import tempfile
 import unittest
@@ -49,6 +50,39 @@ class HorsePowerCITests(unittest.TestCase):
         provenance = json.loads((output / "provenance.json").read_text())
         self.assertEqual(provenance, {"source_sha": "a" * 40, "version": "1.2.12",
                                       "targets": sorted(ci.TARGETS)})
+
+    def test_generated_files_require_real_content_parity_and_no_untracked_files(self):
+        target = "forge-1.20.1"
+        generated = self.root / target / "src" / "generated" / "resources"
+        generated.mkdir(parents=True)
+        tracked = generated / "recipe.json"
+        tracked.write_text('{"id":"original"}\n', encoding="utf-8")
+        subprocess.run(["git", "init", "-q"], cwd=self.root, check=True)
+        subprocess.run(["git", "config", "user.email", "ci-fixture@example.invalid"],
+                       cwd=self.root, check=True)
+        subprocess.run(["git", "config", "user.name", "CI Fixture"],
+                       cwd=self.root, check=True)
+        subprocess.run(["git", "config", "core.autocrlf", "true"],
+                       cwd=self.root, check=True)
+        subprocess.run(["git", "add", "-A"], cwd=self.root, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "fixture"], cwd=self.root, check=True)
+        # RunData may rewrite tracked JSON with identical LF bytes on Windows.
+        # Stat/CRLF warnings must not produce false failures.
+        tracked.write_text('{"id":"original"}\n', encoding="utf-8")
+        with patch.object(ci, "gradle") as gradle:
+            ci.build(target)
+            self.assertEqual(gradle.call_count, 2)
+        tracked.write_text('{"id":"changed"}\n', encoding="utf-8")
+        with patch.object(ci, "gradle") as gradle:
+            with self.assertRaisesRegex(RuntimeError, "changed tracked"):
+                ci.build(target)
+            gradle.assert_called_once()
+        tracked.write_text('{"id":"original"}\n', encoding="utf-8")
+        (generated / "extra.json").write_text('{"unexpected":true}\n')
+        with patch.object(ci, "gradle") as gradle:
+            with self.assertRaisesRegex(RuntimeError, "untracked"):
+                ci.build(target)
+            gradle.assert_called_once()
 
     def test_stale_release_output_refused_without_overwrite(self):
         self.make_jars()
