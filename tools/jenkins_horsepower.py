@@ -34,7 +34,7 @@ def gradle(*args: str, cwd: Path = ROOT, env: dict[str, str] | None = None) -> N
     if not wrapper.is_file():
         raise RuntimeError(f"Missing checked-in Gradle wrapper: {wrapper}")
     command = ([os.environ.get("COMSPEC", "cmd.exe"), "/d", "/c"]
-               if os.name == "nt" else [])
+               if os.name == "nt" else ["bash"])
     run(*command, str(wrapper), *args, "--stacktrace", "--no-daemon",
         "--max-workers=2", cwd=cwd, env=env)
 
