@@ -3,3 +3,8 @@
 # are changed when only line endings change.
 src/generated/**/.cache/cache text eol=lf
 src/generated/**/*.json text eol=lf
+
+# Loader-specific generated resources must use LF on every OS, including
+# Windows machines with global core.autocrlf=true. Do not weaken CI diffs.
+**/src/generated/resources/**/*.json text eol=lf
+**/src/generated/resources/**/*.mcmeta text eol=lf
