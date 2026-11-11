@@ -30,6 +30,10 @@ If a section is not labeled as "NeoForge only", it applies to both loaders. Alwa
 
 ---
 
+## Upgrade checklist: mixed paths
+
+For servers upgrading from v1.2.11 or earlier, the persisted `minimumCoverage = 1.0` setting remains strict. **Edit the server config and set `minimumCoverage = 0.0`** to permit unsupported *walkable* tiles. Existing config values are intentionally not rewritten. Unsafe floors (air gaps, fluid, obstructed overhead or unsupported collision shapes) always stop the crank, even at zero coverage threshold. The worker also checks every orbit teleport step, so a newly opened hole immediately stops power. `WORST_BLOCK` sets output to zero when any tile is unsupported; `LEGACY` scales RPM and stress by recognized coverage; `WEIGHTED_AVERAGE` divides recognized contributions by all sampled tiles. Disabling stress scaling only neutralizes the final stress multiplier, never RPM or physical safety.
+
 ## Architecture Overview
 
 Create Horse Power CE turns the Horse Crank into a data-driven animal power framework.
