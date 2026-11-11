@@ -1,0 +1,12 @@
+{
+  "forge-1.20.1": {
+    "loader": "forge",
+    "minecraft": "1.20.1",
+    "java": 17
+  },
+  "neoforge-1.21.1": {
+    "loader": "neoforge",
+    "minecraft": "1.21.1",
+    "java": 21
+  }
+}
