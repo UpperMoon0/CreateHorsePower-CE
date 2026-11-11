@@ -2,6 +2,9 @@ package net.steampn.createhorsepower.content.path;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.phys.shapes.BooleanOp;
+import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
@@ -45,9 +48,8 @@ public class PathEvaluator {
             resolvedStats[i] = getPathStats(level.getBlockState(targetPos).getBlock()).orElse(null);
         }
 
-        // The track sample is an annulus, while the actual animal follows a
-        // continuous circle. Check the circle too, so a narrow gap between
-        // sampled blocks cannot be jumped over during a teleport step.
+        // The annulus supplies coarse validity; movement independently checks
+        // the actual continuous orbit and its immediate support footprint.
         PathEvaluator.Result computed = evaluateResolvedPathStats(
                 resolvedStats,
                 CHPApi.config().pathEvaluationMode(),
@@ -67,16 +69,55 @@ public class PathEvaluator {
                 || !level.hasChunkAt(floorPos.above(2))) return false;
         BlockState floor = level.getBlockState(floorPos);
         VoxelShape collision = floor.getCollisionShape(level, floorPos);
-        // Lower path blocks (dirt paths/farmland) are traversable. Fences,
-        // fluids and narrow non-supporting shapes are not safe at fixed Y.
-        if (!floor.getFluidState().isEmpty() || collision.isEmpty()
-                || collision.max(Direction.Axis.Y) < 0.8125D
-                || collision.max(Direction.Axis.Y) > 1.0D) return false;
-        for (int dy = 1; dy <= 2; dy++) {
-            BlockPos above = floorPos.above(dy);
-            BlockState overhead = level.getBlockState(above);
-            if (!overhead.getFluidState().isEmpty()
-                    || !overhead.getCollisionShape(level, above).isEmpty()) return false;
+        // Only a broad, continuous top surface supports a worker. The old
+        // maxY check accepted a thin iron bar because its collision reached Y=1.
+        // Dirt paths and farmland have a lower but still broad, level top.
+        if (floor.getFluidState().isEmpty() && !isHazardousFloor(floor) && !collision.isEmpty()) {
+            double top = collision.max(Direction.Axis.Y);
+            if (top >= 0.8125D && top <= 1.0D) {
+                VoxelShape hoofArea = Shapes.box(0.125D, top - 0.015625D, 0.125D,
+                        0.875D, top, 0.875D);
+                if (!Shapes.joinIsNotEmpty(hoofArea, collision, BooleanOp.ONLY_FIRST)) {
+                    for (int dy = 1; dy <= 2; dy++) {
+                        BlockPos above = floorPos.above(dy);
+                        BlockState overhead = level.getBlockState(above);
+                        if (!overhead.getFluidState().isEmpty()
+                                || isHazardousFloor(overhead)
+                                || !overhead.getCollisionShape(level, above).isEmpty()) {
+                            return false;
+                        }
+                    }
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /** Material hazards cannot become safe merely by being added to a path profile. */
+    private static boolean isHazardousFloor(BlockState state) {
+        return state.is(Blocks.MAGMA_BLOCK)
+                || state.is(Blocks.CAMPFIRE)
+                || state.is(Blocks.SOUL_CAMPFIRE)
+                || state.is(Blocks.CACTUS)
+                || state.is(Blocks.POWDER_SNOW)
+                || state.is(Blocks.SWEET_BERRY_BUSH)
+                || state.is(Blocks.WITHER_ROSE)
+                || state.is(Blocks.FIRE)
+                || state.is(Blocks.SOUL_FIRE);
+    }
+
+    /** Sample the central hoof-bearing footprint, including neighbouring tiles. */
+    public static boolean supportsWorkerFootprint(Level level, double x, double feetY,
+                                                   double z, float width) {
+        double half = Math.min(0.25D, Math.max(0.0D, width * 0.25D));
+        for (double dx : new double[] {-half, 0.0D, half}) {
+            for (double dz : new double[] {-half, 0.0D, half}) {
+                if (!isWalkableTile(level, BlockPos.containing(
+                        x + dx, feetY - 0.125D, z + dz))) {
+                    return false;
+                }
+            }
         }
         return true;
     }
