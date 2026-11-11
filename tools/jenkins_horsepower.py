@@ -64,12 +64,24 @@ def verify() -> None:
 
 def build(target: str) -> None:
     gradle(f":{target}:runData")
-    changed = subprocess.run(
-        ["git", "status", "--porcelain", "--untracked-files=all", "--",
-         f"{target}/src/generated/resources"],
-        cwd=ROOT, check=True, capture_output=True, text=True).stdout
-    if changed.strip():
-        raise RuntimeError(f"{target}: runData modified tracked/generated resources: {changed}")
+    # Git status --porcelain can misreport clean generated LF files as
+    # modified on Windows when the host's global core.autocrlf=true. Compare
+    # the actual normalized worktree+index contents against HEAD instead.
+    # This still fails on every real tracked content change, deletion, staged
+    # change, and untracked generated resource.
+    folder = f"{target}/src/generated/resources"
+    diff = subprocess.run(
+        ["git", "-c", "core.autocrlf=false", "diff", "--quiet", "HEAD", "--", folder],
+        cwd=ROOT, capture_output=True, text=True)
+    if diff.returncode != 0:
+        if diff.returncode != 1:
+            raise RuntimeError(f"{target}: Git diff failed: {diff.returncode}")
+        raise RuntimeError(f"{target}: runData changed tracked generated resources")
+    other = subprocess.run(
+        ["git", "ls-files", "--others", "--exclude-standard", "--", folder],
+        cwd=ROOT, check=True, capture_output=True, text=True)
+    if other.stdout.strip():
+        raise RuntimeError(f"{target}: runData created untracked generated resources: {other.stdout.strip()}")
     gradle(f":{target}:build", f":{target}:runGameTestServer")
 
 
