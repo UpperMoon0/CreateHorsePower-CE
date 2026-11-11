@@ -62,6 +62,7 @@ public final class HorsePowerGameTests {
             helper.setBlock(crankPos.offset(offset), Blocks.STONE);
         }
         helper.setBlock(crankPos.offset(offsets[0]), Blocks.ICE);
+        assertWalkableRing(helper, crankPos, offsets);
         helper.setBlock(crankPos, BlockRegister.HORSE_CRANK.get());
         AbstractHorseCrankBlockEntity blockEntity = requireCrank(helper, crankPos);
         HorseCrankEngine engine = blockEntity.engine();
@@ -115,6 +116,7 @@ public final class HorsePowerGameTests {
             helper.setBlock(crankPos.offset(offset), Blocks.STONE);
         }
         helper.setBlock(crankPos.offset(offsets[0]), Blocks.ICE);
+        assertWalkableRing(helper, crankPos, offsets);
         helper.setBlock(crankPos, BlockRegister.HORSE_CRANK.get());
         HorseCrankEngine engine = requireCrank(helper, crankPos).engine();
         Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(5, 2, 4));
@@ -889,6 +891,7 @@ public final class HorsePowerGameTests {
             for (BlockPos offset : offsets) {
                 helper.setBlock(localCrankPos.offset(offset), Blocks.ICE);
             }
+            assertWalkableRing(helper, localCrankPos, offsets);
 
             helper.setBlock(localCrankPos, BlockRegister.HORSE_CRANK.get());
             AbstractHorseCrankBlockEntity crank = requireCrank(helper, localCrankPos);
@@ -1404,6 +1407,22 @@ public final class HorsePowerGameTests {
             for (int z = 1; z <= 5; z++) {
                 helper.setBlock(new BlockPos(x, 1, z), Blocks.STONE);
             }
+        }
+    }
+
+    private static void assertWalkableRing(GameTestHelper helper, BlockPos center, BlockPos[] offsets) {
+        var level = helper.getLevel();
+        for (BlockPos offset : offsets) {
+            BlockPos floor = helper.absolutePos(center.offset(offset));
+            var state = level.getBlockState(floor);
+            helper.assertTrue(net.steampn.createhorsepower.content.path.PathEvaluator.isWalkableTile(
+                    level, floor),
+                    "unsafe ring floor " + floor + " offset=" + offset
+                            + " state=" + state
+                            + " shape=" + state.getCollisionShape(level, floor).toAabbs()
+                            + " overhead=" + level.getBlockState(floor.above())
+                            + " overhead2=" + level.getBlockState(floor.above(2))
+                            + " chunk=" + level.hasChunkAt(floor));
         }
     }
 
