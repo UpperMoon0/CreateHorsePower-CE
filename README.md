@@ -47,7 +47,7 @@ This is a multi-platform Gradle workspace. Shared logic is in `common/`; loader 
 
 On Windows use `gradlew.bat` in place of `./gradlew`. Jars are generated in the appropriate loader project's `build/libs/`; the mod version is defined in the root `gradle.properties` and supported dependency versions are maintained in loader project metadata.
 
-Ordinary smoke tests exercise both loaders without optional mods. Optional integrations have dedicated test workflows and conditional runtime dependencies. Tests with a real optional server mod do **not** constitute real-client multiplayer, packet/raycast or rendering acceptance. Consult the [Actions runs](https://github.com/UpperMoon0/CreateHorsePower-CE/actions) and the appropriate release-specific acceptance notes for actual verification results.
+CI runs through [central NsTut-CICD Jenkins](https://github.com/UpperMoon0/NsTut-CICD/tree/main/jenkins/minecraft-mods/createhorsepower-ce). The reviewed pipeline runs both loader GameTests, real Icy/Bionics integration and isolated restart probes before creating a verifiable release bundle. Releases are requested explicitly through the central host-only publisher; source pushes do not upload JARs. Real server integration acceptance does **not** substitute for multiplayer graphical-client testing.
 
 ## Credits, license and support
 
