@@ -60,8 +60,6 @@ def verify() -> None:
            "--configure-on-demand")
     run(sys.executable, "-m", "unittest", "discover",
         "-s", "tools", "-p", "test_*.py", "-v")
-    script("verify_compat_jar.py", "--forge", str(jar_for(TARGETS[0], version())),
-           "--neoforge", str(jar_for(TARGETS[1], version()))) if False else None
 
 
 def build(target: str) -> None:
