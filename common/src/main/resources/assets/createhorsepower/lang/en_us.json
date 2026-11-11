@@ -17,6 +17,7 @@
   "tooltip.createhorsepower.goggles.status.working": "Working",
   "tooltip.createhorsepower.goggles.worker": "Worker: %s",
   "tooltip.createhorsepower.goggles.path_efficiency": "Path efficiency: %s",
+  "tooltip.createhorsepower.goggles.path_coverage": "Track coverage: %s",
   "tooltip.createhorsepower.goggles.speed_bonus": "Speed bonus: %s",
   "tooltip.createhorsepower.goggles.health_bonus": "Health bonus: %s",
   "tooltip.createhorsepower.goggles.redstone_mode": "Redstone behavior: %s",
