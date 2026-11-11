@@ -83,13 +83,39 @@ def icy(target: str) -> None:
         script("run_restart_probe.py", "--project", target, "--icy", enabled)
 
 
+def java17_home() -> Path:
+    """Select an actual JDK 17, not an assumed PATH/java or arbitrary JDK."""
+    candidates = []
+    for name in ("JAVA17_HOME", "JDK17_HOME"):
+        if os.environ.get(name):
+            candidates.append(Path(os.environ[name]))
+    if os.environ.get("JAVA_HOME"):
+        candidates.append(Path(os.environ["JAVA_HOME"]))
+    if os.name == "nt":
+        for root in (os.environ.get("ProgramFiles", r"C:\Program Files"),
+                     os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")):
+            for prefix in ("Java/jdk-17*", "Eclipse Adoptium/jdk-17*",
+                           "Microsoft/jdk-17*"):
+                candidates.extend(Path(root).glob(prefix))
+    else:
+        candidates.extend(Path("/usr/lib/jvm").glob("*17*"))
+        candidates.extend(Path("/opt/java").glob("*17*"))
+    for path in candidates:
+        java = path / "bin" / ("java.exe" if os.name == "nt" else "java")
+        if not java.is_file():
+            continue
+        result = subprocess.run([str(java), "-version"], capture_output=True,
+                                text=True, timeout=15, check=False)
+        if result.returncode == 0 and re.search(r'\bversion "17(?:\.|")',
+                                                 result.stdout + result.stderr):
+            return path
+    raise RuntimeError("JDK 17 not found for pinned Forge Bionics acceptance")
+
+
 def prepared_bionics_jar() -> None:
     destination = ROOT / TARGETS[0] / "build" / "bionics-runtime" / "createbionics-2.0.0.jar"
     destination.parent.mkdir(parents=True, exist_ok=True)
-    java17 = os.environ.get("JAVA17_HOME", "")
-    if not java17 or not (Path(java17) / "bin" / ("java.exe" if os.name == "nt" else "java")).is_file():
-        raise RuntimeError("Pinned Forge Bionics source requires a reviewed JAVA17_HOME on the CI worker")
-    env = dict(os.environ, JAVA_HOME=java17)
+    env = dict(os.environ, JAVA_HOME=str(java17_home()))
     with tempfile.TemporaryDirectory(prefix="chp-bionics-source-") as scratch:
         upstream = Path(scratch) / "source"
         run("git", "clone", "--no-checkout", BIONICS_FORGE_SOURCE, str(upstream))
