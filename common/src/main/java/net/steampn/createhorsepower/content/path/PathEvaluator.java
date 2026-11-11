@@ -1,6 +1,8 @@
 package net.steampn.createhorsepower.content.path;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.phys.shapes.VoxelShape;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
@@ -31,15 +33,22 @@ public class PathEvaluator {
         }
 
         PathStats[] resolvedStats = new PathStats[offsets.length];
+        boolean safeOrbit = true;
         for (int i = 0; i < offsets.length; i++) {
             BlockPos targetPos = centerPos.offset(offsets[i]);
+            if (!isWalkableTile(level, targetPos)) {
+                safeOrbit = false;
+            }
             if (!level.hasChunkAt(targetPos)) {
                 continue;
             }
             resolvedStats[i] = getPathStats(level.getBlockState(targetPos).getBlock()).orElse(null);
         }
 
-        return evaluateResolvedPathStats(
+        // The track sample is an annulus, while the actual animal follows a
+        // continuous circle. Check the circle too, so a narrow gap between
+        // sampled blocks cannot be jumped over during a teleport step.
+        PathEvaluator.Result computed = evaluateResolvedPathStats(
                 resolvedStats,
                 CHPApi.config().pathEvaluationMode(),
                 CHPApi.config().minimumPathCoverage(),
@@ -48,6 +57,28 @@ public class PathEvaluator {
                 (float) CHPApi.config().greatMultiplier(),
                 CHPApi.config().enablePathStressScaling()
         );
+        return safeOrbit ? computed : new Result(false, 0.0f, 0.0f,
+                computed.validBlocks(), computed.invalidBlocks(), computed.totalBlocks(), 0);
+    }
+
+    /** Walkability is independent from a block having a configured efficiency profile. */
+    public static boolean isWalkableTile(Level level, BlockPos floorPos) {
+        if (level == null || !level.hasChunkAt(floorPos)
+                || !level.hasChunkAt(floorPos.above(2))) return false;
+        BlockState floor = level.getBlockState(floorPos);
+        VoxelShape collision = floor.getCollisionShape(level, floorPos);
+        // Lower path blocks (dirt paths/farmland) are traversable. Fences,
+        // fluids and narrow non-supporting shapes are not safe at fixed Y.
+        if (!floor.getFluidState().isEmpty() || collision.isEmpty()
+                || collision.max(Direction.Axis.Y) < 0.8125D
+                || collision.max(Direction.Axis.Y) > 1.0D) return false;
+        for (int dy = 1; dy <= 2; dy++) {
+            BlockPos above = floorPos.above(dy);
+            BlockState overhead = level.getBlockState(above);
+            if (!overhead.getFluidState().isEmpty()
+                    || !overhead.getCollisionShape(level, above).isEmpty()) return false;
+        }
+        return true;
     }
 
     /**
@@ -117,8 +148,10 @@ public class PathEvaluator {
 
         switch (mode) {
             case WORST_BLOCK -> {
-                finalSpeed = (minSpeedMultiplier == Float.MAX_VALUE) ? 1.0f : minSpeedMultiplier;
-                finalStress = (minStressMultiplier == Float.MAX_VALUE) ? 1.0f : minStressMultiplier;
+                // Unrecognized but physically safe tiles contribute zero;
+                // the worst tile of an incomplete orbit is therefore zero.
+                finalSpeed = invalidCount > 0 ? 0.0f : minSpeedMultiplier;
+                finalStress = invalidCount > 0 ? 0.0f : minStressMultiplier;
             }
             case LEGACY -> {
                 if (hasPoor) {
@@ -131,6 +164,10 @@ public class PathEvaluator {
                     finalSpeed = normalMultiplier;
                     finalStress = 1.00f;
                 }
+                // Legacy keeps its material-tier classification, but gaps
+                // scale its output by recognized coverage, not a free full RPM.
+                finalSpeed *= (float) coverage;
+                finalStress *= (float) coverage;
             }
             case WEIGHTED_AVERAGE -> {
                 // Every track position contributes to output. Unrecognized or
