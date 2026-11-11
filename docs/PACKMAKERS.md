@@ -462,7 +462,8 @@ largeCreatures = ["minecraft:horse"]
     evaluationMode = "WEIGHTED_AVERAGE"
     # Set false when path quality should change RPM/validity but not stress capacity.
     enableStressScaling = true
-    minimumCoverage = 1.0
+    # New configs default to incomplete-track tolerance.
+    minimumCoverage = 0.0
     checkIntervalTicks = 40
 
 [automation]
@@ -508,7 +509,7 @@ Path stats:
 
 **KubeJS → explicit Data Map → legacy path config → CE bundled exact/family fallback**.
 
-The selected per-block profiles are still processed by the configured path evaluation mode. `WEIGHTED_AVERAGE` remains the default and continues to average mixed paths.
+The selected per-block profiles are still processed by the configured path evaluation mode. `WEIGHTED_AVERAGE` divides the sum of recognized multipliers by **every sampled track position**; missing or unrecognized tiles contribute zero with no extra penalty. A track with no recognized blocks cannot run. Default `minimumCoverage = 0.0` permits incomplete tracks, while higher values opt into a strict coverage threshold. Existing config files retain their stored value, including `1.0` from older releases; lower it explicitly to enable forgiving paths on upgraded servers.
 
 ### Forge
 
