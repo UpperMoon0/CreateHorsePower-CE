@@ -118,6 +118,10 @@ public final class HorsePowerGameTests {
         helper.setBlock(crankPos, BlockRegister.HORSE_CRANK.get());
         HorseCrankEngine engine = requireCrank(helper, crankPos).engine();
         Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(5, 2, 4));
+        // Reconciliation requires a physical leash, not only a marker.
+        LeashFenceKnotEntity knot = LeashFenceKnotEntity.getOrCreateKnot(
+                helper.getLevel(), helper.absolutePos(crankPos));
+        horse.setLeashedTo(knot, false);
         WorkerStats stats = new WorkerStats(
                 16.0f, 32.0f, 2.5f,
                 0.0f, WorkerStats.DEFAULT_SPEED_REF,
