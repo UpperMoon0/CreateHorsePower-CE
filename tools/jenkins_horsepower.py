@@ -83,39 +83,39 @@ def icy(target: str) -> None:
         script("run_restart_probe.py", "--project", target, "--icy", enabled)
 
 
-def java17_home() -> Path:
-    """Select an actual JDK 17, not an assumed PATH/java or arbitrary JDK."""
-    candidates = []
-    for name in ("JAVA17_HOME", "JDK17_HOME"):
+def java_home(major: int) -> Path:
+    """Find and validate a reviewed local toolchain, never silently use a wrong JDK."""
+    candidates: list[Path] = []
+    for name in (f"JAVA_HOME_{major}", f"JAVA{major}_HOME",
+                 f"JDK{major}_HOME", f"JDK_HOME_{major}", "JAVA_HOME"):
         if os.environ.get(name):
             candidates.append(Path(os.environ[name]))
-    if os.environ.get("JAVA_HOME"):
-        candidates.append(Path(os.environ["JAVA_HOME"]))
     if os.name == "nt":
         for root in (os.environ.get("ProgramFiles", r"C:\Program Files"),
                      os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")):
-            for prefix in ("Java/jdk-17*", "Eclipse Adoptium/jdk-17*",
-                           "Microsoft/jdk-17*"):
+            for prefix in (f"Java/jdk-{major}*", f"Eclipse Adoptium/jdk-{major}*",
+                           f"Microsoft/jdk-{major}*"):
                 candidates.extend(Path(root).glob(prefix))
     else:
-        candidates.extend(Path("/usr/lib/jvm").glob("*17*"))
-        candidates.extend(Path("/opt/java").glob("*17*"))
+        candidates.extend(Path("/usr/lib/jvm").glob(f"*{major}*"))
+        candidates.extend(Path("/opt/java").glob(f"*{major}*"))
     for path in candidates:
         java = path / "bin" / ("java.exe" if os.name == "nt" else "java")
         if not java.is_file():
             continue
         result = subprocess.run([str(java), "-version"], capture_output=True,
                                 text=True, timeout=15, check=False)
-        if result.returncode == 0 and re.search(r'\bversion "17(?:\.|")',
-                                                 result.stdout + result.stderr):
+        if result.returncode == 0 and re.search(
+                rf'\bversion "{major}(?:\.|")', result.stdout + result.stderr):
             return path
-    raise RuntimeError("JDK 17 not found for pinned Forge Bionics acceptance")
+    raise RuntimeError(f"JDK {major} not found on the selected native CI worker")
 
 
 def prepared_bionics_jar() -> None:
     destination = ROOT / TARGETS[0] / "build" / "bionics-runtime" / "createbionics-2.0.0.jar"
     destination.parent.mkdir(parents=True, exist_ok=True)
-    env = dict(os.environ, JAVA_HOME=str(java17_home()))
+    env = dict(os.environ, JAVA_HOME=str(java_home(17)))
+    env["PATH"] = str(Path(env["JAVA_HOME"]) / "bin") + os.pathsep + env.get("PATH", "")
     with tempfile.TemporaryDirectory(prefix="chp-bionics-source-") as scratch:
         upstream = Path(scratch) / "source"
         run("git", "clone", "--no-checkout", BIONICS_FORGE_SOURCE, str(upstream))
@@ -183,6 +183,11 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("action", choices=actions)
     action = parser.parse_args().action
+    # Shared portable Jenkins does not imply a fixed JAVA_HOME. Gradle 8.8
+    # and NeoForge 1.21.1 require JDK 21; Forge Bionics alone uses JDK 17.
+    selected_java = java_home(21)
+    os.environ["JAVA_HOME"] = str(selected_java)
+    os.environ["PATH"] = str(selected_java / "bin") + os.pathsep + os.environ.get("PATH", "")
     if action == "verify":
         verify()
     elif action.startswith("vanilla-"):
