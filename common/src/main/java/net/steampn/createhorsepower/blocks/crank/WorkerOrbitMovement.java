@@ -1,6 +1,8 @@
 package net.steampn.createhorsepower.blocks.crank;
 
 import net.minecraft.world.entity.Mob;
+import net.minecraft.core.BlockPos;
+import net.steampn.createhorsepower.content.path.PathEvaluator;
 import net.minecraft.world.entity.animal.horse.Horse;
 
 /** Shared worker orbit movement and Minecraft-facing conversion. */
@@ -48,6 +50,22 @@ public final class WorkerOrbitMovement {
 
         boolean moved = deltaX * deltaX + deltaZ * deltaZ > MIN_MOVEMENT_SQUARED;
         float requestedYaw = moved ? yawFromMovement(deltaX, deltaZ) : mob.getYRot();
+
+        // Orbiting uses horizontal teleports at fixed Y. Verify the ground
+        // under every intermediate point, not only the final destination:
+        // neither air holes nor fences may be crossed for free between scans.
+        double distance = Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
+        int steps = Math.max(1, (int) Math.ceil(distance * 4.0D));
+        for (int step = 1; step <= steps; step++) {
+            double t = (double) step / steps;
+            BlockPos floor = BlockPos.containing(oldX + deltaX * t,
+                    mob.getY() - 0.125D, oldZ + deltaZ * t);
+            if (!PathEvaluator.isWalkableTile(mob.level(), floor)) {
+                return new Snapshot(oldX, oldZ, targetX, targetZ, mob.getX(), mob.getZ(),
+                        currentAngle, newAngle, deltaX, deltaZ, requestedYaw,
+                        mob.getYRot(), false, false);
+            }
+        }
 
         mob.teleportTo(targetX, mob.getY(), targetZ);
 
