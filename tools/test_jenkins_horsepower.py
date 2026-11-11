@@ -57,6 +57,9 @@ class HorsePowerCITests(unittest.TestCase):
         generated.mkdir(parents=True)
         tracked = generated / "recipe.json"
         tracked.write_text('{"id":"original"}\n', encoding="utf-8")
+        (self.root / ".gitattributes").write_text(
+            "**/src/generated/resources/**/*.json text eol=lf\n",
+            encoding="utf-8")
         subprocess.run(["git", "init", "-q"], cwd=self.root, check=True)
         subprocess.run(["git", "config", "user.email", "ci-fixture@example.invalid"],
                        cwd=self.root, check=True)
