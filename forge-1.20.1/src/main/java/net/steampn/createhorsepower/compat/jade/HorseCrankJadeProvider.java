@@ -33,6 +33,7 @@ public enum HorseCrankJadeProvider implements IBlockComponentProvider, IServerDa
         data.putFloat("SpeedBonus", crank.getSpeedBonusPercent());
         data.putFloat("HealthBonus", crank.getHealthBonusPercent());
         data.putInt("Efficiency", (int) crank.getEfficiencyPercent());
+        data.putInt("Coverage", crank.getCoveragePercent());
         data.putInt("InvalidBlocks", crank.getInvalidBlockCount());
         data.putString("RedstoneMode", crank.getRedstoneMode().getDisplayName().getString());
     }
@@ -69,6 +70,7 @@ public enum HorseCrankJadeProvider implements IBlockComponentProvider, IServerDa
 
         int eff = data.getInt("Efficiency");
         tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.path_efficiency", eff + "%").withStyle(ChatFormatting.GRAY));
+        tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.path_coverage", data.getInt("Coverage") + "%").withStyle(ChatFormatting.GRAY));
 
         float speedBonus = data.getFloat("SpeedBonus");
         if (speedBonus != 0) {
