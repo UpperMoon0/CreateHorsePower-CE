@@ -178,8 +178,9 @@ public final class HorsePowerGameTests {
 
     @GameTest(template = "empty")
     public static void nonHorseWorkerUsesSameOrbitControl(GameTestHelper helper) {
-        Cow cow = helper.spawn(EntityType.COW, new BlockPos(0, 0, 0));
-        double radius = 2.5D;
+        prepareOrbitMovementFloor(helper);
+        Cow cow = helper.spawn(EntityType.COW, new BlockPos(3, 2, 3));
+        double radius = 1.0D;
         double centerX = cow.getX() - radius;
         double centerZ = cow.getZ();
         boolean ownsAiSuppression = WorkerActivityControl.acquire(cow);
@@ -195,8 +196,9 @@ public final class HorsePowerGameTests {
 
     @GameTest(template = "empty")
     public static void workerOrbitFacesMovement(GameTestHelper helper) {
-        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(0, 0, 0));
-        double radius = 2.5D;
+        prepareOrbitMovementFloor(helper);
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(3, 2, 3));
+        double radius = 1.0D;
         double centerX = horse.getX() - radius;
         double centerZ = horse.getZ();
         horse.setEating(true);
@@ -1255,6 +1257,17 @@ public final class HorsePowerGameTests {
                             + " but was " + (be == null ? "null" : be.getType().toString()));
         }
         return crank;
+    }
+
+    private static void prepareOrbitMovementFloor(GameTestHelper helper) {
+        // The empty structure has no floor. Safe orbit movement now correctly
+        // refuses floating movement, so give movement-only tests a real floor.
+        // Keep the 1-block-radius fixture bounded to this test's local area.
+        for (int x = 1; x <= 5; x++) {
+            for (int z = 1; z <= 5; z++) {
+                helper.setBlock(new BlockPos(x, 1, z), Blocks.STONE);
+            }
+        }
     }
 
     private static double assertOrbitStep(
