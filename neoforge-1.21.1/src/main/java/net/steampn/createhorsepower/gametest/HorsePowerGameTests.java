@@ -49,6 +49,63 @@ public final class HorsePowerGameTests {
     private HorsePowerGameTests() {}
 
 
+    /**
+     * A single recognized tile can power an otherwise solid, walkable orbit
+     * with appropriately low efficiency. An air hole must stop the crank and
+     * must never become a horizontal teleport destination.
+     */
+    @GameTest(template = "empty")
+    public static void safeMixedOrbitStopsAtAirGap(GameTestHelper helper) {
+        BlockPos crankPos = new BlockPos(4, 2, 4);
+        BlockPos[] offsets = HorseCrankEngine.generateOffsetsForRadius(2.5f);
+        for (BlockPos offset : offsets) {
+            helper.setBlock(crankPos.offset(offset), Blocks.STONE);
+        }
+        helper.setBlock(crankPos.offset(offsets[0]), Blocks.ICE);
+        helper.setBlock(crankPos, BlockRegister.HORSE_CRANK.get());
+        AbstractHorseCrankBlockEntity blockEntity = requireCrank(helper, crankPos);
+        HorseCrankEngine engine = blockEntity.engine();
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(6, 2, 4));
+
+        WorkerStats stats = new WorkerStats(
+                16.0f, 32.0f, 2.5f,
+                0.0f, WorkerStats.DEFAULT_SPEED_REF,
+                0.0f, WorkerStats.DEFAULT_HEALTH_REF,
+                false, false);
+        WorkerResolver.ResolvedWorker profile = new WorkerResolver.ResolvedWorker(
+                stats, 16.0f, 32.0f, 0.0f, 0.0f, true);
+        engine.attachWorker(horse, profile);
+        helper.assertTrue(engine.hasValidWorkingBlocks,
+                "Unsupported solid floor tiles should remain walkable");
+        helper.assertTrue(engine.getEfficiencyPercent() > 0
+                        && engine.getEfficiencyPercent() < 15,
+                "One recognized tile must provide only proportional output");
+
+        double centerX = helper.absolutePos(crankPos).getX() + 0.5D;
+        double centerZ = helper.absolutePos(crankPos).getZ() + 0.5D;
+        double oldX = horse.getX();
+        double oldZ = horse.getZ();
+        // At angle zero the orbit destination is 2.5 blocks to the east.
+        BlockPos hole = crankPos.offset(3, -1, 0);
+        helper.setBlock(hole, Blocks.AIR);
+        helper.assertFalse(net.steampn.createhorsepower.content.path.PathEvaluator.evaluate(
+                        helper.getLevel(), helper.absolutePos(crankPos), offsets).isValid(),
+                "Air gap must invalidate the real world path even with minCoverage=0");
+        WorkerOrbitMovement.Snapshot movement = WorkerOrbitMovement.moveToAngle(
+                horse, centerX, centerZ, 2.5f, 0.0D, 0.0D);
+        helper.assertFalse(movement.moved(), "Worker must not teleport over the air hole");
+        helper.assertTrue(Math.abs(horse.getX() - oldX) < 1.0e-5D
+                        && Math.abs(horse.getZ() - oldZ) < 1.0e-5D,
+                "Worker must remain grounded at its original coordinates");
+
+        engine.afterHostTick();
+        helper.assertFalse(engine.hasValidWorkingBlocks,
+                "Crank must stop after a gap opens in its worker orbit");
+        helper.assertFalse(engine.canPhysicallyWork(),
+                "Invalid physical orbit must prohibit kinetic generation");
+        helper.succeed();
+    }
+
     @GameTest(template = "empty")
     public static void freshDefaultPathConfigFallsThroughToBundledProfiles(GameTestHelper helper) {
         helper.assertTrue(Config.POOR_PATH.getDefault().isEmpty(),
