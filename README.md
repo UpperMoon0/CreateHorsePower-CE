@@ -2,6 +2,8 @@
 
 Create Horse Power CE adds animal-powered rotational generation to Create. Attach an eligible worker to a Horse Crank, prepare a valid circular track, and feed the resulting RPM and stress capacity into a Create kinetic network.
 
+**Mixed-path upgrade:** Starting with the next release, all evaluation modes distinguish unsupported *walkable* blocks (zero efficiency contribution) from air holes, liquids, and obstructed floors (the crank stops; workers do not teleport into them). **Existing server worlds keep their saved `minimumCoverage = 1.0`.** To enable incomplete but safely walkable paths after updating, change `minimumCoverage` to `0.0` in the Horse Power server config; new configs default to `0.0`. One recognized tile cannot give full power in any evaluation mode.
+
 This is an independent, community-maintained fork of [SteamPunkNation/CreateHorsePower](https://github.com/SteamPunkNation/CreateHorsePower). It retains the `createhorsepower` mod ID for saved-world compatibility; **do not install CE and the original mod together**.
 
 ## Compatibility and installation
