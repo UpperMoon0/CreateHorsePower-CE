@@ -106,6 +106,83 @@ public final class HorsePowerGameTests {
         helper.succeed();
     }
 
+    /** A paved ring must accept workers starting next to the crank, not just on the ring. */
+    @GameTest(template = "empty")
+    public static void initialWorkerSnapSkipsUnpavedInteriorButValidatesLanding(GameTestHelper helper) {
+        BlockPos crankPos = new BlockPos(4, 2, 4);
+        BlockPos[] offsets = HorseCrankEngine.generateOffsetsForRadius(2.5f);
+        for (BlockPos offset : offsets) {
+            helper.setBlock(crankPos.offset(offset), Blocks.STONE);
+        }
+        helper.setBlock(crankPos.offset(offsets[0]), Blocks.ICE);
+        helper.setBlock(crankPos, BlockRegister.HORSE_CRANK.get());
+        HorseCrankEngine engine = requireCrank(helper, crankPos).engine();
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(5, 2, 4));
+        WorkerStats stats = new WorkerStats(
+                16.0f, 32.0f, 2.5f,
+                0.0f, WorkerStats.DEFAULT_SPEED_REF,
+                0.0f, WorkerStats.DEFAULT_HEALTH_REF,
+                false, false);
+        WorkerResolver.ResolvedWorker profile = new WorkerResolver.ResolvedWorker(
+                stats, 16.0f, 32.0f, 0.0f, 0.0f, true);
+        engine.attachWorker(horse, profile);
+        helper.assertTrue(engine.hasValidWorkingBlocks,
+                "The ring is safe even though its interior is unpaved");
+        double centerX = helper.absolutePos(crankPos).getX() + 0.5D;
+        double centerZ = helper.absolutePos(crankPos).getZ() + 0.5D;
+        helper.assertFalse(net.steampn.createhorsepower.content.path.PathEvaluator.supportsWorkerFootprint(
+                        helper.getLevel(), centerX + 1.0D, horse.getY(), centerZ, horse.getBbWidth()),
+                "The interior really is unpaved; this test must exercise onboarding");
+        engine.afterHostTick();
+        helper.assertTrue(engine.isWorking(), "A valid ring must start generating when a worker joins from inside");
+        helper.assertTrue(engine.generatedSpeed() > 0.0f, "Crank must generate from the safe ring");
+        helper.assertTrue(Math.abs(Math.hypot(horse.getX() - centerX, horse.getZ() - centerZ) - 2.5D)
+                        < 0.005D, "The first movement must safely place the worker on the ring");
+        double oldX = horse.getX();
+        double oldZ = horse.getZ();
+        engine.afterHostTick();
+        helper.assertTrue(Math.hypot(horse.getX() - oldX, horse.getZ() - oldZ) > 0.0001D,
+                "The next tick must walk tangentially instead of repeatedly failing a radial snap");
+
+        // Recovery from outside the ring has the same safe-landing policy.
+        Horse outer = helper.spawn(EntityType.HORSE, new BlockPos(4, 2, 8));
+        WorkerOrbitMovement.Snapshot snap = WorkerOrbitMovement.moveToAngle(
+                outer, centerX, centerZ, 2.5f, Math.PI / 2.0D, Math.PI / 2.0D + 0.01D);
+        helper.assertTrue(snap.moved(), "A worker outside the ring should land safely on the track");
+        helper.assertTrue(Math.abs(Math.hypot(outer.getX() - centerX, outer.getZ() - centerZ) - 2.5D)
+                        < 0.005D, "Outside worker must land on the configured radius");
+        helper.succeed();
+    }
+
+    /** Tall panes and damaging blocks must never count as a safe horse floor. */
+    @GameTest(template = "empty")
+    public static void orbitalFloorRequiresFullSupportAndNoHazards(GameTestHelper helper) {
+        BlockPos local = new BlockPos(3, 1, 3);
+        BlockPos absolute = helper.absolutePos(local);
+        helper.setBlock(local.above(), Blocks.AIR);
+        helper.setBlock(local.above(2), Blocks.AIR);
+        helper.setBlock(local, Blocks.STONE);
+        helper.assertTrue(net.steampn.createhorsepower.content.path.PathEvaluator.isWalkableTile(
+                helper.getLevel(), absolute), "Full stone floor must be walkable");
+        helper.setBlock(local, Blocks.DIRT_PATH);
+        helper.assertTrue(net.steampn.createhorsepower.content.path.PathEvaluator.isWalkableTile(
+                helper.getLevel(), absolute), "Dirt path's lower broad top should support workers");
+        helper.setBlock(local, Blocks.IRON_BARS);
+        helper.assertFalse(net.steampn.createhorsepower.content.path.PathEvaluator.isWalkableTile(
+                helper.getLevel(), absolute), "Iron bars are too narrow even when their max Y is 1");
+        helper.setBlock(local, Blocks.GLASS_PANE);
+        helper.assertFalse(net.steampn.createhorsepower.content.path.PathEvaluator.isWalkableTile(
+                helper.getLevel(), absolute), "A pane cannot support the worker footprint");
+        helper.setBlock(local, Blocks.MAGMA_BLOCK);
+        helper.assertFalse(net.steampn.createhorsepower.content.path.PathEvaluator.isWalkableTile(
+                helper.getLevel(), absolute), "Damaging magma is not safe despite a full collision cube");
+        helper.setBlock(local, Blocks.STONE);
+        helper.setBlock(local.above(), Blocks.FIRE);
+        helper.assertFalse(net.steampn.createhorsepower.content.path.PathEvaluator.isWalkableTile(
+                helper.getLevel(), absolute), "Noncolliding fire above a full floor is still hazardous");
+        helper.succeed();
+    }
+
     @GameTest(template = "empty")
     public static void freshDefaultPathConfigFallsThroughToBundledProfiles(GameTestHelper helper) {
         helper.assertTrue(Config.POOR_PATH.getDefault().isEmpty(),
