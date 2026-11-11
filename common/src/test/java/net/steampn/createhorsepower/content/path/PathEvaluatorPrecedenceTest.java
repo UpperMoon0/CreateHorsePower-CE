@@ -138,6 +138,36 @@ class PathEvaluatorPrecedenceTest {
     }
 
     @Test
+    void everyModeHonorsZeroEfficiencyFromUnsupportedSolidTiles() {
+        PathStats[] sparse = {PathStats.NORMAL, null, null, null};
+        PathEvaluator.Result weighted = PathEvaluator.evaluateResolvedPathStats(
+                sparse, PathEvaluationMode.WEIGHTED_AVERAGE,
+                0.0, 0.5f, 1.0f, 2.0f, true);
+        PathEvaluator.Result worst = PathEvaluator.evaluateResolvedPathStats(
+                sparse, PathEvaluationMode.WORST_BLOCK,
+                0.0, 0.5f, 1.0f, 2.0f, true);
+        PathEvaluator.Result legacy = PathEvaluator.evaluateResolvedPathStats(
+                sparse, PathEvaluationMode.LEGACY,
+                0.0, 0.5f, 1.0f, 2.0f, true);
+
+        assertEquals(0.25f, weighted.speedMultiplier(), 0.0001f);
+        assertEquals(0.25f, weighted.stressMultiplier(), 0.0001f);
+        assertEquals(0.00f, worst.speedMultiplier(), 0.0001f);
+        assertEquals(0.00f, worst.stressMultiplier(), 0.0001f);
+        assertEquals(0.25f, legacy.speedMultiplier(), 0.0001f);
+        assertEquals(0.25f, legacy.stressMultiplier(), 0.0001f);
+
+        for (PathEvaluationMode mode : PathEvaluationMode.values()) {
+            PathEvaluator.Result disabled = PathEvaluator.evaluateResolvedPathStats(
+                    sparse, mode, 0.0, 0.5f, 1.0f, 2.0f, false);
+            assertEquals(1.0f, disabled.stressMultiplier(), 0.0001f,
+                    mode + " disabling stress scaling only neutralizes stress");
+            assertTrue(disabled.speedMultiplier() <= 0.25f,
+                    mode + " must not restore full RPM on sparse paths");
+        }
+    }
+
+    @Test
     void pathStressScalingPolicyDoesNotBypassCoverage() {
         PathStats great = new PathStats(2.0f, 1.10f);
         PathStats[] incomplete = {great, null};
