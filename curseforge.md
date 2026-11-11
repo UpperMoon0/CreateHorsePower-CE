@@ -20,7 +20,7 @@ See the [feature compatibility matrix](https://github.com/UpperMoon0/CreateHorse
 
 ## Using the Horse Crank
 
-1. Place a Horse Crank and prepare a walkable circular path. Mixed recognized blocks contribute their terrain-specific multipliers; missing or unsupported tiles contribute zero instead of stopping the crank.
+1. Place a Horse Crank and prepare a walkable circular path. Mixed recognized materials use their own terrain multipliers. **In builds after v1.2.11**, missing or unsupported tiles contribute zero efficiency rather than stopping the crank by default. Existing configs with a strict `minimumCoverage` setting must be adjusted to opt in.
 2. Attach an eligible worker with a supported attachment item (a vanilla lead works by default).
 3. Connect the crank to your Create kinetic network. Output depends on the worker, terrain, configuration and active redstone mode.
 
