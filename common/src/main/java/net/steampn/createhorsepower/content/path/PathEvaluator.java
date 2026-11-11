@@ -133,8 +133,11 @@ public class PathEvaluator {
                 }
             }
             case WEIGHTED_AVERAGE -> {
-                finalSpeed = totalSpeedMultiplier / validCount;
-                finalStress = totalStressMultiplier / validCount;
+                // Every track position contributes to output. Unrecognized or
+                // missing blocks contribute zero instead of receiving a second
+                // penalty or inheriting the average quality of recognized tiles.
+                finalSpeed = totalSpeedMultiplier / total;
+                finalStress = totalStressMultiplier / total;
             }
             default -> {
                 finalSpeed = totalSpeedMultiplier / validCount;
