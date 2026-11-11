@@ -56,6 +56,11 @@ public final class NeoForgeRecoveryEdgeGameTests {
                     // These tests exercise timeout semantics, not vanilla entity ticking.
                     // Advance only the queue eligibility sentinel deterministically.
                     horse.tickCount = enqueuedTickCount + 1;
+                    long leadsBefore = level.getEntitiesOfClass(
+                            ItemEntity.class,
+                            new AABB(horse.blockPosition()).inflate(6.0D),
+                            item -> item.getItem().is(Items.LEAD)
+                    ).size();
                     WorkerRecoveryQueue.expireForTesting(horse.getUUID());
                     WorkerRecoveryQueue.process(level);
                     helper.assertFalse(WorkerAttachmentControl.hasMarker(horse),
@@ -70,7 +75,7 @@ public final class NeoForgeRecoveryEdgeGameTests {
                             new AABB(horse.blockPosition()).inflate(6.0D),
                             item -> item.getItem().is(Items.LEAD))
                             .size();
-                    helper.assertTrue(droppedLeads == 0,
+                    helper.assertTrue(droppedLeads == leadsBefore,
                             "a stale CHP marker without serialized vanilla leash data must not manufacture a lead");
                 })
                 .thenSucceed();
