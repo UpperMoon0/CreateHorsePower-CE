@@ -72,6 +72,8 @@ public class AnimalPowerEngine {
     public static final float DEFAULT_RADIUS = 2.5f;
     public static final int MISSING_ATTACHMENT_GRACE_TICKS = 10;
     public static final int MISSING_WORKER_GRACE_TICKS = 80;
+    /** Delay retry of blocked movement to avoid kinetic/AI hook churn. */
+    public static final int MOVEMENT_BLOCKED_RETRY_TICKS = 20;
 
     private final Host host;
     private final AnimalPowerMachinePolicy machinePolicy;
@@ -122,6 +124,7 @@ public class AnimalPowerEngine {
     private long lastPathCheckTick = -1;
     private int statRefreshTimer = 0;
     private long nextWorkStartRetryTick = 0;
+    private long nextMovementRetryTick = 0;
     private long nextFallbackWorkerSearchTick = 0;
     private double workerOrbitAngle = Double.NaN;
     private double visualGroundSpeed = 0.0D;
@@ -617,6 +620,7 @@ public class AnimalPowerEngine {
         this.missingWorkerTicks = 0;
         this.statRefreshTimer = 0;
         this.nextWorkStartRetryTick = 0;
+        this.nextMovementRetryTick = 0;
         this.nextFallbackWorkerSearchTick = 0;
         this.scriptVetoed = false;
         this.workerResolved = true;
@@ -869,6 +873,7 @@ public class AnimalPowerEngine {
         this.missingWorkerTicks = 0;
         this.statRefreshTimer = 0;
         this.nextWorkStartRetryTick = 0;
+        this.nextMovementRetryTick = 0;
         this.nextFallbackWorkerSearchTick = 0;
         this.workerResolved = false;
         this.workerEligible = false;
@@ -938,6 +943,10 @@ public class AnimalPowerEngine {
 
         // 3. Centralized working state transition with non-permanent beforeWorkStart check & cooldown
         boolean canWork = canPhysicallyWork();
+        // A transient collision must not restart generation every tick.
+        if (canWork && !isWorking && level.getGameTime() < nextMovementRetryTick) {
+            return;
+        }
         boolean wasWorking = this.isWorking;
 
         if (canWork) {
@@ -1453,17 +1462,21 @@ public class AnimalPowerEngine {
                     mob.getX(), mob.getZ(), centerX, centerZ);
         }
         double currentAngle = workerOrbitAngle;
-        workerOrbitAngle = WorkerOrbitMovement.normalizeAngle(workerOrbitAngle + angularDelta);
+        double proposedAngle = WorkerOrbitMovement.normalizeAngle(workerOrbitAngle + angularDelta);
         WorkerOrbitMovement.Snapshot movement = WorkerOrbitMovement.moveToAngle(
-                mob, centerX, centerZ, workerRadius, currentAngle, workerOrbitAngle);
+                mob, centerX, centerZ, workerRadius, currentAngle, proposedAngle);
         if (Math.hypot(movement.targetX() - movement.actualX(),
                 movement.targetZ() - movement.actualZ()) > 1.0e-4D) {
             // A newly opened gap must stop kinetic output immediately, not
             // wait for the next scheduled path reevaluation.
             checkPathBlocks();
+            nextMovementRetryTick = level.getGameTime() + MOVEMENT_BLOCKED_RETRY_TICKS;
             stopWorking();
             host.refreshKinetic();
             host.syncToClient();
+        } else {
+            workerOrbitAngle = proposedAngle;
+            nextMovementRetryTick = 0;
         }
         WorkerActivityControl.clearHorizontalVelocity(mob);
     }

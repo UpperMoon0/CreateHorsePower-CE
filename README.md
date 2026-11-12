@@ -16,7 +16,7 @@ Optional integrations include **Jade** on both loaders, **KubeJS** scripting and
 
 ## Gameplay
 
-Place a Horse Crank, build a walkable circular path around it (mixed materials are supported; missing or unsupported tiles contribute zero efficiency), and attach a worker using an item in `#createhorsepower:attachment_items` (a vanilla lead by default). The worker drives the crank while its eligibility, track and redstone requirements are satisfied.
+Place a Horse Crank, build a walkable circular path around it (mixed materials are supported; unrecognized but safely walkable solid tiles contribute zero output, while holes, liquids and hazardous floors stop the crank), and attach a worker using an item in `#createhorsepower:attachment_items` (a vanilla lead by default). The worker drives the crank while its eligibility, track and redstone requirements are satisfied.
 
 - Sneak-use a Create wrench on the crank to cycle `HIGH_STOPS`, `HIGH_RUNS` and `IGNORE` modes.
 - Wear Engineer's Goggles or use Jade to inspect worker, path and output state.

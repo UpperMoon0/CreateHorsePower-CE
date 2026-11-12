@@ -110,7 +110,8 @@ public class PathEvaluator {
     /** Sample the central hoof-bearing footprint, including neighbouring tiles. */
     public static boolean supportsWorkerFootprint(Level level, double x, double feetY,
                                                    double z, float width) {
-        double half = Math.min(0.25D, Math.max(0.0D, width * 0.25D));
+        // Sample near the real edges; fixed quarter-block offsets missed wide workers.
+        double half = Math.max(0.0D, width * 0.5D - 0.0625D);
         for (double dx : new double[] {-half, 0.0D, half}) {
             for (double dz : new double[] {-half, 0.0D, half}) {
                 if (!isWalkableTile(level, BlockPos.containing(
