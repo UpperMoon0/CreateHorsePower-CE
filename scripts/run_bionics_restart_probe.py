@@ -70,9 +70,13 @@ def main() -> None:
     (work / "server.properties").write_text(
         "".join(f"{key}={value}\n" for key, value in settings.items()))
     wrapper = root / ("gradlew.bat" if os.name == "nt" else "gradlew")
+    # A checkout can lose the POSIX executable bit during artifact extraction or
+    # workspace copying. Launch the shell wrapper through bash, matching the
+    # central CI Gradle helper, rather than trying to exec(2) gradlew directly.
+    gradle_prefix = [str(wrapper)] if os.name == "nt" else ["bash", str(wrapper)]
     phases = []
     for phase in ("write", "read"):
-        command = [str(wrapper), f":{args.project}:runServer",
+        command = [*gradle_prefix, f":{args.project}:runServer",
                    "-PbionicsCompatibilityTest=true",
                    f"-PchpRestartPhase={phase}", f"-PchpRestartDirectory={work}",
                    "--no-daemon", "--stacktrace", "--max-workers=2"]
