@@ -327,6 +327,45 @@ public final class HorsePowerGameTests {
         helper.succeed();
     }
 
+    /** The built-in 28-tile ring must support an ordinary horse for the whole orbit. */
+    @GameTest(template = "empty")
+    public static void standardHorseOrbitKeepsSupportAcrossFullLap(GameTestHelper helper) {
+        BlockPos center = new BlockPos(4, 2, 4);
+        for (BlockPos offset : HorseCrankEngine.generateOffsetsForRadius(2.5f)) {
+            BlockPos floor = center.offset(offset);
+            helper.setBlock(floor, Blocks.STONE);
+            helper.setBlock(floor.above(), Blocks.AIR);
+            helper.setBlock(floor.above(2), Blocks.AIR);
+        }
+        helper.setBlock(center, BlockRegister.HORSE_CRANK.get());
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(7, 2, 4));
+        BlockPos worldCenter = helper.absolutePos(center);
+        double x = worldCenter.getX() + 0.5D;
+        double z = worldCenter.getZ() + 0.5D;
+        double y = worldCenter.getY();
+        horse.teleportTo(x + 2.5D, y, z);
+        for (int angleIndex = 1; angleIndex <= 72; angleIndex++) {
+            double oldAngle = (angleIndex - 1) * Math.PI / 36.0D;
+            double newAngle = angleIndex * Math.PI / 36.0D;
+            var step = WorkerOrbitMovement.moveToAngle(horse, x, z, 2.5f, oldAngle, newAngle);
+            helper.assertTrue(Math.hypot(step.targetX() - step.actualX(),
+                    step.targetZ() - step.actualZ()) < 1.0e-3D,
+                    "Standard paved horse ring must remain traversable through angle " + angleIndex);
+        }
+        // A wide animal requires substantially more support than the normal horse.
+        double diagonal = Math.PI / 4.0D;
+        helper.assertFalse(net.steampn.createhorsepower.content.path.PathEvaluator.supportsWorkerFootprint(
+                helper.getLevel(), x + 2.5D * Math.cos(diagonal), y,
+                z + 2.5D * Math.sin(diagonal), 2.2f),
+                "Wide worker must not overhang a thin path ring without enough support");
+        helper.setBlock(center.offset(3, -1, 0), Blocks.AIR);
+        helper.assertFalse(net.steampn.createhorsepower.content.path.PathEvaluator.supportsWorkerFootprint(
+                helper.getLevel(), x + 2.5D, y, z, horse.getBbWidth()),
+                "Removing the directly supporting floor must stop the worker");
+        horse.discard();
+        helper.succeed();
+    }
+
     @GameTest(template = "empty")
     public static void obstructedWorkerDoesNotPulseGeneration(GameTestHelper helper) {
         BlockPos center = new BlockPos(4, 2, 4);
