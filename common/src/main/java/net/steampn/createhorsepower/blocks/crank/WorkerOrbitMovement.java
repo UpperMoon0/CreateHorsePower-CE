@@ -32,6 +32,36 @@ public final class WorkerOrbitMovement {
         return moveToAngle(mob, centerX, centerZ, radius, currentAngle, currentAngle + angularDelta);
     }
 
+    /** Validate the next landing and full travelled arc without moving the mob. */
+    public static boolean canMoveToAngle(Mob mob, double centerX, double centerZ,
+                                         float radius, double newAngle) {
+        double oldX = mob.getX();
+        double oldZ = mob.getZ();
+        return isTravelSafe(mob, oldX, oldZ,
+                centerX + radius * Math.cos(newAngle),
+                centerZ + radius * Math.sin(newAngle), centerX, centerZ, radius);
+    }
+
+    private static boolean isTravelSafe(Mob mob, double oldX, double oldZ,
+                                        double targetX, double targetZ,
+                                        double centerX, double centerZ, float radius) {
+        double deltaX = targetX - oldX;
+        double deltaZ = targetZ - oldZ;
+        double radialDistance = Math.hypot(oldX - centerX, oldZ - centerZ);
+        boolean joiningRing = Math.abs(radialDistance - radius) > 0.125D;
+        double distance = Math.hypot(deltaX, deltaZ);
+        int steps = joiningRing ? 1 : Math.max(1, (int) Math.ceil(distance * 4.0D));
+        for (int step = 1; step <= steps; step++) {
+            double t = (double) step / steps;
+            double x = joiningRing ? targetX : oldX + deltaX * t;
+            double z = joiningRing ? targetZ : oldZ + deltaZ * t;
+            if (!PathEvaluator.supportsWorkerFootprint(mob.level(), x, mob.getY(), z, mob.getBbWidth())) {
+                return false;
+            }
+        }
+        return mob.level().noCollision(mob, mob.getBoundingBox().move(deltaX, 0.0D, deltaZ));
+    }
+
     public static Snapshot moveToAngle(
             Mob mob,
             double centerX,
@@ -50,27 +80,10 @@ public final class WorkerOrbitMovement {
         boolean moved = deltaX * deltaX + deltaZ * deltaZ > MIN_MOVEMENT_SQUARED;
         float requestedYaw = moved ? yawFromMovement(deltaX, deltaZ) : mob.getYRot();
 
-        // The first attachment/recovery snap starts away from the ring.
-        // Do not treat the straight radial relocation as a walking step: the
-        // valid ring need not cover the crank's interior. Require a safe landing
-        // and a free entity bounding box, then use stepwise support checks for
-        // subsequent tangential motion along the established ring.
-        double radialDistance = Math.hypot(oldX - centerX, oldZ - centerZ);
-        boolean joiningRing = Math.abs(radialDistance - radius) > 0.125D;
-        double distance = Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
-        int steps = joiningRing ? 1 : Math.max(1, (int) Math.ceil(distance * 4.0D));
-        for (int step = 1; step <= steps; step++) {
-            double t = (double) step / steps;
-            double x = joiningRing ? targetX : oldX + deltaX * t;
-            double z = joiningRing ? targetZ : oldZ + deltaZ * t;
-            if (!PathEvaluator.supportsWorkerFootprint(
-                    mob.level(), x, mob.getY(), z, mob.getBbWidth())) {
-                return new Snapshot(oldX, oldZ, targetX, targetZ, mob.getX(), mob.getZ(),
-                        currentAngle, newAngle, deltaX, deltaZ, requestedYaw,
-                        mob.getYRot(), false, false);
-            }
-        }
-        if (!mob.level().noCollision(mob, mob.getBoundingBox().move(deltaX, 0.0D, deltaZ))) {
+        // Both the blocked-state probe and actual motion use identical
+        // physical support/collision rules, so a persistent obstruction
+        // cannot create an RPM pulse just to discover the same blocked step.
+        if (!isTravelSafe(mob, oldX, oldZ, targetX, targetZ, centerX, centerZ, radius)) {
             return new Snapshot(oldX, oldZ, targetX, targetZ, mob.getX(), mob.getZ(),
                     currentAngle, newAngle, deltaX, deltaZ, requestedYaw,
                     mob.getYRot(), false, false);
