@@ -289,6 +289,73 @@ public final class HorsePowerGameTests {
         helper.succeed();
     }
 
+    /** A script forcing zero output must not be diagnosed as unsupported terrain. */
+    @GameTest(template = "empty")
+    public static void scriptedZeroRpmDoesNotBlameTerrain(GameTestHelper helper) {
+        var originalConfig = CHPApi.config();
+        var originalHooks = CHPApi.scripts();
+        var detaches = CHPApi.deferredDetaches();
+        var stacks = CHPApi.itemStacks();
+        BlockPos center = new BlockPos(4, 2, 4);
+        for (BlockPos offset : HorseCrankEngine.generateOffsetsForRadius(2.5f)) {
+            BlockPos floor = center.offset(offset);
+            helper.setBlock(floor, Blocks.ICE);
+            helper.setBlock(floor.above(), Blocks.AIR);
+            helper.setBlock(floor.above(2), Blocks.AIR);
+        }
+        try {
+            CHPApi.init(originalConfig, new net.steampn.createhorsepower.platform.ScriptHooks() {
+                @Override public float[] firePathEvaluated(
+                        BlockPos pos, net.minecraft.world.level.Level level,
+                        net.steampn.createhorsepower.content.path.PathEvaluator.Result result) {
+                    // This is a script override, not a poor or missing physical floor.
+                    return new float[] {0.0f, result.stressMultiplier()};
+                }
+            }, net.minecraft.resources.ResourceLocation::new, detaches, stacks);
+            helper.setBlock(center, BlockRegister.HORSE_CRANK.get());
+            HorseCrankEngine engine = requireCrank(helper, center).engine();
+            Horse worker = helper.spawn(EntityType.HORSE, new BlockPos(5, 2, 4));
+            LeashFenceKnotEntity knot = LeashFenceKnotEntity.getOrCreateKnot(
+                    helper.getLevel(), helper.absolutePos(center));
+            worker.setLeashedTo(knot, false);
+            WorkerStats stats = new WorkerStats(16.0f, 32.0f, 2.5f, 0.0f,
+                    WorkerStats.DEFAULT_SPEED_REF, 0.0f, WorkerStats.DEFAULT_HEALTH_REF,
+                    false, false);
+            engine.attachWorker(worker,
+                    new WorkerResolver.ResolvedWorker(stats, 16.0f, 32.0f, 0.0f, 0.0f, true));
+            helper.assertTrue(engine.hasValidWorkingBlocks, "Ice ring must be safe");
+            helper.assertFalse(engine.hasZeroPathOutput(),
+                    "Scripted zero RPM is not caused by terrain");
+            helper.assertTrue(engine.hasNonPathZeroOutput(),
+                    "Scripted RPM suppression must have a distinct diagnostic");
+            helper.assertTrue(engine.getEfficiencyPercent() > 0.0f,
+                    "Path efficiency must reflect physical floor, not a script override");
+            java.util.List<net.minecraft.network.chat.Component> tooltip = new java.util.ArrayList<>();
+            engine.buildGoggleTooltip(tooltip);
+            helper.assertTrue(tooltip.stream().anyMatch(line ->
+                    line.getContents() instanceof net.minecraft.network.chat.contents.TranslatableContents translated
+                            && translated.getKey().equals(
+                                    "tooltip.createhorsepower.goggles.status.zero_output_override")),
+                    "Goggles should explain non-path zero RPM");
+            helper.assertFalse(tooltip.stream().anyMatch(line ->
+                    line.getContents() instanceof net.minecraft.network.chat.contents.TranslatableContents translated
+                            && translated.getKey().equals(
+                                    "tooltip.createhorsepower.goggles.status.zero_output_path")),
+                    "Goggles must not accuse terrain of script-driven zero RPM");
+            CompoundTag clientPacket = new CompoundTag();
+            engine.write(clientPacket, true);
+            helper.assertFalse(clientPacket.getBoolean("ZeroOutputFromTerrain"),
+                    "Sync diagnostics must retain the raw physical path source");
+            engine.detachWorker(false);
+            worker.discard();
+            knot.discard();
+        } finally {
+            CHPApi.init(originalConfig, originalHooks, net.minecraft.resources.ResourceLocation::new,
+                    detaches, stacks);
+        }
+        helper.succeed();
+    }
+
     /** Initial crank penetration must not authorize passage through a separate wall. */
     @GameTest(template = "empty")
     public static void crankOverlapDoesNotBypassAdjacentWall(GameTestHelper helper) {
