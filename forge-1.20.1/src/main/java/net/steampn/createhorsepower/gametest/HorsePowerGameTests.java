@@ -53,7 +53,7 @@ public final class HorsePowerGameTests {
      * with appropriately low efficiency. An air hole must stop the crank and
      * must never become a horizontal teleport destination.
      */
-    @GameTest(template = "empty")
+    @GameTest(template = "empty", batch = "chp_air_gap_safe", timeoutTicks = 100)
     public static void safeMixedOrbitStopsAtAirGap(GameTestHelper helper) {
         BlockPos crankPos = new BlockPos(4, 2, 4);
         BlockPos[] offsets = HorseCrankEngine.generateOffsetsForRadius(2.5f);
@@ -102,12 +102,20 @@ public final class HorsePowerGameTests {
                         && Math.abs(horse.getZ() - oldZ) < 1.0e-5D,
                 "Worker must remain grounded at its original coordinates");
 
-        engine.afterHostTick();
-        helper.assertFalse(engine.hasValidWorkingBlocks,
-                "Crank must stop after a gap opens in its worker orbit");
-        helper.assertFalse(engine.canPhysicallyWork(),
-                "Invalid physical orbit must prohibit kinetic generation");
-        helper.succeed();
+        // A full-track inspection is intentionally periodic (default 40 ticks).
+        // The stepwise guard above rejects the hole immediately; verify that
+        // output is withdrawn at the *next scheduled* full-orbit evaluation,
+        // irrespective of the game clock when this GameTest was dispatched.
+        helper.runAfterDelay(Math.max(1, CHPApi.config().checkIntervalTicks()) + 2, () -> {
+            helper.assertTrue(helper.getLevel().getBlockState(helper.absolutePos(hole)).isAir(),
+                    "The cleared gap must persist until the scheduled path check");
+            engine.afterHostTick();
+            helper.assertFalse(engine.hasValidWorkingBlocks,
+                    "Crank must stop by the next scheduled full-orbit check");
+            helper.assertFalse(engine.canPhysicallyWork(),
+                    "Invalid physical orbit must prohibit kinetic generation");
+            helper.succeed();
+        });
     }
 
     /** A paved ring must accept workers starting next to the crank, not just on the ring. */
