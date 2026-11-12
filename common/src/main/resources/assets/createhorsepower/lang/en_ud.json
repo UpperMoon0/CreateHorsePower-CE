@@ -13,6 +13,7 @@
   "tooltip.createhorsepower.goggles.status.worker_unloaded": "pǝɥɔɐʇʇɐ ɹǝbuoן ou ɹo ǝןqɐןıɐʌɐun ɹǝʞɹoM",
   "tooltip.createhorsepower.goggles.status.worker_ineligible": "ɹǝʞɹoʍ ǝןqıbıןǝ uɐ ʇou sı ǝɹnʇɐǝɹɔ pǝɥɔɐʇʇ∀",
   "tooltip.createhorsepower.goggles.status.invalid_path": "sʞɔoןq ǝןqɐʇınsun %s :ɥʇɐd pıןɐʌuI",
+  "tooltip.createhorsepower.goggles.status.zero_output_path": "No kinetic output: unsupported terrain on the track",
   "tooltip.createhorsepower.goggles.status.vetoed": "ʇdıɹɔs ɐ ʎq pǝʇuǝʌǝɹd ʞɹoM",
   "tooltip.createhorsepower.goggles.status.working": "buıʞɹoM",
   "tooltip.createhorsepower.goggles.worker": "%s :ɹǝʞɹoM",
