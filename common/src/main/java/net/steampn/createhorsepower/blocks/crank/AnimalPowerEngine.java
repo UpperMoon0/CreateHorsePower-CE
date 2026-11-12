@@ -943,9 +943,16 @@ public class AnimalPowerEngine {
 
         // 3. Centralized working state transition with non-permanent beforeWorkStart check & cooldown
         boolean canWork = canPhysicallyWork();
-        // A transient collision must not restart generation every tick.
-        if (canWork && !isWorking && level.getGameTime() < nextMovementRetryTick) {
-            return;
+        // Recheck the next physical step before firing start hooks or
+        // reactivating kinetic output. Persistent collisions stay fully
+        // quiescent, even across multiple retry windows.
+        if (canWork && !isWorking && nextMovementRetryTick > 0) {
+            if (level.getGameTime() < nextMovementRetryTick) return;
+            if (cachedWorkerMob != null && !nextWorkerStepUnobstructed(cachedWorkerMob)) {
+                nextMovementRetryTick = level.getGameTime() + MOVEMENT_BLOCKED_RETRY_TICKS;
+                return;
+            }
+            nextMovementRetryTick = 0;
         }
         boolean wasWorking = this.isWorking;
 
@@ -1433,6 +1440,25 @@ public class AnimalPowerEngine {
     @Nullable
     public Mob getLoadedWorkerForDiagnostics() {
         return cachedWorkerMob;
+    }
+
+    /** Collision preflight while stopped; never consumes fuel, moves or fires hooks. */
+    private boolean nextWorkerStepUnobstructed(Mob mob) {
+        BlockPos pos = host.pos();
+        double centerX = pos.getX() + 0.5D;
+        double centerZ = pos.getZ() + 0.5D;
+        double speedAttribute = mob.getAttributes().hasAttribute(Attributes.MOVEMENT_SPEED)
+                ? mob.getAttributeValue(Attributes.MOVEMENT_SPEED)
+                : WorkerStats.DEFAULT_SPEED_REF;
+        double groundSpeed = WorkerOrbitMovement.groundSpeedBlocksPerSecond(
+                speedAttribute, CHPApi.config().workerGroundSpeedScale(),
+                CHPApi.config().minWorkerGroundSpeed(), CHPApi.config().maxWorkerGroundSpeed());
+        double angularDelta = WorkerOrbitMovement.angularDeltaPerTick(
+                groundSpeed, workerRadius, generationDirection);
+        double currentAngle = WorkerOrbitMovement.angleFromPosition(
+                mob.getX(), mob.getZ(), centerX, centerZ);
+        return WorkerOrbitMovement.canMoveToAngle(
+                mob, centerX, centerZ, workerRadius, currentAngle + angularDelta);
     }
 
     private void moveWorkerTo(Mob mob) {
