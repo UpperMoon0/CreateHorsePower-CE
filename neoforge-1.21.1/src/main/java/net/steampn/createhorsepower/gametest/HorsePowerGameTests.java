@@ -203,6 +203,129 @@ public final class HorsePowerGameTests {
         helper.succeed();
     }
 
+
+    /** Test the world-facing evaluator, not only its math-only implementation. */
+    @GameTest(template = "empty")
+    public static void worldMixedRingPenalizesLegacyAndWorstBlockModes(GameTestHelper helper) {
+        var original = CHPApi.config();
+        var scripts = CHPApi.scripts();
+        var detaches = CHPApi.deferredDetaches();
+        var stacks = CHPApi.itemStacks();
+        BlockPos center = new BlockPos(4, 2, 4);
+        BlockPos[] offsets = HorseCrankEngine.generateOffsetsForRadius(2.5f);
+        for (BlockPos offset : offsets) {
+            BlockPos floor = center.offset(offset);
+            helper.setBlock(floor, Blocks.STONE);
+            helper.setBlock(floor.above(), Blocks.AIR);
+            helper.setBlock(floor.above(2), Blocks.AIR);
+        }
+        helper.setBlock(center.offset(offsets[0]), Blocks.ICE);
+        try {
+            for (net.steampn.createhorsepower.content.path.PathEvaluationMode mode :
+                    new net.steampn.createhorsepower.content.path.PathEvaluationMode[] {
+                        net.steampn.createhorsepower.content.path.PathEvaluationMode.LEGACY,
+                        net.steampn.createhorsepower.content.path.PathEvaluationMode.WORST_BLOCK }) {
+                Config policy = new Config() {
+                    @Override public net.steampn.createhorsepower.content.path.PathEvaluationMode pathEvaluationMode() { return mode; }
+                    @Override public double minimumPathCoverage() { return 0.0D; }
+                };
+                CHPApi.init(policy, scripts, net.minecraft.resources.ResourceLocation::fromNamespaceAndPath, detaches, stacks);
+                var evaluated = net.steampn.createhorsepower.content.path.PathEvaluator.evaluate(
+                        helper.getLevel(), helper.absolutePos(center), offsets);
+                helper.assertTrue(evaluated.isValid(), "Walkable mixed ring invalid in " + mode);
+                helper.assertTrue(evaluated.validBlocks() == 1, "Expected one recognized floor tile");
+                if (mode == net.steampn.createhorsepower.content.path.PathEvaluationMode.WORST_BLOCK) {
+                    helper.assertTrue(evaluated.speedMultiplier() == 0.0f,
+                            "WORST_BLOCK must zero an unrecognized solid tile");
+                } else {
+                    helper.assertTrue(evaluated.speedMultiplier() > 0.0f && evaluated.speedMultiplier() < 0.2f,
+                            "LEGACY must scale by recognized coverage");
+                }
+            }
+            Config strict = new Config() {
+                @Override public double minimumPathCoverage() { return 1.0D; }
+            };
+            CHPApi.init(strict, scripts, net.minecraft.resources.ResourceLocation::fromNamespaceAndPath, detaches, stacks);
+            helper.assertFalse(net.steampn.createhorsepower.content.path.PathEvaluator.evaluate(
+                    helper.getLevel(), helper.absolutePos(center), offsets).isValid(),
+                    "Persisted strict coverage must reject incomplete paths");
+            helper.assertTrue(Math.abs(Config.MINIMUM_PATH_COVERAGE.getDefault()) < 1.0e-9D,
+                    "Fresh server configurations must default to forgiving coverage");
+        } finally {
+            CHPApi.init(original, scripts, net.minecraft.resources.ResourceLocation::fromNamespaceAndPath, detaches, stacks);
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void wideWorkerRequiresFullFootprintFloor(GameTestHelper helper) {
+        BlockPos local = new BlockPos(3, 1, 3);
+        helper.setBlock(local, Blocks.STONE);
+        helper.setBlock(local.above(), Blocks.AIR);
+        helper.setBlock(local.above(2), Blocks.AIR);
+        double x = helper.absolutePos(local).getX() + 0.5D;
+        double z = helper.absolutePos(local).getZ() + 0.5D;
+        double y = helper.absolutePos(local).getY() + 1.0D;
+        helper.assertTrue(net.steampn.createhorsepower.content.path.PathEvaluator.supportsWorkerFootprint(
+                helper.getLevel(), x, y, z, 0.6f), "Small worker should fit");
+        helper.assertFalse(net.steampn.createhorsepower.content.path.PathEvaluator.supportsWorkerFootprint(
+                helper.getLevel(), x, y, z, 2.2f), "Wide worker must reject unsupported edges");
+        for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) {
+            BlockPos floor = local.offset(dx, 0, dz);
+            helper.setBlock(floor, Blocks.STONE);
+            helper.setBlock(floor.above(), Blocks.AIR);
+            helper.setBlock(floor.above(2), Blocks.AIR);
+        }
+        helper.assertTrue(net.steampn.createhorsepower.content.path.PathEvaluator.supportsWorkerFootprint(
+                helper.getLevel(), x, y, z, 2.2f), "Wide worker should pass with supported edges");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void obstructedWorkerDoesNotPulseGeneration(GameTestHelper helper) {
+        BlockPos center = new BlockPos(4, 2, 4);
+        BlockPos[] offsets = HorseCrankEngine.generateOffsetsForRadius(2.5f);
+        for (BlockPos offset : offsets) {
+            BlockPos floor = center.offset(offset);
+            helper.setBlock(floor, Blocks.STONE);
+            helper.setBlock(floor.above(), Blocks.AIR);
+            helper.setBlock(floor.above(2), Blocks.AIR);
+        }
+        helper.setBlock(center.offset(offsets[0]), Blocks.ICE);
+        helper.setBlock(center, BlockRegister.HORSE_CRANK.get());
+        HorseCrankEngine engine = requireCrank(helper, center).engine();
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(5, 2, 4));
+        LeashFenceKnotEntity knot = LeashFenceKnotEntity.getOrCreateKnot(
+                helper.getLevel(), helper.absolutePos(center));
+        horse.setLeashedTo(knot, false);
+        WorkerStats stats = new WorkerStats(16.0f, 32.0f, 2.5f, 0.0f,
+                WorkerStats.DEFAULT_SPEED_REF, 0.0f, WorkerStats.DEFAULT_HEALTH_REF,
+                false, false);
+        WorkerResolver.ResolvedWorker profile = new WorkerResolver.ResolvedWorker(
+                stats, 16.0f, 32.0f, 0.0f, 0.0f, true);
+        engine.attachWorker(horse, profile);
+        engine.afterHostTick();
+        helper.assertTrue(engine.isWorking(), "Worker should start on walkable ring");
+        Cow obstacle = helper.spawn(EntityType.COW, new BlockPos(7, 2, 4));
+        obstacle.setNoAi(true);
+        engine.afterHostTick();
+        helper.assertFalse(engine.isWorking(), "Dynamic collision must stop power");
+        helper.assertTrue(engine.generatedSpeed() == 0.0f, "Blocked crank must have zero output");
+        for (int i = 0; i < 5; i++) {
+            engine.afterHostTick();
+            helper.assertFalse(engine.isWorking(), "Blocker must not restart crank every tick");
+        }
+        obstacle.discard();
+        helper.runAfterDelay(22, () -> {
+            engine.afterHostTick();
+            helper.assertTrue(engine.isWorking(), "Clearing obstacle should restore work after cooldown");
+            engine.detachWorker(false);
+            horse.discard();
+            knot.discard();
+            helper.succeed();
+        });
+    }
+
     @GameTest(template = "empty")
     public static void freshDefaultPathConfigFallsThroughToBundledProfiles(GameTestHelper helper) {
         helper.assertTrue(Config.POOR_PATH.getDefault().isEmpty(),
