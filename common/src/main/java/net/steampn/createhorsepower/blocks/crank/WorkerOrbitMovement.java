@@ -4,6 +4,13 @@ import net.minecraft.world.entity.Mob;
 import net.steampn.createhorsepower.content.path.PathEvaluator;
 import net.minecraft.world.entity.animal.horse.Horse;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.core.BlockPos;
+import net.minecraft.util.Mth;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.shapes.BooleanOp;
+import net.minecraft.world.phys.shapes.CollisionContext;
+import net.minecraft.world.phys.shapes.Shapes;
+import net.minecraft.world.phys.shapes.VoxelShape;
 
 /** Shared worker orbit movement and Minecraft-facing conversion. */
 public final class WorkerOrbitMovement {
@@ -101,47 +108,42 @@ public final class WorkerOrbitMovement {
     }
 
 
+
     /**
-     * A worker can spawn partly inside the central crank. During its first
-     * escape, only the volume of that one block is exempt from collision.
-     * Test all six outside slabs of the swept bounding box, rather than
-     * skipping collisions until the worker happens to find a clear landing.
-     * This rejects a wall touching the crank without rejecting valid onboarding.
+     * Ignore only the collision shape owned by the original crank block.
+     * Its model rises above the block cell, so a generic 1x1x1 exclusion
+     * can falsely reject safe onboarding; excluding a larger box could let
+     * workers pass through a separate wall or block stacked above the crank.
      */
     private static boolean collisionConfinedToCrank(Mob mob, AABB box,
                                                      double centerX, double centerZ) {
-        double x0 = Math.floor(centerX);
-        double x1 = x0 + 1.0D;
-        double z0 = Math.floor(centerZ);
-        double z1 = z0 + 1.0D;
-        double y0 = Math.floor(mob.getY());
-        double y1 = y0 + 1.0D;
-        double insideX0 = Math.max(box.minX, x0);
-        double insideX1 = Math.min(box.maxX, x1);
-        double insideZ0 = Math.max(box.minZ, z0);
-        double insideZ1 = Math.min(box.maxZ, z1);
-        if (insideX0 >= insideX1 || insideZ0 >= insideZ1
-                || box.maxY <= y0 || box.minY >= y1) {
+        var level = mob.level();
+        BlockPos crank = BlockPos.containing(centerX, mob.getY(), centerZ);
+        if (!(level.getBlockState(crank).getBlock() instanceof AbstractHorseCrankBlock)) {
+            crank = crank.below();
+        }
+        if (!(level.getBlockState(crank).getBlock() instanceof AbstractHorseCrankBlock)
+                || !level.getWorldBorder().isWithinBounds(box)
+                || !level.getEntities(mob, box,
+                        other -> other.canBeCollidedWith() && !other.isSpectator()).isEmpty()) {
             return false;
         }
-        if (!clearSlab(mob, box.minX, box.minY, box.minZ,
-                Math.min(box.maxX, x0), box.maxY, box.maxZ)) return false;
-        if (!clearSlab(mob, Math.max(box.minX, x1), box.minY, box.minZ,
-                box.maxX, box.maxY, box.maxZ)) return false;
-        if (!clearSlab(mob, insideX0, box.minY, box.minZ,
-                insideX1, box.maxY, Math.min(box.maxZ, z0))) return false;
-        if (!clearSlab(mob, insideX0, box.minY, Math.max(box.minZ, z1),
-                insideX1, box.maxY, box.maxZ)) return false;
-        if (!clearSlab(mob, insideX0, box.minY, insideZ0,
-                insideX1, Math.min(box.maxY, y0), insideZ1)) return false;
-        return clearSlab(mob, insideX0, Math.max(box.minY, y1), insideZ0,
-                insideX1, box.maxY, insideZ1);
-    }
 
-    private static boolean clearSlab(Mob mob, double x0, double y0, double z0,
-                                     double x1, double y1, double z1) {
-        return x1 <= x0 || y1 <= y0 || z1 <= z0
-                || mob.level().noCollision(mob, new AABB(x0, y0, z0, x1, y1, z1));
+        CollisionContext context = CollisionContext.of(mob);
+        boolean hitCrank = false;
+        for (BlockPos sample : BlockPos.betweenClosed(
+                Mth.floor(box.minX) - 1, Mth.floor(box.minY) - 1, Mth.floor(box.minZ) - 1,
+                Mth.floor(box.maxX) + 1, Mth.floor(box.maxY) + 1, Mth.floor(box.maxZ) + 1)) {
+            BlockState state = level.getBlockState(sample);
+            if (state.isAir()) continue;
+            VoxelShape shape = state.getCollisionShape(level, sample, context);
+            if (shape.isEmpty() || !Shapes.joinIsNotEmpty(shape,
+                    Shapes.create(box.move(-sample.getX(), -sample.getY(), -sample.getZ())),
+                    BooleanOp.AND)) continue;
+            if (!sample.equals(crank)) return false;
+            hitCrank = true;
+        }
+        return hitCrank;
     }
 
     public static Snapshot moveToAngle(
