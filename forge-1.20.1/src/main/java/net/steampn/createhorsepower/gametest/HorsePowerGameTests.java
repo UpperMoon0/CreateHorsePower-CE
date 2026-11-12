@@ -314,14 +314,22 @@ public final class HorsePowerGameTests {
             engine.afterHostTick();
             helper.assertFalse(engine.isWorking(), "Blocker must not restart crank every tick");
         }
-        obstacle.discard();
-        helper.runAfterDelay(22, () -> {
+        helper.runAfterDelay(45, () -> {
             engine.afterHostTick();
-            helper.assertTrue(engine.isWorking(), "Clearing obstacle should restore work after cooldown");
-            engine.detachWorker(false);
-            horse.discard();
-            knot.discard();
-            helper.succeed();
+            helper.assertFalse(engine.isWorking(),
+                    "Persistent obstruction must not pulse even after multiple retry windows");
+            helper.assertTrue(engine.generatedSpeed() == 0.0f,
+                    "Persistent obstruction must keep kinetic output at zero");
+            obstacle.discard();
+            helper.runAfterDelay(23, () -> {
+                engine.afterHostTick();
+                helper.assertTrue(engine.isWorking(),
+                        "Work should recover after the obstacle clears and the retry expires");
+                engine.detachWorker(false);
+                horse.discard();
+                knot.discard();
+                helper.succeed();
+            });
         });
     }
 
