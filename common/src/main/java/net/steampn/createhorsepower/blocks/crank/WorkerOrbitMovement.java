@@ -50,16 +50,30 @@ public final class WorkerOrbitMovement {
         double radialDistance = Math.hypot(oldX - centerX, oldZ - centerZ);
         boolean joiningRing = Math.abs(radialDistance - radius) > 0.125D;
         double distance = Math.hypot(deltaX, deltaZ);
-        int steps = joiningRing ? 1 : Math.max(1, (int) Math.ceil(distance * 4.0D));
+        // Always sweep the worker's actual bounding box over every part of
+        // the displacement, not only its final landing. A destination-only
+        // test permits teleporting through walls, fences or other workers.
+        // Short sweeps follow the circular orbit without over-rejecting
+        // unrelated blocks in the axis-aligned box of a long diagonal step.
+        int steps = Math.max(1, (int) Math.ceil(distance * 4.0D));
+        double stepX = deltaX / steps;
+        double stepZ = deltaZ / steps;
         for (int step = 1; step <= steps; step++) {
-            double t = (double) step / steps;
-            double x = joiningRing ? targetX : oldX + deltaX * t;
-            double z = joiningRing ? targetZ : oldZ + deltaZ * t;
-            if (!PathEvaluator.supportsWorkerFootprint(mob.level(), x, mob.getY(), z, mob.getBbWidth())) {
+            double x = oldX + stepX * step;
+            double z = oldZ + stepZ * step;
+            // Joining workers may cross an unpaved interior, but they must
+            // still avoid collisions for the whole relocation.
+            if ((!joiningRing || step == steps) &&
+                    !PathEvaluator.supportsWorkerFootprint(mob.level(), x, mob.getY(), z, mob.getBbWidth())) {
+                return false;
+            }
+            if (!mob.level().noCollision(mob, mob.getBoundingBox()
+                    .move(stepX * (step - 1), 0.0D, stepZ * (step - 1))
+                    .expandTowards(stepX, 0.0D, stepZ))) {
                 return false;
             }
         }
-        return mob.level().noCollision(mob, mob.getBoundingBox().move(deltaX, 0.0D, deltaZ));
+        return true;
     }
 
     public static Snapshot moveToAngle(
