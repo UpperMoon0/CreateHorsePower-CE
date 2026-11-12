@@ -42,6 +42,15 @@ def run(command: list[str], root: Path, log: Path, timeout: int) -> None:
         raise RuntimeError(f"Server exited {code} during {log.name}; see {log}")
 
 
+def gradle_launcher(root: Path) -> list[str]:
+    """Build a platform-correct Gradle launcher without relying on POSIX +x."""
+    wrapper = root / ("gradlew.bat" if os.name == "nt" else "gradlew")
+    if not wrapper.is_file():
+        raise FileNotFoundError(f"Missing Gradle wrapper: {wrapper}")
+    # Explicit bash also works when a test workspace loses +x on Linux.
+    return [str(wrapper)] if os.name == "nt" else ["bash", str(wrapper)]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--project", choices=["forge-1.20.1", "neoforge-1.21.1"], required=True)
@@ -69,11 +78,7 @@ def main() -> None:
         "sync-chunk-writes": "true"}
     (work / "server.properties").write_text(
         "".join(f"{key}={value}\n" for key, value in settings.items()))
-    wrapper = root / ("gradlew.bat" if os.name == "nt" else "gradlew")
-    # A checkout can lose the POSIX executable bit during artifact extraction or
-    # workspace copying. Launch the shell wrapper through bash, matching the
-    # central CI Gradle helper, rather than trying to exec(2) gradlew directly.
-    gradle_prefix = [str(wrapper)] if os.name == "nt" else ["bash", str(wrapper)]
+    gradle_prefix = gradle_launcher(root)
     phases = []
     for phase in ("write", "read"):
         command = [*gradle_prefix, f":{args.project}:runServer",
