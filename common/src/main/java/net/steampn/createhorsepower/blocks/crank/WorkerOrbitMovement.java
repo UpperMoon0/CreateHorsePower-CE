@@ -58,13 +58,6 @@ public final class WorkerOrbitMovement {
         int steps = Math.max(1, (int) Math.ceil(distance * 4.0D));
         double stepX = deltaX / steps;
         double stepZ = deltaZ / steps;
-        // noCollision checks block geometry but does not consistently count
-        // other pushable mobs. A horse that has a cow occupying its current
-        // position must not advance or keep producing kinetic output.
-        if (!mob.level().getEntities(mob, mob.getBoundingBox(),
-                other -> other instanceof Mob && other.isAlive()).isEmpty()) {
-            return false;
-        }
         // Workers may attach while partly overlapping the central crank.
         // Only the initial escape from that *pre-existing* penetration skips
         // sweeping; otherwise a valid worker could never join the ring. We
@@ -81,14 +74,6 @@ public final class WorkerOrbitMovement {
             // still avoid collisions for the whole relocation.
             if ((!joiningRing || step == steps) &&
                     !PathEvaluator.supportsWorkerFootprint(mob.level(), x, mob.getY(), z, mob.getBbWidth())) {
-                return false;
-            }
-            // Entity collisions can occur anywhere along the swept chord,
-            // including between collision-free endpoints.
-            if (!mob.level().getEntities(mob, mob.getBoundingBox()
-                    .move(stepX * (step - 1), 0.0D, stepZ * (step - 1))
-                    .expandTowards(stepX, 0.0D, stepZ),
-                    other -> other instanceof Mob && other.isAlive()).isEmpty()) {
                 return false;
             }
             if (escapingCrank) {
