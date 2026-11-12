@@ -257,6 +257,53 @@ public final class HorsePowerGameTests {
         helper.succeed();
     }
 
+    /** The middle of a teleport must collide even when both endpoints are clear. */
+    @GameTest(template = "empty")
+    public static void orbitMotionCannotTunnelThroughIntermediateWall(GameTestHelper helper) {
+        BlockPos center = new BlockPos(4, 2, 4);
+        for (int x = 1; x <= 8; x++) {
+            for (int z = 1; z <= 8; z++) {
+                BlockPos floor = new BlockPos(x, 1, z);
+                helper.setBlock(floor, Blocks.STONE);
+                helper.setBlock(floor.above(), Blocks.AIR);
+                helper.setBlock(floor.above(2), Blocks.AIR);
+            }
+        }
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(7, 2, 4));
+        double centerX = helper.absolutePos(center).getX() + 0.5D;
+        double centerZ = helper.absolutePos(center).getZ() + 0.5D;
+        double startX = centerX + 2.5D;
+        double startZ = centerZ;
+        horse.teleportTo(startX, horse.getY(), startZ);
+        helper.assertTrue(WorkerOrbitMovement.canMoveToAngle(
+                horse, centerX, centerZ, 2.5f, Math.PI / 2.0D),
+                "A fully paved, unobstructed diagonal should permit walking");
+
+        // This wall is crossed midway through the chord, but not at either
+        // endpoint. An endpoint-only collision check incorrectly accepts it.
+        BlockPos wall = new BlockPos(6, 2, 6);
+        helper.setBlock(wall, Blocks.STONE);
+        helper.assertFalse(WorkerOrbitMovement.canMoveToAngle(
+                horse, centerX, centerZ, 2.5f, Math.PI / 2.0D),
+                "Intermediate block must prevent the entire teleport");
+        var stopped = WorkerOrbitMovement.moveToAngle(
+                horse, centerX, centerZ, 2.5f, 0.0D, Math.PI / 2.0D);
+        helper.assertFalse(stopped.moved(), "Blocked move must not advance");
+        helper.assertTrue(Math.abs(horse.getX() - startX) < 1.0e-5D
+                        && Math.abs(horse.getZ() - startZ) < 1.0e-5D,
+                "Worker may not tunnel to the collision-free endpoint");
+
+        helper.setBlock(wall, Blocks.AIR);
+        helper.assertTrue(WorkerOrbitMovement.canMoveToAngle(
+                horse, centerX, centerZ, 2.5f, Math.PI / 2.0D),
+                "Removing the intermediate wall must unblock the worker");
+        helper.assertTrue(WorkerOrbitMovement.moveToAngle(
+                horse, centerX, centerZ, 2.5f, 0.0D, Math.PI / 2.0D).moved(),
+                "Worker must resume after wall removal");
+        horse.discard();
+        helper.succeed();
+    }
+
     @GameTest(template = "empty")
     public static void wideWorkerRequiresFullFootprintFloor(GameTestHelper helper) {
         BlockPos local = new BlockPos(3, 1, 3);
