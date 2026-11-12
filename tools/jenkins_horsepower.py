@@ -152,19 +152,9 @@ def bionics(target: str) -> None:
     script("run_bionics_restart_probe.py", "--project", target)
 
 
-def ensure_new_release_version(ver: str) -> None:
-    """Reject an already published tag and fail closed if the remote is inaccessible."""
-    check = subprocess.run(["git", "ls-remote", "--exit-code", "--refs", "--tags",
-                            "origin", f"refs/tags/v{ver}"],
-                           cwd=ROOT, capture_output=True, text=True, check=False, timeout=30)
-    if check.returncode == 0:
-        raise RuntimeError(f"Version v{ver} already exists; increment mod_version")
-    if check.returncode != 2:
-        raise RuntimeError("Cannot verify release tag uniqueness against origin")
-
-
 def package() -> None:
-    ensure_new_release_version(version())
+    # Packaging is ordinary CI, not release authorization. The host-only
+    # publisher enforces Git tag/version uniqueness when publishing.
     # Rebuild with no optional-compat flags; the compatibility tasks have
     # already passed, but only default-runtime release JARs may be published.
     gradle("buildAll")
