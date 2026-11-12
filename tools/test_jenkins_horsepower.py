@@ -39,10 +39,10 @@ class HorsePowerCITests(unittest.TestCase):
         self.make_jars()
         with patch.object(ci, "gradle"), patch.object(ci, "script"), \
              patch.object(ci.subprocess, "run") as git:
-            git.side_effect = [SimpleNamespace(returncode=2, stdout=""),
-                               SimpleNamespace(returncode=0, stdout="a" * 40 + "\n")]
+            git.return_value = SimpleNamespace(returncode=0, stdout="a" * 40 + "\n")
             ci.package()
-            self.assertEqual(git.call_count, 2)
+            git.assert_called_once_with(["git", "rev-parse", "HEAD"], cwd=self.root,
+                                        check=True, capture_output=True, text=True)
         output = self.root / "release-output"
         manifest = (output / "SHA256SUMS").read_text().splitlines()
         self.assertEqual(len(manifest), 3)
@@ -89,24 +89,25 @@ class HorsePowerCITests(unittest.TestCase):
                 ci.build(target)
             gradle.assert_called_once()
 
-    def test_tag_guard_rejects_collision_and_network_failure(self):
-        with patch.object(ci.subprocess, 'run') as git:
-            git.return_value.returncode = 0
-            with self.assertRaisesRegex(RuntimeError, 'already exists'):
-                ci.ensure_new_release_version('1.2.12')
-            git.return_value.returncode = 128
-            with self.assertRaisesRegex(RuntimeError, 'Cannot verify'):
-                ci.ensure_new_release_version('1.2.12')
-            git.return_value.returncode = 2
-            ci.ensure_new_release_version('1.2.12')
+    def test_package_never_checks_tag_uniqueness_in_ordinary_ci(self):
+        # A published version may still be built for a documentation-only
+        # mainline commit. The host publisher, not packaging, rejects release
+        # collisions. Simulate an origin with no working tag service.
+        self.make_jars()
+        with patch.object(ci, "gradle"), patch.object(ci, "script"), \
+             patch.object(ci.subprocess, "run") as git:
+            git.return_value = SimpleNamespace(returncode=0, stdout="a" * 40 + "\n")
+            ci.package()
+            git.assert_called_once_with(["git", "rev-parse", "HEAD"],
+                                        cwd=self.root, check=True,
+                                        capture_output=True, text=True)
 
     def test_stale_release_output_refused_without_overwrite(self):
         self.make_jars()
         (self.root / "release-output").mkdir()
         with patch.object(ci, "gradle"), patch.object(ci, "script"), \
              patch.object(ci.subprocess, "run") as git:
-            git.side_effect = [SimpleNamespace(returncode=2, stdout=""),
-                               SimpleNamespace(returncode=0, stdout="a" * 40 + "\n")]
+            git.return_value = SimpleNamespace(returncode=0, stdout="a" * 40 + "\n")
             with self.assertRaisesRegex(RuntimeError, "stale artifacts"):
                 ci.package()
 
