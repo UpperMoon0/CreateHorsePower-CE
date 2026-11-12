@@ -58,6 +58,15 @@ public final class WorkerOrbitMovement {
         int steps = Math.max(1, (int) Math.ceil(distance * 4.0D));
         double stepX = deltaX / steps;
         double stepZ = deltaZ / steps;
+        // Workers may attach while partly overlapping the central crank.
+        // Only the initial escape from that *pre-existing* penetration skips
+        // sweeping; otherwise a valid worker could never join the ring. We
+        // still require a collision-free landing before any further sweeps.
+        double crankClearance = 0.5D + mob.getBbWidth() * 0.5D;
+        boolean escapingCrank = joiningRing
+                && Math.abs(oldX - centerX) < crankClearance
+                && Math.abs(oldZ - centerZ) < crankClearance
+                && !mob.level().noCollision(mob, mob.getBoundingBox());
         for (int step = 1; step <= steps; step++) {
             double x = oldX + stepX * step;
             double z = oldZ + stepZ * step;
@@ -66,6 +75,17 @@ public final class WorkerOrbitMovement {
             if ((!joiningRing || step == steps) &&
                     !PathEvaluator.supportsWorkerFootprint(mob.level(), x, mob.getY(), z, mob.getBbWidth())) {
                 return false;
+            }
+            if (escapingCrank) {
+                // Never skip a collision-free sample after the worker has
+                // escaped. A blocked final landing is always rejected.
+                if (!mob.level().noCollision(mob, mob.getBoundingBox()
+                        .move(stepX * step, 0.0D, stepZ * step))) {
+                    if (step == steps) return false;
+                    continue;
+                }
+                escapingCrank = false;
+                continue;
             }
             if (!mob.level().noCollision(mob, mob.getBoundingBox()
                     .move(stepX * (step - 1), 0.0D, stepZ * (step - 1))
