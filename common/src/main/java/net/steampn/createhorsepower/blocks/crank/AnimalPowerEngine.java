@@ -943,12 +943,20 @@ public class AnimalPowerEngine {
 
         // 3. Centralized working state transition with non-permanent beforeWorkStart check & cooldown
         boolean canWork = canPhysicallyWork();
-        // Recheck the next physical step before firing start hooks or
-        // reactivating kinetic output. Persistent collisions stay fully
-        // quiescent, even across multiple retry windows.
-        if (canWork && !isWorking && nextMovementRetryTick > 0) {
+        // Recheck a blocked physical path at the same bounded retry cadence
+        // as the next-step probe. Otherwise a removed wall can leave the crank
+        // stopped until the much slower ordinary path evaluation interval.
+        if (!isWorking && nextMovementRetryTick > 0) {
             if (level.getGameTime() < nextMovementRetryTick) return;
-            if (cachedWorkerMob != null && !nextWorkerStepUnobstructed(cachedWorkerMob)) {
+            if (!hasValidWorkingBlocks) {
+                checkPathBlocks();
+                if (!hasValidWorkingBlocks) {
+                    nextMovementRetryTick = level.getGameTime() + MOVEMENT_BLOCKED_RETRY_TICKS;
+                    return;
+                }
+            }
+            canWork = canPhysicallyWork();
+            if (canWork && cachedWorkerMob != null && !nextWorkerStepUnobstructed(cachedWorkerMob)) {
                 nextMovementRetryTick = level.getGameTime() + MOVEMENT_BLOCKED_RETRY_TICKS;
                 return;
             }
