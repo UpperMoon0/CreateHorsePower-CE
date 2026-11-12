@@ -244,6 +244,31 @@ public final class HorsePowerGameTests {
                 if (mode == net.steampn.createhorsepower.content.path.PathEvaluationMode.WORST_BLOCK) {
                     helper.assertTrue(evaluated.speedMultiplier() == 0.0f,
                             "WORST_BLOCK must zero an unrecognized solid tile");
+                    // Exercise the actual engine and user-visible goggles, not only evaluator math.
+                    helper.setBlock(center, BlockRegister.HORSE_CRANK.get());
+                    HorseCrankEngine zeroEngine = requireCrank(helper, center).engine();
+                    Horse zeroWorker = helper.spawn(EntityType.HORSE, new BlockPos(5, 2, 4));
+                    LeashFenceKnotEntity zeroKnot = LeashFenceKnotEntity.getOrCreateKnot(
+                            helper.getLevel(), helper.absolutePos(center));
+                    zeroWorker.setLeashedTo(zeroKnot, false);
+                    WorkerStats zeroStats = new WorkerStats(
+                            16.0f, 32.0f, 2.5f, 0.0f, WorkerStats.DEFAULT_SPEED_REF,
+                            0.0f, WorkerStats.DEFAULT_HEALTH_REF, false, false);
+                    zeroEngine.attachWorker(zeroWorker,
+                            new WorkerResolver.ResolvedWorker(zeroStats, 16.0f, 32.0f, 0.0f, 0.0f, true));
+                    helper.assertTrue(zeroEngine.hasZeroPathOutput(),
+                            "WORST_BLOCK mixed walkable ring must expose its zero-output state");
+                    java.util.List<net.minecraft.network.chat.Component> tooltip = new java.util.ArrayList<>();
+                    zeroEngine.buildGoggleTooltip(tooltip);
+                    helper.assertTrue(tooltip.stream().anyMatch(line ->
+                                    line.getContents() instanceof net.minecraft.network.chat.contents.TranslatableContents translated
+                                            && translated.getKey().equals(
+                                                    "tooltip.createhorsepower.goggles.status.zero_output_path")),
+                            "Goggles must explain why a physically valid mixed ring produces no RPM");
+                    zeroEngine.detachWorker(false);
+                    zeroWorker.discard();
+                    zeroKnot.discard();
+                    helper.setBlock(center, Blocks.AIR);
                 } else {
                     helper.assertTrue(evaluated.speedMultiplier() > 0.0f && evaluated.speedMultiplier() < 0.2f,
                             "LEGACY must scale by recognized coverage");
@@ -261,6 +286,45 @@ public final class HorsePowerGameTests {
         } finally {
             CHPApi.init(original, scripts, net.minecraft.resources.ResourceLocation::new, detaches, stacks);
         }
+        helper.succeed();
+    }
+
+    /** Initial crank penetration must not authorize passage through a separate wall. */
+    @GameTest(template = "empty")
+    public static void crankOverlapDoesNotBypassAdjacentWall(GameTestHelper helper) {
+        BlockPos center = new BlockPos(4, 2, 4);
+        for (int x = 1; x <= 8; x++) {
+            for (int z = 1; z <= 8; z++) {
+                BlockPos floor = new BlockPos(x, 1, z);
+                helper.setBlock(floor, Blocks.STONE);
+                helper.setBlock(floor.above(), Blocks.AIR);
+                helper.setBlock(floor.above(2), Blocks.AIR);
+            }
+        }
+        helper.setBlock(center, BlockRegister.HORSE_CRANK.get());
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(4, 2, 4));
+        double cx = helper.absolutePos(center).getX() + 0.5D;
+        double cz = helper.absolutePos(center).getZ() + 0.5D;
+        horse.teleportTo(cx, horse.getY(), cz);
+        helper.assertFalse(horse.level().noCollision(horse, horse.getBoundingBox()),
+                "Fixture must start with the worker overlapping the crank");
+
+        BlockPos wall = new BlockPos(5, 2, 4);
+        helper.setBlock(wall, Blocks.STONE);
+        helper.assertFalse(WorkerOrbitMovement.canMoveToAngle(horse, cx, cz, 2.5f, 0.0D),
+                "Radial onboarding must reject the adjacent wall even while escaping the crank");
+        var blocked = WorkerOrbitMovement.moveToAngle(horse, cx, cz, 2.5f, 0.0D, 0.0D);
+        helper.assertFalse(blocked.moved(), "Blocked worker must not teleport through the wall");
+        helper.assertTrue(Math.abs(horse.getX() - cx) < 1.0e-5D
+                        && Math.abs(horse.getZ() - cz) < 1.0e-5D,
+                "Failed preflight must leave the overlapping worker at its original position");
+
+        helper.setBlock(wall, Blocks.AIR);
+        helper.assertTrue(WorkerOrbitMovement.canMoveToAngle(horse, cx, cz, 2.5f, 0.0D),
+                "Removing the wall must allow a worker to escape the crank onto the safe ring");
+        helper.assertTrue(WorkerOrbitMovement.moveToAngle(horse, cx, cz, 2.5f, 0.0D, 0.0D).moved(),
+                "Crank overlap alone must not permanently trap a worker");
+        horse.discard();
         helper.succeed();
     }
 
