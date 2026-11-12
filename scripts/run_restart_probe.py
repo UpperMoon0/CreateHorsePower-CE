@@ -45,6 +45,15 @@ def run(command: list[str], cwd: Path, log: Path, timeout: int) -> None:
         raise RuntimeError(f"Server phase exited {code}; see {log}")
 
 
+def gradle_launcher(root: Path) -> list[str]:
+    """Build a platform-correct Gradle launcher without relying on POSIX +x."""
+    wrapper = root / ("gradlew.bat" if os.name == "nt" else "gradlew")
+    if not wrapper.is_file():
+        raise FileNotFoundError(f"Missing Gradle wrapper: {wrapper}")
+    # Explicit bash also works when a test workspace loses +x on Linux.
+    return [str(wrapper)] if os.name == "nt" else ["bash", str(wrapper)]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--project", choices=["forge-1.20.1", "neoforge-1.21.1"], required=True)
@@ -62,11 +71,7 @@ def main() -> int:
     generator = {"layers": [{"block": "minecraft:bedrock", "height": 1}, {"block": "minecraft:dirt", "height": 2}, {"block": "minecraft:grass_block", "height": 1}], "biome": "minecraft:plains", "structures": {}}
     settings = {"level-name": "probe-world", "level-type": "minecraft:flat", "generator-settings": json.dumps(generator, separators=(",", ":")), "online-mode": "false", "server-ip": "127.0.0.1", "server-port": "0", "enable-rcon": "false", "enable-query": "false", "spawn-protection": "0", "max-tick-time": "180000", "view-distance": "2", "simulation-distance": "2", "allow-nether": "false", "spawn-monsters": "false", "spawn-animals": "true", "spawn-npcs": "false", "sync-chunk-writes": "true"}
     (work / "server.properties").write_text("".join(f"{k}={v}\n" for k, v in settings.items()), encoding="utf-8")
-    wrapper = root / ("gradlew.bat" if os.name == "nt" else "gradlew")
-    # A checkout can lose the POSIX executable bit during artifact extraction or
-    # workspace copying. Launch the shell wrapper through bash, matching the
-    # central CI Gradle helper, rather than trying to exec(2) gradlew directly.
-    gradle_prefix = [str(wrapper)] if os.name == "nt" else ["bash", str(wrapper)]
+    gradle_prefix = gradle_launcher(root)
     results = []
     print(f"Isolated restart world and evidence: {work}", flush=True)
     for phase in ["write", "read"]:
