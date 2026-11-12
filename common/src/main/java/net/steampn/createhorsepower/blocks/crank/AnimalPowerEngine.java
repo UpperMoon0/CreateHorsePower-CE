@@ -223,6 +223,11 @@ public class AnimalPowerEngine {
         return isWorking;
     }
 
+    /** A traversable orbit can still produce zero RPM in WORST_BLOCK mode. */
+    public boolean hasZeroPathOutput() {
+        return hasValidWorkingBlocks && rpmModifier <= 0.0f;
+    }
+
     public boolean canPhysicallyWork() {
         return host.hasWorkerProperty()
                 && workerResolved
@@ -272,6 +277,8 @@ public class AnimalPowerEngine {
             tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.worker_ineligible").withStyle(ChatFormatting.RED));
         } else if (!hasValidWorkingBlocks) {
             tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.invalid_path", invalidBlockCount).withStyle(ChatFormatting.RED));
+        } else if (hasZeroPathOutput()) {
+            tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.zero_output_path").withStyle(ChatFormatting.RED));
         } else if (scriptVetoed) {
             tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.vetoed").withStyle(ChatFormatting.YELLOW));
         } else if (isWorking) {
