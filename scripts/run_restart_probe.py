@@ -63,10 +63,14 @@ def main() -> int:
     settings = {"level-name": "probe-world", "level-type": "minecraft:flat", "generator-settings": json.dumps(generator, separators=(",", ":")), "online-mode": "false", "server-ip": "127.0.0.1", "server-port": "0", "enable-rcon": "false", "enable-query": "false", "spawn-protection": "0", "max-tick-time": "180000", "view-distance": "2", "simulation-distance": "2", "allow-nether": "false", "spawn-monsters": "false", "spawn-animals": "true", "spawn-npcs": "false", "sync-chunk-writes": "true"}
     (work / "server.properties").write_text("".join(f"{k}={v}\n" for k, v in settings.items()), encoding="utf-8")
     wrapper = root / ("gradlew.bat" if os.name == "nt" else "gradlew")
+    # A checkout can lose the POSIX executable bit during artifact extraction or
+    # workspace copying. Launch the shell wrapper through bash, matching the
+    # central CI Gradle helper, rather than trying to exec(2) gradlew directly.
+    gradle_prefix = [str(wrapper)] if os.name == "nt" else ["bash", str(wrapper)]
     results = []
     print(f"Isolated restart world and evidence: {work}", flush=True)
     for phase in ["write", "read"]:
-        command = [str(wrapper), f":{args.project}:runServer", f"-PicyCompatibilityTest={args.icy}", f"-PchpRestartPhase={phase}", f"-PchpRestartDirectory={work}", "--no-daemon", "--stacktrace", "--max-workers=2"]
+        command = [*gradle_prefix, f":{args.project}:runServer", f"-PicyCompatibilityTest={args.icy}", f"-PchpRestartPhase={phase}", f"-PchpRestartDirectory={work}", "--no-daemon", "--stacktrace", "--max-workers=2"]
         run(command, root, work / f"{phase}.log", args.timeout)
         evidence = work / f"restart-{phase}.properties"
         if not evidence.exists():
