@@ -81,6 +81,8 @@ public class AnimalPowerEngine {
 
     public boolean hasValidWorkingBlocks = false;
     private float rpmModifier = 1.0f;
+    // The physical path result, before scripts may override RPM or multipliers.
+    private boolean zeroOutputFromTerrain = false;
     private float pathStressModifier = 1.0f;
     private float generationDirection = 1.0f;
     private boolean needsLegacyDirectionResolution = false;
@@ -223,9 +225,15 @@ public class AnimalPowerEngine {
         return isWorking;
     }
 
-    /** A traversable orbit can still produce zero RPM in WORST_BLOCK mode. */
+    /** Report terrain as the cause only if the raw evaluator and final modifier both give zero. */
     public boolean hasZeroPathOutput() {
-        return hasValidWorkingBlocks && rpmModifier <= 0.0f;
+        return hasValidWorkingBlocks && zeroOutputFromTerrain && rpmModifier <= 0.0f;
+    }
+
+    /** A valid usable track can still have zero output due to a worker profile or script. */
+    public boolean hasNonPathZeroOutput() {
+        return hasValidWorkingBlocks && !hasZeroPathOutput()
+                && (effectiveBaseRpm <= 0.0f || rpmModifier <= 0.0f);
     }
 
     public boolean canPhysicallyWork() {
@@ -277,10 +285,12 @@ public class AnimalPowerEngine {
             tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.worker_ineligible").withStyle(ChatFormatting.RED));
         } else if (!hasValidWorkingBlocks) {
             tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.invalid_path", invalidBlockCount).withStyle(ChatFormatting.RED));
-        } else if (hasZeroPathOutput()) {
-            tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.zero_output_path").withStyle(ChatFormatting.RED));
         } else if (scriptVetoed) {
             tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.vetoed").withStyle(ChatFormatting.YELLOW));
+        } else if (hasZeroPathOutput()) {
+            tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.zero_output_path").withStyle(ChatFormatting.RED));
+        } else if (hasNonPathZeroOutput()) {
+            tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.zero_output_override").withStyle(ChatFormatting.YELLOW));
         } else if (isWorking) {
             tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.working").withStyle(ChatFormatting.GREEN));
         }
@@ -453,6 +463,7 @@ public class AnimalPowerEngine {
             compound.putBoolean("WorkerEligible", workerEligible);
             compound.putBoolean("IsWorking", isWorking);
             compound.putBoolean("ScriptVetoed", scriptVetoed);
+            compound.putBoolean("ZeroOutputFromTerrain", zeroOutputFromTerrain);
             compound.putFloat("SpeedBonusPercent", speedBonusPercent);
             compound.putFloat("HealthBonusPercent", healthBonusPercent);
             compound.putInt("EfficiencyPercent", efficiencyPercent);
@@ -570,6 +581,7 @@ public class AnimalPowerEngine {
             workerEligible = compound.getBoolean("WorkerEligible");
             isWorking = compound.getBoolean("IsWorking");
             scriptVetoed = compound.getBoolean("ScriptVetoed");
+            zeroOutputFromTerrain = compound.getBoolean("ZeroOutputFromTerrain");
             speedBonusPercent = compound.getFloat("SpeedBonusPercent");
             healthBonusPercent = compound.getFloat("HealthBonusPercent");
             efficiencyPercent = compound.getInt("EfficiencyPercent");
@@ -1357,13 +1369,17 @@ public class AnimalPowerEngine {
 
         boolean valid = evalResult.isValid();
         int invalidCount = evalResult.invalidBlocks();
-        int eff = Math.round(speedMult * 100.0f);
+        // Efficiency describes the track itself, not script-mutated effective output.
+        boolean rawZeroOutputFromTerrain = valid && evalResult.speedMultiplier() <= 0.0f;
+        int eff = Math.round(evalResult.speedMultiplier() * 100.0f);
         int coverage = evalResult.totalBlocks() == 0 ? 0
                 : Math.round(100.0f * evalResult.validBlocks() / evalResult.totalBlocks());
 
         boolean changed = (this.hasValidWorkingBlocks != valid)
                 || (this.rpmModifier != speedMult)
                 || (this.pathStressModifier != stressMult)
+                || (this.zeroOutputFromTerrain != rawZeroOutputFromTerrain)
+                || (this.efficiencyPercent != eff)
                 || (this.invalidBlockCount != invalidCount)
                 || (this.coveragePercent != coverage);
 
@@ -1372,6 +1388,7 @@ public class AnimalPowerEngine {
             this.hasValidWorkingBlocks = valid;
             this.rpmModifier = speedMult;
             this.pathStressModifier = stressMult;
+            this.zeroOutputFromTerrain = rawZeroOutputFromTerrain;
             this.efficiencyPercent = eff;
             this.coveragePercent = coverage;
             this.invalidBlockCount = invalidCount;
