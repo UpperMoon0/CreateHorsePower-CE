@@ -27,6 +27,7 @@ public enum HorseCrankJadeProvider implements IBlockComponentProvider, IServerDa
         data.putBoolean("WorkerResolved", crank.isWorkerResolved());
         data.putBoolean("WorkerEligible", crank.isWorkerEligible());
         data.putBoolean("ValidPath", crank.hasValidWorkingBlocks());
+        data.putBoolean("ZeroOutputPath", crank.engine().hasZeroPathOutput());
         data.putBoolean("ScriptVetoed", crank.isScriptVetoed());
         data.putBoolean("IsWorking", crank.isWorking());
         data.putString("WorkerName", crank.getCachedWorkerName());
@@ -57,6 +58,8 @@ public enum HorseCrankJadeProvider implements IBlockComponentProvider, IServerDa
             tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.worker_ineligible").withStyle(ChatFormatting.RED));
         } else if (!data.getBoolean("ValidPath")) {
             tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.invalid_path", data.getInt("InvalidBlocks")).withStyle(ChatFormatting.RED));
+        } else if (data.getBoolean("ZeroOutputPath")) {
+            tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.zero_output_path").withStyle(ChatFormatting.RED));
         } else if (data.getBoolean("ScriptVetoed")) {
             tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.vetoed").withStyle(ChatFormatting.YELLOW));
         } else if (data.getBoolean("IsWorking")) {
