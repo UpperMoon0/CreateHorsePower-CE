@@ -22,7 +22,10 @@ import net.steampn.createhorsepower.registry.BlockRegister;
  */
 public final class BionicsCompatibilityScenarios {
     private static final BlockPos CRANK = new BlockPos(4, 2, 4);
-    private static final BlockPos SPAWN = new BlockPos(7, 2, 4);
+    // Feet must be ONE block above the y=2 cobblestone orbit. Spawning at y=2
+    // embeds the real Oxhauler in the track and correctly trips collision
+    // and footprint safety, hiding the compatibility behavior under test.
+    private static final BlockPos SPAWN = new BlockPos(7, 3, 4);
 
     private BionicsCompatibilityScenarios() {}
 
