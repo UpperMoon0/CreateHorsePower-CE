@@ -352,8 +352,11 @@ public final class HorsePowerGameTests {
         engine.attachWorker(horse, profile);
         engine.afterHostTick();
         helper.assertTrue(engine.isWorking(), "Worker should start on walkable ring");
-        Cow obstacle = helper.spawn(EntityType.COW, new BlockPos(7, 2, 4));
-        obstacle.setNoAi(true);
+        // A full collision wall, not another pushable mob. Minecraft's
+        // physical block sweep must stop the worker without relying on
+        // entity-pushing rules that can vary with other nearby animals.
+        BlockPos obstacle = new BlockPos(7, 3, 4);
+        helper.setBlock(obstacle, Blocks.STONE);
         engine.afterHostTick();
         helper.assertFalse(engine.isWorking(), "Dynamic collision must stop power");
         helper.assertTrue(engine.generatedSpeed() == 0.0f, "Blocked crank must have zero output");
@@ -367,7 +370,7 @@ public final class HorsePowerGameTests {
                     "Persistent obstruction must not pulse even after multiple retry windows");
             helper.assertTrue(engine.generatedSpeed() == 0.0f,
                     "Persistent obstruction must keep kinetic output at zero");
-            obstacle.discard();
+            helper.setBlock(obstacle, Blocks.AIR);
             helper.runAfterDelay(23, () -> {
                 engine.afterHostTick();
                 helper.assertTrue(engine.isWorking(),
