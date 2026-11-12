@@ -107,20 +107,52 @@ public class PathEvaluator {
                 || state.is(Blocks.SOUL_FIRE);
     }
 
-    /** Sample the central hoof-bearing footprint, including neighbouring tiles. */
+    /**
+     * Require a walkable block under the worker's center and broad support
+     * beneath its actual footprint. An orbit made from the standard 28-tile
+     * annulus supports a horse even at corners where its hitbox slightly
+     * overhangs the outside edge. Requiring every bounding-box corner to be
+     * paved incorrectly stops normal horses for more than half the orbit.
+     *
+     * We measure the overlap area with safe *full-top* path tiles, not the
+     * number of sampled points. A worker supported by a thin central pillar,
+     * one isolated block, or a large gap cannot pass. The threshold permits
+     * modest edge overhang just as vanilla entity physics does, while still
+     * checking hazardous blocks and unobstructed headroom for the central
+     * support and counting those tiles as missing from the usable area.
+     */
     public static boolean supportsWorkerFootprint(Level level, double x, double feetY,
                                                    double z, float width) {
-        // Sample near the real edges; fixed quarter-block offsets missed wide workers.
-        double half = Math.max(0.0D, width * 0.5D - 0.0625D);
-        for (double dx : new double[] {-half, 0.0D, half}) {
-            for (double dz : new double[] {-half, 0.0D, half}) {
-                if (!isWalkableTile(level, BlockPos.containing(
-                        x + dx, feetY - 0.125D, z + dz))) {
-                    return false;
+        if (level == null || !Double.isFinite(x) || !Double.isFinite(z)
+                || !Double.isFinite(feetY) || !Float.isFinite(width) || width <= 0.0f) {
+            return false;
+        }
+        int floorY = BlockPos.containing(x, feetY - 0.125D, z).getY();
+        if (!isWalkableTile(level, BlockPos.containing(x, feetY - 0.125D, z))) {
+            return false;
+        }
+
+        // Slightly inset to represent hoof-bearing contact, rather than
+        // demanding support for the entire broad collision/interaction box.
+        double half = Math.max(0.125D, width * 0.5D - 0.0625D);
+        double minX = x - half;
+        double maxX = x + half;
+        double minZ = z - half;
+        double maxZ = z + half;
+        double supportedArea = 0.0D;
+        for (int bx = (int) Math.floor(minX); bx < maxX; bx++) {
+            double overlapX = Math.min(maxX, bx + 1.0D) - Math.max(minX, bx);
+            if (overlapX <= 0.0D) continue;
+            for (int bz = (int) Math.floor(minZ); bz < maxZ; bz++) {
+                double overlapZ = Math.min(maxZ, bz + 1.0D) - Math.max(minZ, bz);
+                if (overlapZ <= 0.0D) continue;
+                if (isWalkableTile(level, new BlockPos(bx, floorY, bz))) {
+                    supportedArea += overlapX * overlapZ;
                 }
             }
         }
-        return true;
+        double area = (maxX - minX) * (maxZ - minZ);
+        return supportedArea >= area * 0.80D - 1.0e-8D;
     }
 
     /**
