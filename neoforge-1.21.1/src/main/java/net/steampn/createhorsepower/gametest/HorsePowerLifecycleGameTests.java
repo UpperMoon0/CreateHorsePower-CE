@@ -57,8 +57,8 @@ public final class HorsePowerLifecycleGameTests {
     private static void exerciseSavedGeneratorNetworkReload(GameTestHelper helper, boolean reverse, boolean keepOtherWorkers) {
         ServerLevel level = helper.getLevel();
         BlockPos origin = helper.absolutePos(BlockPos.ZERO);
-        BlockPos[] positions = {origin.offset(5, 5, 5), origin.offset(13, 5, 5),
-                origin.offset(13, 5, 13), origin.offset(5, 5, 13)};
+        BlockPos[] positions = {origin.offset(5, 5, 5), origin.offset(9, 5, 5),
+                origin.offset(9, 5, 9), origin.offset(5, 5, 9)};
         AbstractHorseCrankBlockEntity[] cranks = new AbstractHorseCrankBlockEntity[4];
         Horse[] workers = new Horse[4];
         CompoundTag[] savedWorkers = new CompoundTag[4];
@@ -78,17 +78,14 @@ public final class HorsePowerLifecycleGameTests {
             BlockPos output = pos.offset(0, 0, pos.getZ() == positions[0].getZ() ? -1 : 1);
             level.setBlock(output, cog, 3);
             level.setBlock(output.above(), shaft, 3);
-            // Raise the shared gear bridge above real horse headroom.
-            level.setBlock(output.above(2), shaft, 3);
             adjacentCogs.add(output);
             gears.add(output);
-            gears.add(output.above(2));
         }
         // Synthetic upper U-shaped equal-ratio connection, with output cogs directly
         // adjacent to each crank as in the observed live output arrangement.
-        for (int x = 5; x <= 13; x++) for (int z = 4; z <= 14; z++) {
-            if (x != 5 && x != 13 && z != 14) continue;
-            BlockPos pos = origin.offset(x, 8, z);
+        for (int x = 5; x <= 9; x++) for (int z = 4; z <= 10; z++) {
+            if (x != 5 && x != 9 && z != 10) continue;
+            BlockPos pos = origin.offset(x, 7, z);
             level.setBlock(pos, cog, 3);
             gears.add(pos);
         }
@@ -1066,9 +1063,7 @@ public final class HorsePowerLifecycleGameTests {
     public static void sharedOverstressedNetworkRecoversAfterFastCrankBranchLoss(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
         BlockPos origin = helper.absolutePos(BlockPos.ZERO);
-        // Seven-block spacing prevents adjacent 2.5-block-radius workers
-        // from clipping each other's paved orbit during swept movement.
-        int[] crankZ = {4, 11, 18, 25};
+        int[] crankZ = {4, 9, 14, 19};
 
         BlockPos[] crankPositions = new BlockPos[4];
         BlockPos[] branchShaftPositions = new BlockPos[4];
