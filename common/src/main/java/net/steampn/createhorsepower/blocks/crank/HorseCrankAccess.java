@@ -65,6 +65,10 @@ public interface HorseCrankAccess extends AnimalPowerAccess {
         return engine().getInvalidBlockCount();
     }
 
+    default int getCoveragePercent() {
+        return engine().getCoveragePercent();
+    }
+
     default float getSpeedBonusPercent() {
         return engine().getSpeedBonusPercent();
     }

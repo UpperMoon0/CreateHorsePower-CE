@@ -30,6 +30,10 @@ If a section is not labeled as "NeoForge only", it applies to both loaders. Alwa
 
 ---
 
+## Upgrade checklist: mixed paths
+
+For servers upgrading from v1.2.11 or earlier, the persisted `minimumCoverage = 1.0` setting remains strict. **Edit the server config and set `minimumCoverage = 0.0`** to permit unsupported *walkable* tiles. Existing config values are intentionally not rewritten. Unsafe floors (air gaps, fluid, obstructed overhead or unsupported collision shapes) always stop the crank, even at zero coverage threshold. When a worker first attaches or recovers off-ring, the crank relocates it to a safe, unobstructed point on the ring without requiring pavement across the crank's interior. Once on-ring, each movement step checks supporting ground and collision, so a newly opened hole stops power immediately. A narrow pane or damaging block is not a safe path tile even if it has a configured profile. `WORST_BLOCK` sets output to zero when any tile is unsupported; `LEGACY` scales RPM and stress by recognized coverage; `WEIGHTED_AVERAGE` divides recognized contributions by all sampled tiles. Disabling stress scaling only neutralizes the final stress multiplier, never RPM or physical safety.
+
 ## Architecture Overview
 
 Create Horse Power CE turns the Horse Crank into a data-driven animal power framework.
@@ -462,7 +466,8 @@ largeCreatures = ["minecraft:horse"]
     evaluationMode = "WEIGHTED_AVERAGE"
     # Set false when path quality should change RPM/validity but not stress capacity.
     enableStressScaling = true
-    minimumCoverage = 1.0
+    # New configs default to incomplete-track tolerance.
+    minimumCoverage = 0.0
     checkIntervalTicks = 40
 
 [automation]
@@ -508,7 +513,7 @@ Path stats:
 
 **KubeJS → explicit Data Map → legacy path config → CE bundled exact/family fallback**.
 
-The selected per-block profiles are still processed by the configured path evaluation mode. `WEIGHTED_AVERAGE` remains the default and continues to average mixed paths.
+The selected per-block profiles are still processed by the configured path evaluation mode. `WEIGHTED_AVERAGE` divides the sum of recognized multipliers by **every sampled track position**; missing or unrecognized tiles contribute zero with no extra penalty. A track with no recognized blocks cannot run. Default `minimumCoverage = 0.0` permits incomplete tracks, while higher values opt into a strict coverage threshold. Existing config files retain their stored value, including `1.0` from older releases; lower it explicitly to enable forgiving paths on upgraded servers.
 
 ### Forge
 

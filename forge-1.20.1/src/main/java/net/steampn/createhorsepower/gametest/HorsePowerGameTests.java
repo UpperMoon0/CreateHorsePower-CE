@@ -48,6 +48,519 @@ public final class HorsePowerGameTests {
     private HorsePowerGameTests() {}
 
 
+    /**
+     * A single recognized tile can power an otherwise solid, walkable orbit
+     * with appropriately low efficiency. An air hole must stop the crank and
+     * must never become a horizontal teleport destination.
+     */
+    @GameTest(template = "empty", batch = "chp_air_gap_safe", timeoutTicks = 100)
+    public static void safeMixedOrbitStopsAtAirGap(GameTestHelper helper) {
+        BlockPos crankPos = new BlockPos(4, 2, 4);
+        BlockPos[] offsets = HorseCrankEngine.generateOffsetsForRadius(2.5f);
+        for (BlockPos offset : offsets) {
+            BlockPos floor = crankPos.offset(offset);
+            helper.setBlock(floor, Blocks.STONE);
+            // NeoForge's "empty" template includes invisible boundary barriers.
+            // A real walking orbit needs two clear blocks above every floor tile.
+            helper.setBlock(floor.above(), Blocks.AIR);
+            helper.setBlock(floor.above(2), Blocks.AIR);
+        }
+        helper.setBlock(crankPos.offset(offsets[0]), Blocks.ICE);
+        helper.setBlock(crankPos, BlockRegister.HORSE_CRANK.get());
+        AbstractHorseCrankBlockEntity blockEntity = requireCrank(helper, crankPos);
+        HorseCrankEngine engine = blockEntity.engine();
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(6, 2, 4));
+
+        WorkerStats stats = new WorkerStats(
+                16.0f, 32.0f, 2.5f,
+                0.0f, WorkerStats.DEFAULT_SPEED_REF,
+                0.0f, WorkerStats.DEFAULT_HEALTH_REF,
+                false, false);
+        WorkerResolver.ResolvedWorker profile = new WorkerResolver.ResolvedWorker(
+                stats, 16.0f, 32.0f, 0.0f, 0.0f, true);
+        engine.attachWorker(horse, profile);
+        helper.assertTrue(engine.hasValidWorkingBlocks,
+                "Unsupported solid floor tiles should remain walkable");
+        helper.assertTrue(engine.getEfficiencyPercent() > 0
+                        && engine.getEfficiencyPercent() < 15,
+                "One recognized tile must provide only proportional output");
+
+        double centerX = helper.absolutePos(crankPos).getX() + 0.5D;
+        double centerZ = helper.absolutePos(crankPos).getZ() + 0.5D;
+        double oldX = horse.getX();
+        double oldZ = horse.getZ();
+        // At angle zero the orbit destination is 2.5 blocks to the east.
+        BlockPos hole = crankPos.offset(3, -1, 0);
+        helper.setBlock(hole, Blocks.AIR);
+        helper.assertFalse(net.steampn.createhorsepower.content.path.PathEvaluator.evaluate(
+                        helper.getLevel(), helper.absolutePos(crankPos), offsets).isValid(),
+                "Air gap must invalidate the real world path even with minCoverage=0");
+        WorkerOrbitMovement.Snapshot movement = WorkerOrbitMovement.moveToAngle(
+                horse, centerX, centerZ, 2.5f, 0.0D, 0.0D);
+        helper.assertFalse(movement.moved(), "Worker must not teleport over the air hole");
+        helper.assertTrue(Math.abs(horse.getX() - oldX) < 1.0e-5D
+                        && Math.abs(horse.getZ() - oldZ) < 1.0e-5D,
+                "Worker must remain grounded at its original coordinates");
+
+        // A full-track inspection is intentionally periodic (default 40 ticks).
+        // The stepwise guard above rejects the hole immediately; verify that
+        // output is withdrawn at the *next scheduled* full-orbit evaluation,
+        // irrespective of the game clock when this GameTest was dispatched.
+        helper.runAfterDelay(Math.max(1, CHPApi.config().checkIntervalTicks()) + 2, () -> {
+            helper.assertTrue(helper.getLevel().getBlockState(helper.absolutePos(hole)).isAir(),
+                    "The cleared gap must persist until the scheduled path check");
+            engine.afterHostTick();
+            helper.assertFalse(engine.hasValidWorkingBlocks,
+                    "Crank must stop by the next scheduled full-orbit check");
+            helper.assertFalse(engine.canPhysicallyWork(),
+                    "Invalid physical orbit must prohibit kinetic generation");
+            helper.succeed();
+        });
+    }
+
+    /** A paved ring must accept workers starting next to the crank, not just on the ring. */
+    @GameTest(template = "empty")
+    public static void initialWorkerSnapSkipsUnpavedInteriorButValidatesLanding(GameTestHelper helper) {
+        BlockPos crankPos = new BlockPos(4, 2, 4);
+        BlockPos[] offsets = HorseCrankEngine.generateOffsetsForRadius(2.5f);
+        for (BlockPos offset : offsets) {
+            BlockPos floor = crankPos.offset(offset);
+            helper.setBlock(floor, Blocks.STONE);
+            // NeoForge's "empty" template includes invisible boundary barriers.
+            // A real walking orbit needs two clear blocks above every floor tile.
+            helper.setBlock(floor.above(), Blocks.AIR);
+            helper.setBlock(floor.above(2), Blocks.AIR);
+        }
+        helper.setBlock(crankPos.offset(offsets[0]), Blocks.ICE);
+        helper.setBlock(crankPos, BlockRegister.HORSE_CRANK.get());
+        HorseCrankEngine engine = requireCrank(helper, crankPos).engine();
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(5, 2, 4));
+        // Reconciliation requires a physical leash, not only a marker.
+        LeashFenceKnotEntity knot = LeashFenceKnotEntity.getOrCreateKnot(
+                helper.getLevel(), helper.absolutePos(crankPos));
+        horse.setLeashedTo(knot, false);
+        WorkerStats stats = new WorkerStats(
+                16.0f, 32.0f, 2.5f,
+                0.0f, WorkerStats.DEFAULT_SPEED_REF,
+                0.0f, WorkerStats.DEFAULT_HEALTH_REF,
+                false, false);
+        WorkerResolver.ResolvedWorker profile = new WorkerResolver.ResolvedWorker(
+                stats, 16.0f, 32.0f, 0.0f, 0.0f, true);
+        engine.attachWorker(horse, profile);
+        helper.assertTrue(engine.hasValidWorkingBlocks,
+                "The ring is safe even though its interior is unpaved");
+        double centerX = helper.absolutePos(crankPos).getX() + 0.5D;
+        double centerZ = helper.absolutePos(crankPos).getZ() + 0.5D;
+        helper.assertFalse(net.steampn.createhorsepower.content.path.PathEvaluator.supportsWorkerFootprint(
+                        helper.getLevel(), centerX + 1.0D, horse.getY(), centerZ, horse.getBbWidth()),
+                "The interior really is unpaved; this test must exercise onboarding");
+        engine.afterHostTick();
+        helper.assertTrue(engine.isWorking(), "A valid ring must start generating when a worker joins from inside");
+        helper.assertTrue(engine.generatedSpeed() > 0.0f, "Crank must generate from the safe ring");
+        helper.assertTrue(Math.abs(Math.hypot(horse.getX() - centerX, horse.getZ() - centerZ) - 2.5D)
+                        < 0.005D, "The first movement must safely place the worker on the ring");
+        double oldX = horse.getX();
+        double oldZ = horse.getZ();
+        engine.afterHostTick();
+        helper.assertTrue(Math.hypot(horse.getX() - oldX, horse.getZ() - oldZ) > 0.0001D,
+                "The next tick must walk tangentially instead of repeatedly failing a radial snap");
+
+        // Recovery from outside the ring has the same safe-landing policy.
+        Horse outer = helper.spawn(EntityType.HORSE, new BlockPos(4, 2, 8));
+        WorkerOrbitMovement.Snapshot snap = WorkerOrbitMovement.moveToAngle(
+                outer, centerX, centerZ, 2.5f, Math.PI / 2.0D, Math.PI / 2.0D + 0.01D);
+        helper.assertTrue(snap.moved(), "A worker outside the ring should land safely on the track");
+        helper.assertTrue(Math.abs(Math.hypot(outer.getX() - centerX, outer.getZ() - centerZ) - 2.5D)
+                        < 0.005D, "Outside worker must land on the configured radius");
+        // This fixture runs beside other recovery tests; clean up its live
+        // vanilla leash so it cannot create stray lead items when reset.
+        engine.detachWorker(false);
+        horse.discard();
+        outer.discard();
+        knot.discard();
+        helper.succeed();
+    }
+
+    /** Tall panes and damaging blocks must never count as a safe horse floor. */
+    @GameTest(template = "empty")
+    public static void orbitalFloorRequiresFullSupportAndNoHazards(GameTestHelper helper) {
+        BlockPos local = new BlockPos(3, 1, 3);
+        BlockPos absolute = helper.absolutePos(local);
+        helper.setBlock(local.above(), Blocks.AIR);
+        helper.setBlock(local.above(2), Blocks.AIR);
+        helper.setBlock(local, Blocks.STONE);
+        helper.assertTrue(net.steampn.createhorsepower.content.path.PathEvaluator.isWalkableTile(
+                helper.getLevel(), absolute), "Full stone floor must be walkable");
+        helper.setBlock(local, Blocks.DIRT_PATH);
+        helper.assertTrue(net.steampn.createhorsepower.content.path.PathEvaluator.isWalkableTile(
+                helper.getLevel(), absolute), "Dirt path's lower broad top should support workers");
+        helper.setBlock(local, Blocks.IRON_BARS);
+        helper.assertFalse(net.steampn.createhorsepower.content.path.PathEvaluator.isWalkableTile(
+                helper.getLevel(), absolute), "Iron bars are too narrow even when their max Y is 1");
+        helper.setBlock(local, Blocks.GLASS_PANE);
+        helper.assertFalse(net.steampn.createhorsepower.content.path.PathEvaluator.isWalkableTile(
+                helper.getLevel(), absolute), "A pane cannot support the worker footprint");
+        helper.setBlock(local, Blocks.MAGMA_BLOCK);
+        helper.assertFalse(net.steampn.createhorsepower.content.path.PathEvaluator.isWalkableTile(
+                helper.getLevel(), absolute), "Damaging magma is not safe despite a full collision cube");
+        helper.setBlock(local, Blocks.STONE);
+        helper.setBlock(local.above(), Blocks.FIRE);
+        helper.assertFalse(net.steampn.createhorsepower.content.path.PathEvaluator.isWalkableTile(
+                helper.getLevel(), absolute), "Noncolliding fire above a full floor is still hazardous");
+        helper.succeed();
+    }
+
+
+    /** Test the world-facing evaluator, not only its math-only implementation. */
+    @GameTest(template = "empty")
+    public static void worldMixedRingPenalizesLegacyAndWorstBlockModes(GameTestHelper helper) {
+        var original = CHPApi.config();
+        var scripts = CHPApi.scripts();
+        var detaches = CHPApi.deferredDetaches();
+        var stacks = CHPApi.itemStacks();
+        BlockPos center = new BlockPos(4, 2, 4);
+        BlockPos[] offsets = HorseCrankEngine.generateOffsetsForRadius(2.5f);
+        for (BlockPos offset : offsets) {
+            BlockPos floor = center.offset(offset);
+            helper.setBlock(floor, Blocks.STONE);
+            helper.setBlock(floor.above(), Blocks.AIR);
+            helper.setBlock(floor.above(2), Blocks.AIR);
+        }
+        helper.setBlock(center.offset(offsets[0]), Blocks.ICE);
+        try {
+            for (net.steampn.createhorsepower.content.path.PathEvaluationMode mode :
+                    new net.steampn.createhorsepower.content.path.PathEvaluationMode[] {
+                        net.steampn.createhorsepower.content.path.PathEvaluationMode.LEGACY,
+                        net.steampn.createhorsepower.content.path.PathEvaluationMode.WORST_BLOCK }) {
+                Config policy = new Config() {
+                    @Override public net.steampn.createhorsepower.content.path.PathEvaluationMode pathEvaluationMode() { return mode; }
+                    @Override public double minimumPathCoverage() { return 0.0D; }
+                };
+                CHPApi.init(policy, scripts, net.minecraft.resources.ResourceLocation::new, detaches, stacks);
+                var evaluated = net.steampn.createhorsepower.content.path.PathEvaluator.evaluate(
+                        helper.getLevel(), helper.absolutePos(center), offsets);
+                helper.assertTrue(evaluated.isValid(), "Walkable mixed ring invalid in " + mode);
+                helper.assertTrue(evaluated.validBlocks() == 1, "Expected one recognized floor tile");
+                if (mode == net.steampn.createhorsepower.content.path.PathEvaluationMode.WORST_BLOCK) {
+                    helper.assertTrue(evaluated.speedMultiplier() == 0.0f,
+                            "WORST_BLOCK must zero an unrecognized solid tile");
+                    // Exercise the actual engine and user-visible goggles, not only evaluator math.
+                    helper.setBlock(center, BlockRegister.HORSE_CRANK.get());
+                    HorseCrankEngine zeroEngine = requireCrank(helper, center).engine();
+                    Horse zeroWorker = helper.spawn(EntityType.HORSE, new BlockPos(5, 2, 4));
+                    LeashFenceKnotEntity zeroKnot = LeashFenceKnotEntity.getOrCreateKnot(
+                            helper.getLevel(), helper.absolutePos(center));
+                    zeroWorker.setLeashedTo(zeroKnot, false);
+                    WorkerStats zeroStats = new WorkerStats(
+                            16.0f, 32.0f, 2.5f, 0.0f, WorkerStats.DEFAULT_SPEED_REF,
+                            0.0f, WorkerStats.DEFAULT_HEALTH_REF, false, false);
+                    zeroEngine.attachWorker(zeroWorker,
+                            new WorkerResolver.ResolvedWorker(zeroStats, 16.0f, 32.0f, 0.0f, 0.0f, true));
+                    helper.assertTrue(zeroEngine.hasZeroPathOutput(),
+                            "WORST_BLOCK mixed walkable ring must expose its zero-output state");
+                    java.util.List<net.minecraft.network.chat.Component> tooltip = new java.util.ArrayList<>();
+                    zeroEngine.buildGoggleTooltip(tooltip);
+                    helper.assertTrue(tooltip.stream().anyMatch(line ->
+                                    line.getContents() instanceof net.minecraft.network.chat.contents.TranslatableContents translated
+                                            && translated.getKey().equals(
+                                                    "tooltip.createhorsepower.goggles.status.zero_output_path")),
+                            "Goggles must explain why a physically valid mixed ring produces no RPM");
+                    zeroEngine.detachWorker(false);
+                    zeroWorker.discard();
+                    zeroKnot.discard();
+                    helper.setBlock(center, Blocks.AIR);
+                } else {
+                    helper.assertTrue(evaluated.speedMultiplier() > 0.0f && evaluated.speedMultiplier() < 0.2f,
+                            "LEGACY must scale by recognized coverage");
+                }
+            }
+            Config strict = new Config() {
+                @Override public double minimumPathCoverage() { return 1.0D; }
+            };
+            CHPApi.init(strict, scripts, net.minecraft.resources.ResourceLocation::new, detaches, stacks);
+            helper.assertFalse(net.steampn.createhorsepower.content.path.PathEvaluator.evaluate(
+                    helper.getLevel(), helper.absolutePos(center), offsets).isValid(),
+                    "Persisted strict coverage must reject incomplete paths");
+            helper.assertTrue(Math.abs(Config.MINIMUM_PATH_COVERAGE.getDefault()) < 1.0e-9D,
+                    "Fresh server configurations must default to forgiving coverage");
+        } finally {
+            CHPApi.init(original, scripts, net.minecraft.resources.ResourceLocation::new, detaches, stacks);
+        }
+        helper.succeed();
+    }
+
+    /** A script forcing zero output must not be diagnosed as unsupported terrain. */
+    @GameTest(template = "empty")
+    public static void scriptedZeroRpmDoesNotBlameTerrain(GameTestHelper helper) {
+        var originalConfig = CHPApi.config();
+        var originalHooks = CHPApi.scripts();
+        var detaches = CHPApi.deferredDetaches();
+        var stacks = CHPApi.itemStacks();
+        BlockPos center = new BlockPos(4, 2, 4);
+        for (BlockPos offset : HorseCrankEngine.generateOffsetsForRadius(2.5f)) {
+            BlockPos floor = center.offset(offset);
+            helper.setBlock(floor, Blocks.ICE);
+            helper.setBlock(floor.above(), Blocks.AIR);
+            helper.setBlock(floor.above(2), Blocks.AIR);
+        }
+        try {
+            CHPApi.init(originalConfig, new net.steampn.createhorsepower.platform.ScriptHooks() {
+                @Override public float[] firePathEvaluated(
+                        BlockPos pos, net.minecraft.world.level.Level level,
+                        net.steampn.createhorsepower.content.path.PathEvaluator.Result result) {
+                    // This is a script override, not a poor or missing physical floor.
+                    return new float[] {0.0f, result.stressMultiplier()};
+                }
+            }, net.minecraft.resources.ResourceLocation::new, detaches, stacks);
+            helper.setBlock(center, BlockRegister.HORSE_CRANK.get());
+            HorseCrankEngine engine = requireCrank(helper, center).engine();
+            Horse worker = helper.spawn(EntityType.HORSE, new BlockPos(5, 2, 4));
+            LeashFenceKnotEntity knot = LeashFenceKnotEntity.getOrCreateKnot(
+                    helper.getLevel(), helper.absolutePos(center));
+            worker.setLeashedTo(knot, false);
+            WorkerStats stats = new WorkerStats(16.0f, 32.0f, 2.5f, 0.0f,
+                    WorkerStats.DEFAULT_SPEED_REF, 0.0f, WorkerStats.DEFAULT_HEALTH_REF,
+                    false, false);
+            engine.attachWorker(worker,
+                    new WorkerResolver.ResolvedWorker(stats, 16.0f, 32.0f, 0.0f, 0.0f, true));
+            helper.assertTrue(engine.hasValidWorkingBlocks, "Ice ring must be safe");
+            helper.assertFalse(engine.hasZeroPathOutput(),
+                    "Scripted zero RPM is not caused by terrain");
+            helper.assertTrue(engine.hasNonPathZeroOutput(),
+                    "Scripted RPM suppression must have a distinct diagnostic");
+            helper.assertTrue(engine.getEfficiencyPercent() > 0.0f,
+                    "Path efficiency must reflect physical floor, not a script override");
+            java.util.List<net.minecraft.network.chat.Component> tooltip = new java.util.ArrayList<>();
+            engine.buildGoggleTooltip(tooltip);
+            helper.assertTrue(tooltip.stream().anyMatch(line ->
+                    line.getContents() instanceof net.minecraft.network.chat.contents.TranslatableContents translated
+                            && translated.getKey().equals(
+                                    "tooltip.createhorsepower.goggles.status.zero_output_override")),
+                    "Goggles should explain non-path zero RPM");
+            helper.assertFalse(tooltip.stream().anyMatch(line ->
+                    line.getContents() instanceof net.minecraft.network.chat.contents.TranslatableContents translated
+                            && translated.getKey().equals(
+                                    "tooltip.createhorsepower.goggles.status.zero_output_path")),
+                    "Goggles must not accuse terrain of script-driven zero RPM");
+            CompoundTag clientPacket = new CompoundTag();
+            engine.write(clientPacket, true);
+            helper.assertFalse(clientPacket.getBoolean("ZeroOutputFromTerrain"),
+                    "Sync diagnostics must retain the raw physical path source");
+            engine.detachWorker(false);
+            worker.discard();
+            knot.discard();
+        } finally {
+            CHPApi.init(originalConfig, originalHooks, net.minecraft.resources.ResourceLocation::new,
+                    detaches, stacks);
+        }
+        helper.succeed();
+    }
+
+    /** Initial crank penetration must not authorize passage through a separate wall. */
+    @GameTest(template = "empty")
+    public static void crankOverlapDoesNotBypassAdjacentWall(GameTestHelper helper) {
+        BlockPos center = new BlockPos(4, 2, 4);
+        for (int x = 1; x <= 8; x++) {
+            for (int z = 1; z <= 8; z++) {
+                BlockPos floor = new BlockPos(x, 1, z);
+                helper.setBlock(floor, Blocks.STONE);
+                helper.setBlock(floor.above(), Blocks.AIR);
+                helper.setBlock(floor.above(2), Blocks.AIR);
+            }
+        }
+        helper.setBlock(center, BlockRegister.HORSE_CRANK.get());
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(4, 2, 4));
+        double cx = helper.absolutePos(center).getX() + 0.5D;
+        double cz = helper.absolutePos(center).getZ() + 0.5D;
+        horse.teleportTo(cx, horse.getY(), cz);
+        helper.assertFalse(horse.level().noCollision(horse, horse.getBoundingBox()),
+                "Fixture must start with the worker overlapping the crank");
+
+        BlockPos wall = new BlockPos(5, 2, 4);
+        helper.setBlock(wall, Blocks.STONE);
+        helper.assertFalse(WorkerOrbitMovement.canMoveToAngle(horse, cx, cz, 2.5f, 0.0D),
+                "Radial onboarding must reject the adjacent wall even while escaping the crank");
+        var blocked = WorkerOrbitMovement.moveToAngle(horse, cx, cz, 2.5f, 0.0D, 0.0D);
+        helper.assertFalse(blocked.moved(), "Blocked worker must not teleport through the wall");
+        helper.assertTrue(Math.abs(horse.getX() - cx) < 1.0e-5D
+                        && Math.abs(horse.getZ() - cz) < 1.0e-5D,
+                "Failed preflight must leave the overlapping worker at its original position");
+
+        helper.setBlock(wall, Blocks.AIR);
+        helper.assertTrue(WorkerOrbitMovement.canMoveToAngle(horse, cx, cz, 2.5f, 0.0D),
+                "Removing the wall must allow a worker to escape the crank onto the safe ring");
+        helper.assertTrue(WorkerOrbitMovement.moveToAngle(horse, cx, cz, 2.5f, 0.0D, 0.0D).moved(),
+                "Crank overlap alone must not permanently trap a worker");
+        horse.discard();
+        helper.succeed();
+    }
+
+    /** The middle of a teleport must collide even when both endpoints are clear. */
+    @GameTest(template = "empty")
+    public static void orbitMotionCannotTunnelThroughIntermediateWall(GameTestHelper helper) {
+        BlockPos center = new BlockPos(4, 2, 4);
+        for (int x = 1; x <= 8; x++) {
+            for (int z = 1; z <= 8; z++) {
+                BlockPos floor = new BlockPos(x, 1, z);
+                helper.setBlock(floor, Blocks.STONE);
+                helper.setBlock(floor.above(), Blocks.AIR);
+                helper.setBlock(floor.above(2), Blocks.AIR);
+            }
+        }
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(7, 2, 4));
+        double centerX = helper.absolutePos(center).getX() + 0.5D;
+        double centerZ = helper.absolutePos(center).getZ() + 0.5D;
+        double startX = centerX + 2.5D;
+        double startZ = centerZ;
+        horse.teleportTo(startX, horse.getY(), startZ);
+        helper.assertTrue(WorkerOrbitMovement.canMoveToAngle(
+                horse, centerX, centerZ, 2.5f, Math.PI / 2.0D),
+                "A fully paved, unobstructed diagonal should permit walking");
+
+        // This wall is crossed midway through the chord, but not at either
+        // endpoint. An endpoint-only collision check incorrectly accepts it.
+        BlockPos wall = new BlockPos(6, 2, 6);
+        helper.setBlock(wall, Blocks.STONE);
+        helper.assertFalse(WorkerOrbitMovement.canMoveToAngle(
+                horse, centerX, centerZ, 2.5f, Math.PI / 2.0D),
+                "Intermediate block must prevent the entire teleport");
+        var stopped = WorkerOrbitMovement.moveToAngle(
+                horse, centerX, centerZ, 2.5f, 0.0D, Math.PI / 2.0D);
+        helper.assertFalse(stopped.moved(), "Blocked move must not advance");
+        helper.assertTrue(Math.abs(horse.getX() - startX) < 1.0e-5D
+                        && Math.abs(horse.getZ() - startZ) < 1.0e-5D,
+                "Worker may not tunnel to the collision-free endpoint");
+
+        helper.setBlock(wall, Blocks.AIR);
+        helper.assertTrue(WorkerOrbitMovement.canMoveToAngle(
+                horse, centerX, centerZ, 2.5f, Math.PI / 2.0D),
+                "Removing the intermediate wall must unblock the worker");
+        helper.assertTrue(WorkerOrbitMovement.moveToAngle(
+                horse, centerX, centerZ, 2.5f, 0.0D, Math.PI / 2.0D).moved(),
+                "Worker must resume after wall removal");
+        horse.discard();
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void wideWorkerRequiresFullFootprintFloor(GameTestHelper helper) {
+        BlockPos local = new BlockPos(3, 1, 3);
+        helper.setBlock(local, Blocks.STONE);
+        helper.setBlock(local.above(), Blocks.AIR);
+        helper.setBlock(local.above(2), Blocks.AIR);
+        double x = helper.absolutePos(local).getX() + 0.5D;
+        double z = helper.absolutePos(local).getZ() + 0.5D;
+        double y = helper.absolutePos(local).getY() + 1.0D;
+        helper.assertTrue(net.steampn.createhorsepower.content.path.PathEvaluator.supportsWorkerFootprint(
+                helper.getLevel(), x, y, z, 0.6f), "Small worker should fit");
+        helper.assertFalse(net.steampn.createhorsepower.content.path.PathEvaluator.supportsWorkerFootprint(
+                helper.getLevel(), x, y, z, 2.2f), "Wide worker must reject unsupported edges");
+        for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) {
+            BlockPos floor = local.offset(dx, 0, dz);
+            helper.setBlock(floor, Blocks.STONE);
+            helper.setBlock(floor.above(), Blocks.AIR);
+            helper.setBlock(floor.above(2), Blocks.AIR);
+        }
+        helper.assertTrue(net.steampn.createhorsepower.content.path.PathEvaluator.supportsWorkerFootprint(
+                helper.getLevel(), x, y, z, 2.2f), "Wide worker should pass with supported edges");
+        helper.succeed();
+    }
+
+    /** The built-in 28-tile ring must support an ordinary horse for the whole orbit. */
+    @GameTest(template = "empty")
+    public static void standardHorseOrbitKeepsSupportAcrossFullLap(GameTestHelper helper) {
+        BlockPos center = new BlockPos(4, 2, 4);
+        for (BlockPos offset : HorseCrankEngine.generateOffsetsForRadius(2.5f)) {
+            BlockPos floor = center.offset(offset);
+            helper.setBlock(floor, Blocks.STONE);
+            helper.setBlock(floor.above(), Blocks.AIR);
+            helper.setBlock(floor.above(2), Blocks.AIR);
+        }
+        helper.setBlock(center, BlockRegister.HORSE_CRANK.get());
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(7, 2, 4));
+        BlockPos worldCenter = helper.absolutePos(center);
+        double x = worldCenter.getX() + 0.5D;
+        double z = worldCenter.getZ() + 0.5D;
+        double y = worldCenter.getY();
+        horse.teleportTo(x + 2.5D, y, z);
+        for (int angleIndex = 1; angleIndex <= 72; angleIndex++) {
+            double oldAngle = (angleIndex - 1) * Math.PI / 36.0D;
+            double newAngle = angleIndex * Math.PI / 36.0D;
+            var step = WorkerOrbitMovement.moveToAngle(horse, x, z, 2.5f, oldAngle, newAngle);
+            helper.assertTrue(Math.hypot(step.targetX() - step.actualX(),
+                    step.targetZ() - step.actualZ()) < 1.0e-3D,
+                    "Standard paved horse ring must remain traversable through angle " + angleIndex);
+        }
+        // A wide animal requires substantially more support than the normal horse.
+        double diagonal = Math.PI / 4.0D;
+        helper.assertFalse(net.steampn.createhorsepower.content.path.PathEvaluator.supportsWorkerFootprint(
+                helper.getLevel(), x + 2.5D * Math.cos(diagonal), y,
+                z + 2.5D * Math.sin(diagonal), 2.2f),
+                "Wide worker must not overhang a thin path ring without enough support");
+        helper.setBlock(center.offset(3, -1, 0), Blocks.AIR);
+        helper.assertFalse(net.steampn.createhorsepower.content.path.PathEvaluator.supportsWorkerFootprint(
+                helper.getLevel(), x + 2.5D, y, z, horse.getBbWidth()),
+                "Removing the directly supporting floor must stop the worker");
+        horse.discard();
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void obstructedWorkerDoesNotPulseGeneration(GameTestHelper helper) {
+        BlockPos center = new BlockPos(4, 2, 4);
+        BlockPos[] offsets = HorseCrankEngine.generateOffsetsForRadius(2.5f);
+        for (BlockPos offset : offsets) {
+            BlockPos floor = center.offset(offset);
+            helper.setBlock(floor, Blocks.STONE);
+            helper.setBlock(floor.above(), Blocks.AIR);
+            helper.setBlock(floor.above(2), Blocks.AIR);
+        }
+        helper.setBlock(center.offset(offsets[0]), Blocks.ICE);
+        helper.setBlock(center, BlockRegister.HORSE_CRANK.get());
+        HorseCrankEngine engine = requireCrank(helper, center).engine();
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(5, 2, 4));
+        LeashFenceKnotEntity knot = LeashFenceKnotEntity.getOrCreateKnot(
+                helper.getLevel(), helper.absolutePos(center));
+        horse.setLeashedTo(knot, false);
+        WorkerStats stats = new WorkerStats(16.0f, 32.0f, 2.5f, 0.0f,
+                WorkerStats.DEFAULT_SPEED_REF, 0.0f, WorkerStats.DEFAULT_HEALTH_REF,
+                false, false);
+        WorkerResolver.ResolvedWorker profile = new WorkerResolver.ResolvedWorker(
+                stats, 16.0f, 32.0f, 0.0f, 0.0f, true);
+        engine.attachWorker(horse, profile);
+        engine.afterHostTick();
+        helper.assertTrue(engine.isWorking(), "Worker should start on walkable ring");
+        // A full collision wall, not another pushable mob. Minecraft's
+        // physical block sweep must stop the worker without relying on
+        // entity-pushing rules that can vary with other nearby animals.
+        BlockPos obstacle = new BlockPos(7, 3, 4);
+        helper.setBlock(obstacle, Blocks.STONE);
+        engine.afterHostTick();
+        helper.assertFalse(engine.isWorking(), "Dynamic collision must stop power");
+        helper.assertTrue(engine.generatedSpeed() == 0.0f, "Blocked crank must have zero output");
+        for (int i = 0; i < 5; i++) {
+            engine.afterHostTick();
+            helper.assertFalse(engine.isWorking(), "Blocker must not restart crank every tick");
+        }
+        helper.runAfterDelay(45, () -> {
+            engine.afterHostTick();
+            helper.assertFalse(engine.isWorking(),
+                    "Persistent obstruction must not pulse even after multiple retry windows");
+            helper.assertTrue(engine.generatedSpeed() == 0.0f,
+                    "Persistent obstruction must keep kinetic output at zero");
+            helper.setBlock(obstacle, Blocks.AIR);
+            helper.runAfterDelay(23, () -> {
+                engine.afterHostTick();
+                helper.assertTrue(engine.isWorking(),
+                        "Work should recover after the obstacle clears and the retry expires");
+                engine.detachWorker(false);
+                horse.discard();
+                knot.discard();
+                helper.succeed();
+            });
+        });
+    }
+
     @GameTest(template = "empty")
     public static void freshDefaultPathConfigFallsThroughToBundledProfiles(GameTestHelper helper) {
         helper.assertTrue(Config.POOR_PATH.getDefault().isEmpty(),
@@ -121,8 +634,9 @@ public final class HorsePowerGameTests {
 
     @GameTest(template = "empty")
     public static void nonHorseWorkerUsesSameOrbitControl(GameTestHelper helper) {
-        Cow cow = helper.spawn(EntityType.COW, new BlockPos(0, 0, 0));
-        double radius = 2.5D;
+        prepareOrbitMovementFloor(helper);
+        Cow cow = helper.spawn(EntityType.COW, new BlockPos(3, 2, 3));
+        double radius = 1.0D;
         double centerX = cow.getX() - radius;
         double centerZ = cow.getZ();
         boolean ownsAiSuppression = WorkerActivityControl.acquire(cow);
@@ -138,8 +652,9 @@ public final class HorsePowerGameTests {
 
     @GameTest(template = "empty")
     public static void workerOrbitFacesMovement(GameTestHelper helper) {
-        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(0, 0, 0));
-        double radius = 2.5D;
+        prepareOrbitMovementFloor(helper);
+        Horse horse = helper.spawn(EntityType.HORSE, new BlockPos(3, 2, 3));
+        double radius = 1.0D;
         double centerX = horse.getX() - radius;
         double centerZ = horse.getZ();
         horse.setEating(true);
@@ -536,6 +1051,10 @@ public final class HorsePowerGameTests {
                     Horse reloaded = reloadedHolder[0];
                     helper.assertTrue(reloaded != null, "reloaded worker fixture must be initialized");
 
+                    long leadsBefore = level.getEntitiesOfClass(
+                            ItemEntity.class, new AABB(reloaded.blockPosition()).inflate(8.0D),
+                            item -> item.getItem().is(Items.LEAD)).size();
+
                     // 1.20.1 restores persisted BlockPos leash data from Mob.tickLeash(),
                     // reached by Mob.tick(). Invoke that exact vanilla path because
                     // GameTest fixture mobs are not guaranteed a scheduler-driven tick.
@@ -562,11 +1081,11 @@ public final class HorsePowerGameTests {
                             "Recovery must restore the worker's original NoAI=false state");
                     helper.assertTrue(CHPUtils.getKnot(level, worldCrankPos).isEmpty(),
                             "Recovery must remove the unused knot recreated from saved leash data");
-                    boolean spawnedLead = !level.getEntitiesOfClass(
+                    long leadsAfter = level.getEntitiesOfClass(
                             ItemEntity.class, new AABB(reloaded.blockPosition()).inflate(8.0D),
-                            item -> item.getItem().is(Items.LEAD)).isEmpty();
-                    helper.assertFalse(spawnedLead,
-                            "Deferred detachWorker(false) must not spawn a lead when the worker reloads");
+                            item -> item.getItem().is(Items.LEAD)).size();
+                    helper.assertTrue(leadsAfter == leadsBefore,
+                            "Deferred detachWorker(false) must not spawn a new lead when the worker reloads");
                 })
                 .thenSucceed();
     }
@@ -738,7 +1257,10 @@ public final class HorsePowerGameTests {
             BlockPos localCrankPos = new BlockPos(4, 2, 4);
             BlockPos[] offsets = HorseCrankEngine.generateOffsetsForRadius(2.5f);
             for (BlockPos offset : offsets) {
-                helper.setBlock(localCrankPos.offset(offset), Blocks.ICE);
+                BlockPos floor = localCrankPos.offset(offset);
+                helper.setBlock(floor, Blocks.ICE);
+                helper.setBlock(floor.above(), Blocks.AIR);
+                helper.setBlock(floor.above(2), Blocks.AIR);
             }
 
             helper.setBlock(localCrankPos, BlockRegister.HORSE_CRANK.get());
@@ -1198,6 +1720,17 @@ public final class HorsePowerGameTests {
                             + " but was " + (be == null ? "null" : be.getType().toString()));
         }
         return crank;
+    }
+
+    private static void prepareOrbitMovementFloor(GameTestHelper helper) {
+        // The empty structure has no floor. Safe orbit movement now correctly
+        // refuses floating movement, so give movement-only tests a real floor.
+        // Keep the 1-block-radius fixture bounded to this test's local area.
+        for (int x = 1; x <= 5; x++) {
+            for (int z = 1; z <= 5; z++) {
+                helper.setBlock(new BlockPos(x, 1, z), Blocks.STONE);
+            }
+        }
     }
 
     private static double assertOrbitStep(

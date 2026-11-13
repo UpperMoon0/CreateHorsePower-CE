@@ -184,8 +184,8 @@ public class Config implements CHPConfig {
                 .comment("Whether path quality modifies stress capacity. Disable to keep path RPM and validity behavior while holding stress at the worker's configured base value.")
                 .define("enableStressScaling", true);
         MINIMUM_PATH_COVERAGE = BUILDER
-                .comment("Required fraction of valid path blocks required (0.0 to 1.0). Default 1.0 means full circle required.")
-                .defineInRange("minimumCoverage", 1.0, 0.0, 1.0);
+                .comment("Minimum recognized track coverage (0.0 to 1.0). Default 0.0 permits incomplete paths; missing tiles contribute zero in WEIGHTED_AVERAGE. Existing configs retain their chosen threshold.")
+                .defineInRange("minimumCoverage", 0.0, 0.0, 1.0);
         CHECK_INTERVAL_TICKS = BUILDER
                 .comment("Interval in ticks between path condition checks.")
                 .defineInRange("checkIntervalTicks", 40, 1, 1200);

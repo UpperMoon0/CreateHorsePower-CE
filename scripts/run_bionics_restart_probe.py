@@ -42,6 +42,15 @@ def run(command: list[str], root: Path, log: Path, timeout: int) -> None:
         raise RuntimeError(f"Server exited {code} during {log.name}; see {log}")
 
 
+def gradle_launcher(root: Path) -> list[str]:
+    """Build a platform-correct Gradle launcher without relying on POSIX +x."""
+    wrapper = root / ("gradlew.bat" if os.name == "nt" else "gradlew")
+    if not wrapper.is_file():
+        raise FileNotFoundError(f"Missing Gradle wrapper: {wrapper}")
+    # Explicit bash also works when a test workspace loses +x on Linux.
+    return [str(wrapper)] if os.name == "nt" else ["bash", str(wrapper)]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--project", choices=["forge-1.20.1", "neoforge-1.21.1"], required=True)
@@ -69,10 +78,10 @@ def main() -> None:
         "sync-chunk-writes": "true"}
     (work / "server.properties").write_text(
         "".join(f"{key}={value}\n" for key, value in settings.items()))
-    wrapper = root / ("gradlew.bat" if os.name == "nt" else "gradlew")
+    gradle_prefix = gradle_launcher(root)
     phases = []
     for phase in ("write", "read"):
-        command = [str(wrapper), f":{args.project}:runServer",
+        command = [*gradle_prefix, f":{args.project}:runServer",
                    "-PbionicsCompatibilityTest=true",
                    f"-PchpRestartPhase={phase}", f"-PchpRestartDirectory={work}",
                    "--no-daemon", "--stacktrace", "--max-workers=2"]

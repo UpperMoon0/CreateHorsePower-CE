@@ -2,6 +2,8 @@
 
 Create Horse Power CE adds animal-powered rotational generation to Create. Attach an eligible worker to a Horse Crank, prepare a valid circular track, and feed the resulting RPM and stress capacity into a Create kinetic network.
 
+**Mixed-path upgrade:** Starting with the next release, all evaluation modes distinguish unsupported *walkable* blocks (zero efficiency contribution) from air holes, liquids, and obstructed floors (the crank stops; workers do not teleport into them). **Existing server worlds keep their saved `minimumCoverage = 1.0`.** To enable incomplete but safely walkable paths after updating, change `minimumCoverage` to `0.0` in the Horse Power server config; new configs default to `0.0`. One recognized tile cannot give full power in any evaluation mode.
+
 This is an independent, community-maintained fork of [SteamPunkNation/CreateHorsePower](https://github.com/SteamPunkNation/CreateHorsePower). It retains the `createhorsepower` mod ID for saved-world compatibility; **do not install CE and the original mod together**.
 
 ## Compatibility and installation
@@ -14,7 +16,7 @@ Optional integrations include **Jade** on both loaders, **KubeJS** scripting and
 
 ## Gameplay
 
-Place a Horse Crank, build a complete valid path around it, and attach a worker using an item in `#createhorsepower:attachment_items` (a vanilla lead by default). The worker drives the crank while its eligibility, track and redstone requirements are satisfied.
+Place a Horse Crank, build a walkable circular path around it (mixed materials are supported; unrecognized but safely walkable solid tiles contribute zero output, while holes, liquids and hazardous floors stop the crank), and attach a worker using an item in `#createhorsepower:attachment_items` (a vanilla lead by default). The worker drives the crank while its eligibility, track and redstone requirements are satisfied.
 
 - Sneak-use a Create wrench on the crank to cycle `HIGH_STOPS`, `HIGH_RUNS` and `IGNORE` modes.
 - Wear Engineer's Goggles or use Jade to inspect worker, path and output state.
@@ -47,7 +49,7 @@ This is a multi-platform Gradle workspace. Shared logic is in `common/`; loader 
 
 On Windows use `gradlew.bat` in place of `./gradlew`. Jars are generated in the appropriate loader project's `build/libs/`; the mod version is defined in the root `gradle.properties` and supported dependency versions are maintained in loader project metadata.
 
-Ordinary smoke tests exercise both loaders without optional mods. Optional integrations have dedicated test workflows and conditional runtime dependencies. Tests with a real optional server mod do **not** constitute real-client multiplayer, packet/raycast or rendering acceptance. Consult the [Actions runs](https://github.com/UpperMoon0/CreateHorsePower-CE/actions) and the appropriate release-specific acceptance notes for actual verification results.
+CI runs through [central NsTut-CICD Jenkins](https://github.com/UpperMoon0/NsTut-CICD/tree/main/jenkins/minecraft-mods/createhorsepower-ce). The reviewed pipeline runs both loader GameTests, real Icy/Bionics integration and isolated restart probes before creating a verifiable release bundle. Releases are requested explicitly through the central host-only publisher; source pushes do not upload JARs. Real server integration acceptance does **not** substitute for multiplayer graphical-client testing.
 
 ## Credits, license and support
 

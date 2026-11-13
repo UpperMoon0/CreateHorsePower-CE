@@ -27,12 +27,15 @@ public enum HorseCrankJadeProvider implements IBlockComponentProvider, IServerDa
         data.putBoolean("WorkerResolved", crank.isWorkerResolved());
         data.putBoolean("WorkerEligible", crank.isWorkerEligible());
         data.putBoolean("ValidPath", crank.hasValidWorkingBlocks());
+        data.putBoolean("ZeroOutputPath", crank.engine().hasZeroPathOutput());
+        data.putBoolean("ZeroOutputOverride", crank.engine().hasNonPathZeroOutput());
         data.putBoolean("ScriptVetoed", crank.isScriptVetoed());
         data.putBoolean("IsWorking", crank.isWorking());
         data.putString("WorkerName", crank.getCachedWorkerName());
         data.putFloat("SpeedBonus", crank.getSpeedBonusPercent());
         data.putFloat("HealthBonus", crank.getHealthBonusPercent());
         data.putInt("Efficiency", (int) crank.getEfficiencyPercent());
+        data.putInt("Coverage", crank.getCoveragePercent());
         data.putInt("InvalidBlocks", crank.getInvalidBlockCount());
         data.putString("RedstoneMode", crank.getRedstoneMode().getDisplayName().getString());
     }
@@ -58,6 +61,10 @@ public enum HorseCrankJadeProvider implements IBlockComponentProvider, IServerDa
             tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.invalid_path", data.getInt("InvalidBlocks")).withStyle(ChatFormatting.RED));
         } else if (data.getBoolean("ScriptVetoed")) {
             tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.vetoed").withStyle(ChatFormatting.YELLOW));
+        } else if (data.getBoolean("ZeroOutputPath")) {
+            tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.zero_output_path").withStyle(ChatFormatting.RED));
+        } else if (data.getBoolean("ZeroOutputOverride")) {
+            tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.zero_output_override").withStyle(ChatFormatting.YELLOW));
         } else if (data.getBoolean("IsWorking")) {
             tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.working").withStyle(ChatFormatting.GREEN));
         }
@@ -69,6 +76,7 @@ public enum HorseCrankJadeProvider implements IBlockComponentProvider, IServerDa
 
         int eff = data.getInt("Efficiency");
         tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.path_efficiency", eff + "%").withStyle(ChatFormatting.GRAY));
+        tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.path_coverage", data.getInt("Coverage") + "%").withStyle(ChatFormatting.GRAY));
 
         float speedBonus = data.getFloat("SpeedBonus");
         if (speedBonus != 0) {

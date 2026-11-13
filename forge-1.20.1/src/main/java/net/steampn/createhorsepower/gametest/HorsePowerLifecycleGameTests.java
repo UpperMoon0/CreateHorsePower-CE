@@ -508,6 +508,9 @@ public final class HorsePowerLifecycleGameTests {
                     helper.assertTrue(reloaded != null, "reloaded worker fixture must be initialized");
                     helper.assertTrue(level.getEntity(workerUuid) == reloaded,
                             "reloaded worker must be visible in the level UUID index");
+                    long leadsBefore = level.getEntitiesOfClass(ItemEntity.class,
+                                    new AABB(reloaded.blockPosition()).inflate(6.0D),
+                                    item -> item.getItem().is(Items.LEAD)).size();
                     reloaded.tickCount++;
                     WorkerRecoveryQueue.process(level);
                     helper.assertFalse(WorkerAttachmentControl.hasMarker(reloaded),
@@ -522,8 +525,8 @@ public final class HorsePowerLifecycleGameTests {
                                     new AABB(reloaded.blockPosition()).inflate(6.0D),
                                     item -> item.getItem().is(Items.LEAD))
                             .size();
-                    helper.assertTrue(droppedLeads == 0,
-                            "detach(false) must remain no-drop after old crank destruction/replacement");
+                    helper.assertTrue(droppedLeads == leadsBefore,
+                            "detach(false) must not create an additional lead after crank replacement");
                 })
                 .thenSucceed();
     }

@@ -72,6 +72,8 @@ public class AnimalPowerEngine {
     public static final float DEFAULT_RADIUS = 2.5f;
     public static final int MISSING_ATTACHMENT_GRACE_TICKS = 10;
     public static final int MISSING_WORKER_GRACE_TICKS = 80;
+    /** Delay retry of blocked movement to avoid kinetic/AI hook churn. */
+    public static final int MOVEMENT_BLOCKED_RETRY_TICKS = 20;
 
     private final Host host;
     private final AnimalPowerMachinePolicy machinePolicy;
@@ -79,6 +81,8 @@ public class AnimalPowerEngine {
 
     public boolean hasValidWorkingBlocks = false;
     private float rpmModifier = 1.0f;
+    // The physical path result, before scripts may override RPM or multipliers.
+    private boolean zeroOutputFromTerrain = false;
     private float pathStressModifier = 1.0f;
     private float generationDirection = 1.0f;
     private boolean needsLegacyDirectionResolution = false;
@@ -101,6 +105,7 @@ public class AnimalPowerEngine {
     private float speedBonusPercent = 0.0f;
     private float healthBonusPercent = 0.0f;
     private int efficiencyPercent = 100;
+    private int coveragePercent = 0;
     private int invalidBlockCount = 0;
     private String cachedWorkerName = "";
     private String workerEntityId = "";
@@ -121,6 +126,7 @@ public class AnimalPowerEngine {
     private long lastPathCheckTick = -1;
     private int statRefreshTimer = 0;
     private long nextWorkStartRetryTick = 0;
+    private long nextMovementRetryTick = 0;
     private long nextFallbackWorkerSearchTick = 0;
     private double workerOrbitAngle = Double.NaN;
     private double visualGroundSpeed = 0.0D;
@@ -219,6 +225,17 @@ public class AnimalPowerEngine {
         return isWorking;
     }
 
+    /** Report terrain as the cause only if the raw evaluator and final modifier both give zero. */
+    public boolean hasZeroPathOutput() {
+        return hasValidWorkingBlocks && zeroOutputFromTerrain && rpmModifier <= 0.0f;
+    }
+
+    /** A valid usable track can still have zero output due to a worker profile or script. */
+    public boolean hasNonPathZeroOutput() {
+        return hasValidWorkingBlocks && !hasZeroPathOutput()
+                && (effectiveBaseRpm <= 0.0f || rpmModifier <= 0.0f);
+    }
+
     public boolean canPhysicallyWork() {
         return host.hasWorkerProperty()
                 && workerResolved
@@ -270,6 +287,10 @@ public class AnimalPowerEngine {
             tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.invalid_path", invalidBlockCount).withStyle(ChatFormatting.RED));
         } else if (scriptVetoed) {
             tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.vetoed").withStyle(ChatFormatting.YELLOW));
+        } else if (hasZeroPathOutput()) {
+            tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.zero_output_path").withStyle(ChatFormatting.RED));
+        } else if (hasNonPathZeroOutput()) {
+            tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.zero_output_override").withStyle(ChatFormatting.YELLOW));
         } else if (isWorking) {
             tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.status.working").withStyle(ChatFormatting.GREEN));
         }
@@ -279,6 +300,7 @@ public class AnimalPowerEngine {
         }
 
         tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.path_efficiency", efficiencyPercent + "%").withStyle(ChatFormatting.GRAY));
+        tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.path_coverage", coveragePercent + "%").withStyle(ChatFormatting.GRAY));
 
         if (speedBonusPercent != 0) {
             tooltip.add(Component.translatable("tooltip.createhorsepower.goggles.speed_bonus", String.format("%+.1f%%", speedBonusPercent)).withStyle(ChatFormatting.AQUA));
@@ -441,9 +463,11 @@ public class AnimalPowerEngine {
             compound.putBoolean("WorkerEligible", workerEligible);
             compound.putBoolean("IsWorking", isWorking);
             compound.putBoolean("ScriptVetoed", scriptVetoed);
+            compound.putBoolean("ZeroOutputFromTerrain", zeroOutputFromTerrain);
             compound.putFloat("SpeedBonusPercent", speedBonusPercent);
             compound.putFloat("HealthBonusPercent", healthBonusPercent);
             compound.putInt("EfficiencyPercent", efficiencyPercent);
+            compound.putInt("CoveragePercent", coveragePercent);
             compound.putInt("InvalidBlockCount", invalidBlockCount);
             compound.putString("CachedWorkerName", cachedWorkerName);
         }
@@ -557,9 +581,11 @@ public class AnimalPowerEngine {
             workerEligible = compound.getBoolean("WorkerEligible");
             isWorking = compound.getBoolean("IsWorking");
             scriptVetoed = compound.getBoolean("ScriptVetoed");
+            zeroOutputFromTerrain = compound.getBoolean("ZeroOutputFromTerrain");
             speedBonusPercent = compound.getFloat("SpeedBonusPercent");
             healthBonusPercent = compound.getFloat("HealthBonusPercent");
             efficiencyPercent = compound.getInt("EfficiencyPercent");
+            coveragePercent = compound.getInt("CoveragePercent");
             invalidBlockCount = compound.getInt("InvalidBlockCount");
             cachedWorkerName = compound.getString("CachedWorkerName");
         } else {
@@ -613,6 +639,7 @@ public class AnimalPowerEngine {
         this.missingWorkerTicks = 0;
         this.statRefreshTimer = 0;
         this.nextWorkStartRetryTick = 0;
+        this.nextMovementRetryTick = 0;
         this.nextFallbackWorkerSearchTick = 0;
         this.scriptVetoed = false;
         this.workerResolved = true;
@@ -865,6 +892,7 @@ public class AnimalPowerEngine {
         this.missingWorkerTicks = 0;
         this.statRefreshTimer = 0;
         this.nextWorkStartRetryTick = 0;
+        this.nextMovementRetryTick = 0;
         this.nextFallbackWorkerSearchTick = 0;
         this.workerResolved = false;
         this.workerEligible = false;
@@ -934,6 +962,25 @@ public class AnimalPowerEngine {
 
         // 3. Centralized working state transition with non-permanent beforeWorkStart check & cooldown
         boolean canWork = canPhysicallyWork();
+        // Recheck a blocked physical path at the same bounded retry cadence
+        // as the next-step probe. Otherwise a removed wall can leave the crank
+        // stopped until the much slower ordinary path evaluation interval.
+        if (!isWorking && nextMovementRetryTick > 0) {
+            if (level.getGameTime() < nextMovementRetryTick) return;
+            if (!hasValidWorkingBlocks) {
+                checkPathBlocks();
+                if (!hasValidWorkingBlocks) {
+                    nextMovementRetryTick = level.getGameTime() + MOVEMENT_BLOCKED_RETRY_TICKS;
+                    return;
+                }
+            }
+            canWork = canPhysicallyWork();
+            if (canWork && cachedWorkerMob != null && !nextWorkerStepUnobstructed(cachedWorkerMob)) {
+                nextMovementRetryTick = level.getGameTime() + MOVEMENT_BLOCKED_RETRY_TICKS;
+                return;
+            }
+            nextMovementRetryTick = 0;
+        }
         boolean wasWorking = this.isWorking;
 
         if (canWork) {
@@ -1322,19 +1369,28 @@ public class AnimalPowerEngine {
 
         boolean valid = evalResult.isValid();
         int invalidCount = evalResult.invalidBlocks();
-        int eff = Math.round(speedMult * 100.0f);
+        // Efficiency describes the track itself, not script-mutated effective output.
+        boolean rawZeroOutputFromTerrain = valid && evalResult.speedMultiplier() <= 0.0f;
+        int eff = Math.round(evalResult.speedMultiplier() * 100.0f);
+        int coverage = evalResult.totalBlocks() == 0 ? 0
+                : Math.round(100.0f * evalResult.validBlocks() / evalResult.totalBlocks());
 
         boolean changed = (this.hasValidWorkingBlocks != valid)
                 || (this.rpmModifier != speedMult)
                 || (this.pathStressModifier != stressMult)
-                || (this.invalidBlockCount != invalidCount);
+                || (this.zeroOutputFromTerrain != rawZeroOutputFromTerrain)
+                || (this.efficiencyPercent != eff)
+                || (this.invalidBlockCount != invalidCount)
+                || (this.coveragePercent != coverage);
 
         if (changed) {
             boolean wasGenerating = hasValidWorkingBlocks && (rpmModifier > 0);
             this.hasValidWorkingBlocks = valid;
             this.rpmModifier = speedMult;
             this.pathStressModifier = stressMult;
+            this.zeroOutputFromTerrain = rawZeroOutputFromTerrain;
             this.efficiencyPercent = eff;
+            this.coveragePercent = coverage;
             this.invalidBlockCount = invalidCount;
             CHPDiagnostics.event("path_state_changed", level, host.pos(), crankInstanceUuid, cachedWorkerMob,
                     "valid=" + valid + " speed_multiplier=" + speedMult + " stress_multiplier=" + stressMult
@@ -1359,6 +1415,10 @@ public class AnimalPowerEngine {
 
     public int getInvalidBlockCount() {
         return invalidBlockCount;
+    }
+
+    public int getCoveragePercent() {
+        return coveragePercent;
     }
 
     public float getSpeedBonusPercent() {
@@ -1414,6 +1474,25 @@ public class AnimalPowerEngine {
         return cachedWorkerMob;
     }
 
+    /** Collision preflight while stopped; never consumes fuel, moves or fires hooks. */
+    private boolean nextWorkerStepUnobstructed(Mob mob) {
+        BlockPos pos = host.pos();
+        double centerX = pos.getX() + 0.5D;
+        double centerZ = pos.getZ() + 0.5D;
+        double speedAttribute = mob.getAttributes().hasAttribute(Attributes.MOVEMENT_SPEED)
+                ? mob.getAttributeValue(Attributes.MOVEMENT_SPEED)
+                : WorkerStats.DEFAULT_SPEED_REF;
+        double groundSpeed = WorkerOrbitMovement.groundSpeedBlocksPerSecond(
+                speedAttribute, CHPApi.config().workerGroundSpeedScale(),
+                CHPApi.config().minWorkerGroundSpeed(), CHPApi.config().maxWorkerGroundSpeed());
+        double angularDelta = WorkerOrbitMovement.angularDeltaPerTick(
+                groundSpeed, workerRadius, generationDirection);
+        double currentAngle = WorkerOrbitMovement.angleFromPosition(
+                mob.getX(), mob.getZ(), centerX, centerZ);
+        return WorkerOrbitMovement.canMoveToAngle(
+                mob, centerX, centerZ, workerRadius, currentAngle + angularDelta);
+    }
+
     private void moveWorkerTo(Mob mob) {
         Level level = level();
         if (level == null || mob == null) return;
@@ -1441,9 +1520,22 @@ public class AnimalPowerEngine {
                     mob.getX(), mob.getZ(), centerX, centerZ);
         }
         double currentAngle = workerOrbitAngle;
-        workerOrbitAngle = WorkerOrbitMovement.normalizeAngle(workerOrbitAngle + angularDelta);
+        double proposedAngle = WorkerOrbitMovement.normalizeAngle(workerOrbitAngle + angularDelta);
         WorkerOrbitMovement.Snapshot movement = WorkerOrbitMovement.moveToAngle(
-                mob, centerX, centerZ, workerRadius, currentAngle, workerOrbitAngle);
+                mob, centerX, centerZ, workerRadius, currentAngle, proposedAngle);
+        if (Math.hypot(movement.targetX() - movement.actualX(),
+                movement.targetZ() - movement.actualZ()) > 1.0e-4D) {
+            // A newly opened gap must stop kinetic output immediately, not
+            // wait for the next scheduled path reevaluation.
+            checkPathBlocks();
+            nextMovementRetryTick = level.getGameTime() + MOVEMENT_BLOCKED_RETRY_TICKS;
+            stopWorking();
+            host.refreshKinetic();
+            host.syncToClient();
+        } else {
+            workerOrbitAngle = proposedAngle;
+            nextMovementRetryTick = 0;
+        }
         WorkerActivityControl.clearHorizontalVelocity(mob);
     }
 }

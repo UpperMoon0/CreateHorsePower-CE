@@ -22,7 +22,10 @@ import net.steampn.createhorsepower.registry.BlockRegister;
  */
 public final class BionicsCompatibilityScenarios {
     private static final BlockPos CRANK = new BlockPos(4, 2, 4);
-    private static final BlockPos SPAWN = new BlockPos(7, 2, 4);
+    // Feet must be ONE block above the y=2 cobblestone orbit. Spawning at y=2
+    // embeds the real Oxhauler in the track and correctly trips collision
+    // and footprint safety, hiding the compatibility behavior under test.
+    private static final BlockPos SPAWN = new BlockPos(7, 3, 4);
 
     private BionicsCompatibilityScenarios() {}
 
@@ -78,9 +81,20 @@ public final class BionicsCompatibilityScenarios {
     }
 
     private static AbstractHorseCrankBlockEntity crank(GameTestHelper h) {
+        // The real Oxhauler has a much broader collision/hoof footprint than
+        // a horse. A one-tile-wide ring is not physically safe for it: the
+        // production footprint guard correctly refuses to generate power.
+        // Construct a three-tile-wide *solid* ring for this wide-worker test.
+        // Removing the canonical path-center samples must still stop RPM.
         for (BlockPos offset : HorseCrankEngine.generateOffsetsForRadius(3.0f)) {
-            h.setBlock(CRANK.offset(offset).below(), Blocks.BEDROCK);
-            h.setBlock(CRANK.offset(offset), Blocks.COBBLESTONE);
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    BlockPos tile = CRANK.offset(offset).offset(dx, 0, dz);
+                    if (tile.equals(CRANK)) continue;
+                    h.setBlock(tile.below(), Blocks.BEDROCK);
+                    h.setBlock(tile, Blocks.COBBLESTONE);
+                }
+            }
         }
         h.setBlock(CRANK, BlockRegister.HORSE_CRANK.get());
         h.assertTrue(h.getLevel().getBlockEntity(h.absolutePos(CRANK))

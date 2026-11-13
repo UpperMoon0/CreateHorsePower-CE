@@ -2,6 +2,8 @@
 
 **Create Horse Power CE** brings animal-powered rotational generation to Create. Attach an eligible worker to a Horse Crank, build a valid circular path, and power early Create machines without advanced generators.
 
+**Upgrading an existing server:** The new mixed-path behavior accepts unsupported *solid, safely walkable* blocks as zero-efficiency tiles; holes, liquids, narrow supports, damaging blocks and obstructed tracks still stop the crank. Workers can join from beside the crank without paving its interior, but their landing position and subsequent orbit must remain safe. Existing server configs keep `minimumCoverage = 1.0`, so **set it to `0.0` in the server config** to allow partial recognized coverage. New configs start at `0.0`. All path evaluation modes now penalize unsupported tiles rather than granting full power.
+
 This is an independent, community-maintained fork of [SteamPunkNation's Create Horse Power](https://github.com/SteamPunkNation/CreateHorsePower). CE retains the original `createhorsepower` mod ID for world compatibility. **Do not install the original mod and CE together.**
 
 ## Installation and compatibility
@@ -20,7 +22,7 @@ See the [feature compatibility matrix](https://github.com/UpperMoon0/CreateHorse
 
 ## Using the Horse Crank
 
-1. Place a Horse Crank and prepare a complete, valid walking path around it.
+1. Place a Horse Crank and prepare a walkable circular path. Mixed recognized materials use their own terrain multipliers. **In builds after v1.2.11**, unrecognized but safely walkable solid tiles contribute zero output; missing floor, liquid or hazardous tiles stop the crank. Existing configs with a strict `minimumCoverage` setting must be adjusted to opt in.
 2. Attach an eligible worker with a supported attachment item (a vanilla lead works by default).
 3. Connect the crank to your Create kinetic network. Output depends on the worker, terrain, configuration and active redstone mode.
 
